@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+
+# AI CLI config files
+.eni/
+.claude/
+.opencode/
+.codex/
+.agents/
+opencode.json
