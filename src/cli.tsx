@@ -1,6 +1,11 @@
 import meow from "meow";
 import React from "react";
 import { render, Text } from "ink";
+import Plan from "./commands/plan.js";
+import Build from "./commands/build.js";
+import Init from "./commands/init.js";
+import Status from "./commands/status.js";
+import Config from "./commands/config.js";
 
 const COMMANDS = ["plan", "build", "init", "status", "config"] as const;
 type Command = (typeof COMMANDS)[number];
@@ -35,13 +40,13 @@ function UnknownCommand({ command }: { command: string }) {
 	);
 }
 
-function CommandStub({ command }: { command: Command }) {
-	return (
-		<Text>
-			{`toby ${command} — not yet implemented`}
-		</Text>
-	);
-}
+const commandComponents: Record<Command, React.ComponentType> = {
+	plan: Plan,
+	build: Build,
+	init: Init,
+	status: Status,
+	config: Config,
+};
 
 const cli = meow(
 	`
@@ -66,7 +71,8 @@ const [command] = cli.input;
 if (!command) {
 	render(<Help version={cli.pkg.version ?? "0.0.0"} />).unmount();
 } else if (COMMANDS.includes(command as Command)) {
-	render(<CommandStub command={command as Command} />).unmount();
+	const CommandComponent = commandComponents[command as Command];
+	render(<CommandComponent />).unmount();
 } else {
 	render(<UnknownCommand command={command} />).unmount();
 	process.exitCode = 1;
