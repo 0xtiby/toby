@@ -7,7 +7,9 @@ import Build from "./commands/build.js";
 import type { BuildFlags } from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
+import type { StatusFlags } from "./commands/status.js";
 import Config from "./commands/config.js";
+import type { ConfigFlags } from "./commands/config.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
 const COMMANDS = ["plan", "build", "init", "status", "config"] as const;
@@ -68,6 +70,14 @@ Build Options
   --iterations=<n>   Override max iteration count
   --verbose          Show full CLI output
   --cli=<name>       Override AI CLI (claude, codex, opencode)
+
+Status Options
+  --spec=<name>      Show detailed status for a specific spec
+
+Config Subcommands
+  config             Interactive config editor
+  config get <key>   Show a config value (dot-notation)
+  config set <key> <value>  Set a config value
 `,
 	{
 		importMeta: import.meta,
@@ -83,10 +93,11 @@ Build Options
 
 ensureGlobalDir();
 
+const version = cli.pkg.version ?? "0.0.0";
 const [command] = cli.input;
 
 if (!command) {
-	render(<Help version={cli.pkg.version ?? "0.0.0"} />).unmount();
+	render(<Help version={version} />).unmount();
 } else if (command === "plan") {
 	const flags: PlanFlags = {
 		spec: cli.flags.spec,
@@ -107,14 +118,23 @@ if (!command) {
 	};
 	const app = render(<Build {...flags} />);
 	await app.waitUntilExit();
-} else if (COMMANDS.includes(command as Command)) {
-	const stubs: Record<string, React.ComponentType> = {
-		init: Init,
-		status: Status,
-		config: Config,
+} else if (command === "init") {
+	render(<Init version={version} />).unmount();
+} else if (command === "status") {
+	const flags: StatusFlags = {
+		spec: cli.flags.spec,
+		version,
 	};
-	const CommandComponent = stubs[command];
-	render(<CommandComponent />).unmount();
+	render(<Status {...flags} />).unmount();
+} else if (command === "config") {
+	const [, subcommand, configKey, value] = cli.input;
+	const flags: ConfigFlags = {
+		subcommand,
+		configKey,
+		value,
+		version,
+	};
+	render(<Config {...flags} />).unmount();
 } else {
 	render(<UnknownCommand command={command} />).unmount();
 	process.exitCode = 1;

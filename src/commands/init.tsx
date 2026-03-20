@@ -1,6 +1,16 @@
 import React from "react";
-import { Text } from "ink";
+import { Text, Box } from "ink";
 
-export default function Init() {
-	return <Text>toby init — not yet implemented</Text>;
+export interface InitFlags {
+	version: string;
+}
+
+export default function Init({ version }: InitFlags) {
+	return (
+		<Box flexDirection="column">
+			<Text>{`toby v${version}`}</Text>
+			<Text>{""}</Text>
+			<Text>toby init — not yet implemented</Text>
+		</Box>
+	);
 }
