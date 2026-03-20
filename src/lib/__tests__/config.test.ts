@@ -6,9 +6,13 @@ vi.mock("node:fs", () => ({
 	default: {
 		readFileSync: vi.fn(),
 		existsSync: vi.fn(() => false),
+		writeFileSync: vi.fn(),
+		mkdirSync: vi.fn(),
 	},
 	readFileSync: vi.fn(),
 	existsSync: vi.fn(() => false),
+	writeFileSync: vi.fn(),
+	mkdirSync: vi.fn(),
 }));
 
 import fs from "node:fs";
@@ -18,6 +22,7 @@ import {
 	mergeConfigs,
 	loadConfig,
 	resolveCommandConfig,
+	writeConfig,
 } from "../config.js";
 
 const globalConfigPath = path.join(os.homedir(), ".toby", "config.json");
@@ -184,6 +189,55 @@ describe("config", () => {
 			expect(config.plan.cli).toBe("claude");
 			expect(config.plan.model).toBe("gpt-4");
 			expect(config.plan.iterations).toBe(2);
+		});
+	});
+
+	describe("writeConfig", () => {
+		beforeEach(() => {
+			vi.mocked(fs.writeFileSync).mockReset();
+			vi.mocked(fs.mkdirSync).mockReset();
+		});
+
+		it("writes JSON with 2-space indent and trailing newline", () => {
+			const config = { verbose: true };
+			writeConfig(config, "/tmp/.toby/config.json");
+
+			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/.toby", {
+				recursive: true,
+			});
+			expect(fs.writeFileSync).toHaveBeenCalledWith(
+				"/tmp/.toby/config.json",
+				JSON.stringify(config, null, 2) + "\n",
+			);
+		});
+
+		it("creates parent directories if missing", () => {
+			writeConfig({}, "/deep/nested/dir/config.json");
+
+			expect(fs.mkdirSync).toHaveBeenCalledWith("/deep/nested/dir", {
+				recursive: true,
+			});
+		});
+
+		it("writes only provided keys, not full defaults", () => {
+			const partial = { specsDir: "docs" };
+			writeConfig(partial, "/tmp/config.json");
+
+			const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string;
+			const parsed = JSON.parse(written);
+			expect(parsed).toEqual({ specsDir: "docs" });
+			expect(parsed).not.toHaveProperty("plan");
+			expect(parsed).not.toHaveProperty("verbose");
+		});
+
+		it("propagates write errors", () => {
+			vi.mocked(fs.writeFileSync).mockImplementation(() => {
+				throw new Error("EACCES: permission denied");
+			});
+
+			expect(() =>
+				writeConfig({ verbose: true }, "/readonly/config.json"),
+			).toThrow("EACCES: permission denied");
 		});
 	});
 

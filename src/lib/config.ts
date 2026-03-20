@@ -62,6 +62,19 @@ export function loadConfig(cwd?: string): TobyConfig {
 	return ConfigSchema.parse(merged);
 }
 
+/**
+ * Write a partial config object to a JSON file.
+ * Creates parent directories if they don't exist.
+ */
+export function writeConfig(
+	config: Partial<TobyConfig>,
+	filePath: string,
+): void {
+	const dir = path.dirname(filePath);
+	fs.mkdirSync(dir, { recursive: true });
+	fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n");
+}
+
 /** CLI flag overrides for command config */
 export interface CommandFlags {
 	cli?: "claude" | "codex" | "opencode";
