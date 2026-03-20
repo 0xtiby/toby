@@ -106,5 +106,6 @@ export function resolveCommandConfig(
 		cli: flags.cli ?? base.cli,
 		model: flags.model || base.model || "default",
 		iterations: flags.iterations ?? base.iterations,
+		templateVars: base.templateVars ?? {},
 	};
 }

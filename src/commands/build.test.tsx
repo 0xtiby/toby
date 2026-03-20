@@ -69,8 +69,8 @@ const defaultFlags: BuildFlags = {
 
 function setupDefaults() {
 	mockLoadConfig.mockReturnValue({
-		plan: { cli: "claude", model: "default", iterations: 2 },
-		build: { cli: "claude", model: "default", iterations: 10 },
+		plan: { cli: "claude", model: "default", iterations: 2, templateVars: {} },
+		build: { cli: "claude", model: "default", iterations: 10, templateVars: {} },
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
@@ -80,6 +80,7 @@ function setupDefaults() {
 		cli: "claude",
 		model: "default",
 		iterations: 10,
+		templateVars: {},
 	});
 
 	const spec = {
@@ -157,6 +158,7 @@ describe("executeBuild", () => {
 			cli: "claude",
 			model: "default",
 			iterations: 5,
+			templateVars: {},
 		});
 
 		await executeBuild({ ...defaultFlags, iterations: 5 }, {}, "/project");
@@ -174,6 +176,7 @@ describe("executeBuild", () => {
 			cli: "codex",
 			model: "default",
 			iterations: 10,
+			templateVars: {},
 		});
 
 		await executeBuild({ ...defaultFlags, cli: "codex" }, {}, "/project");
@@ -624,8 +627,8 @@ describe("Build component", () => {
 
 	it("config verbose setting used when flag not provided", async () => {
 		mockLoadConfig.mockReturnValue({
-			plan: { cli: "claude", model: "default", iterations: 2 },
-			build: { cli: "claude", model: "default", iterations: 10 },
+			plan: { cli: "claude", model: "default", iterations: 2, templateVars: {} },
+			build: { cli: "claude", model: "default", iterations: 10, templateVars: {} },
 			specsDir: "specs",
 			excludeSpecs: ["README.md"],
 			verbose: true,
