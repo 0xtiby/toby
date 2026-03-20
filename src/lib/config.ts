@@ -39,11 +39,12 @@ export function mergeConfigs(
 
 	for (const [key, value] of Object.entries(local)) {
 		if (
-			(key === "plan" || key === "build") &&
 			typeof value === "object" &&
 			value !== null &&
+			!Array.isArray(value) &&
 			typeof merged[key] === "object" &&
-			merged[key] !== null
+			merged[key] !== null &&
+			!Array.isArray(merged[key])
 		) {
 			merged[key] = { ...(merged[key] as Record<string, unknown>), ...value };
 		} else {

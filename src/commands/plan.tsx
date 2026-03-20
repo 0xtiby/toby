@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Text, Box, useApp } from "ink";
+import React, { useState, useEffect } from "react";
+import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
-import type { Spec } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
@@ -16,16 +15,13 @@ import {
 import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
+import { AbortError } from "../lib/errors.js";
+import { useCommandRunner } from "../hooks/useCommandRunner.js";
+import type { CommandFlags } from "../hooks/useCommandRunner.js";
 import SpecSelector from "../components/SpecSelector.js";
 import StreamOutput from "../components/StreamOutput.js";
 
-export interface PlanFlags {
-	spec?: string;
-	all: boolean;
-	iterations?: number;
-	verbose: boolean;
-	cli?: string;
-}
+export type PlanFlags = CommandFlags;
 
 export interface PlanCallbacks {
 	onPhase?: (phase: string) => void;
@@ -38,17 +34,6 @@ export interface PlanResult {
 	specName: string;
 	taskCount: number;
 	prdPath: string;
-}
-
-export class AbortError extends Error {
-	specName: string;
-	completedIterations: number;
-	constructor(specName: string, completedIterations: number) {
-		super(`Planning interrupted for ${specName} after ${completedIterations} iteration(s)`);
-		this.name = "AbortError";
-		this.specName = specName;
-		this.completedIterations = completedIterations;
-	}
 }
 
 /**
@@ -99,6 +84,7 @@ export async function executePlan(
 		callbacks.onRefinement?.(found.name, taskCount);
 	}
 
+	let iterationStartTime = new Date().toISOString();
 	callbacks.onPhase?.("planning");
 	callbacks.onIteration?.(1, commandConfig.iterations);
 
@@ -128,19 +114,20 @@ export async function executePlan(
 			callbacks.onEvent?.(event);
 		},
 		onIterationComplete: (iterResult: IterationResult) => {
-			const now = new Date().toISOString();
+			const completedAt = new Date().toISOString();
 			const iteration: Iteration = {
 				type: "plan",
 				iteration: iterResult.iteration,
 				sessionId: iterResult.sessionId,
 				cli: commandConfig.cli,
 				model: iterResult.model ?? commandConfig.model,
-				startedAt: now,
-				completedAt: now,
+				startedAt: iterationStartTime,
+				completedAt,
 				exitCode: iterResult.exitCode,
 				taskCompleted: null,
 				tokensUsed: iterResult.tokensUsed,
 			};
+			iterationStartTime = new Date().toISOString();
 			status = addIteration(status, found.name, iteration);
 			writeStatus(status, cwd);
 			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
@@ -227,151 +214,62 @@ export async function executePlanAll(
 	return { planned, skipped };
 }
 
-function getInitialPhase(flags: PlanFlags): "init" | "all" | "selecting" {
-	if (flags.all) return "all";
-	if (flags.spec) return "init";
-	return "selecting";
-}
-
 export default function Plan(flags: PlanFlags) {
-	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "all" | "selecting" | "planning" | "done" | "interrupted" | "error">(
-		getInitialPhase(flags),
-	);
-	const [currentIteration, setCurrentIteration] = useState(0);
-	const [maxIterations, setMaxIterations] = useState(0);
-	const [specName, setSpecName] = useState("");
-	const [events, setEvents] = useState<CliEvent[]>([]);
-	const [errorMessage, setErrorMessage] = useState("");
+	const runner = useCommandRunner({
+		flags,
+		runPhase: "planning",
+	});
+
 	const [result, setResult] = useState<PlanResult | null>(null);
 	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
-	const [specs, setSpecs] = useState<Spec[]>([]);
-	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
-	const [allProgress, setAllProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
-	const [interruptInfo, setInterruptInfo] = useState<{ specName: string; iterations: number } | null>(null);
-	const abortControllerRef = useRef(new AbortController());
-
-	// Wire SIGINT to abort the planning loop
-	useEffect(() => {
-		const handler = () => { abortControllerRef.current.abort(); };
-		process.on("SIGINT", handler);
-		return () => { process.off("SIGINT", handler); };
-	}, []);
-
-	// Resolve verbose: --verbose flag overrides config.verbose
-	const resolvedVerbose = flags.verbose || (() => {
-		try { return loadConfig().verbose; } catch { return false; }
-	})();
-
-	// Discover specs for the selector when no --spec flag
-	useEffect(() => {
-		if (phase !== "selecting") return;
-		try {
-			const config = loadConfig();
-			const discovered = discoverSpecs(process.cwd(), config);
-			setSpecs(discovered);
-		} catch (err) {
-			setErrorMessage((err as Error).message);
-			setPhase("error");
-			exit(new Error((err as Error).message));
-		}
-	}, [phase]);
 
 	// Run --all mode
 	useEffect(() => {
-		if (phase !== "all") return;
+		if (runner.phase !== "all") return;
 		executePlanAll(flags, {
-			onSpecStart: (name, index, total) => {
-				setSpecName(name);
-				setAllProgress({ current: index + 1, total });
-			},
+			onSpecStart: runner.onSpecStartCallback,
 			onSpecComplete: () => {},
-			onPhase: (p) => { if (p === "planning") setPhase("planning"); },
+			onPhase: runner.onPhaseCallback,
 			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
-			onIteration: (current, max) => {
-				setCurrentIteration(current);
-				setMaxIterations(max);
-			},
-			onEvent: (event) => {
-				setEvents((prev) => [...prev, event]);
-			},
-		}, undefined, abortControllerRef.current.signal)
-			.then((r) => {
-				setAllResult(r);
-				setPhase("done");
-				exit();
-			})
-			.catch((err) => {
-				if (err instanceof AbortError) {
-					setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
-					setPhase("interrupted");
-					exit();
-					return;
-				}
-				setErrorMessage((err as Error).message);
-				setPhase("error");
-				exit(new Error((err as Error).message));
-			});
-	}, [phase]);
+			onIteration: runner.onIterationCallback,
+			onEvent: runner.addEvent,
+		}, undefined, runner.abortSignal)
+			.then((r) => { setAllResult(r); runner.handleDone(); })
+			.catch(runner.handleError);
+	}, [runner.phase]);
 
-	// Run planning when we have a spec (single mode)
+	// Run single mode
 	useEffect(() => {
-		if (phase !== "init") return;
-		executePlan(activeFlags, {
-			onPhase: (p) => { if (p === "planning") setPhase("planning"); },
+		if (runner.phase !== "init") return;
+		executePlan(runner.activeFlags, {
+			onPhase: runner.onPhaseCallback,
 			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
-			onIteration: (current, max) => {
-				setCurrentIteration(current);
-				setMaxIterations(max);
-			},
-			onEvent: (event) => {
-				setEvents((prev) => [...prev, event]);
-			},
-		}, undefined, abortControllerRef.current.signal)
-			.then((r) => {
-				setSpecName(r.specName);
-				setResult(r);
-				setPhase("done");
-				exit();
-			})
-			.catch((err) => {
-				if (err instanceof AbortError) {
-					setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
-					setPhase("interrupted");
-					exit();
-					return;
-				}
-				setErrorMessage((err as Error).message);
-				setPhase("error");
-				exit(new Error((err as Error).message));
-			});
-	}, [activeFlags, phase]);
+			onIteration: runner.onIterationCallback,
+			onEvent: runner.addEvent,
+		}, undefined, runner.abortSignal)
+			.then((r) => { runner.setSpecName(r.specName); setResult(r); runner.handleDone(); })
+			.catch(runner.handleError);
+	}, [runner.activeFlags, runner.phase]);
 
-	function handleSpecSelect(spec: Spec) {
-		const newFlags = { ...flags, spec: spec.name };
-		setActiveFlags(newFlags);
-		setPhase("init");
-	}
-
-	if (phase === "interrupted" && interruptInfo) {
+	if (runner.phase === "interrupted" && runner.interruptInfo) {
 		return (
 			<Box flexDirection="column">
-				<Text color="yellow">{`⚠ Planning interrupted for ${interruptInfo.specName}`}</Text>
-				<Text dimColor>{`  ${interruptInfo.iterations} iteration(s) completed, partial status saved`}</Text>
+				<Text color="yellow">{`⚠ Planning interrupted for ${runner.interruptInfo.specName}`}</Text>
+				<Text dimColor>{`  ${runner.interruptInfo.iterations} iteration(s) completed, partial status saved`}</Text>
 			</Box>
 		);
 	}
 
-	if (phase === "error") {
-		return <Text color="red">{errorMessage}</Text>;
+	if (runner.phase === "error") {
+		return <Text color="red">{runner.errorMessage}</Text>;
 	}
 
-	if (phase === "selecting") {
-		return <SpecSelector specs={specs} onSelect={handleSpecSelect} />;
+	if (runner.phase === "selecting") {
+		return <SpecSelector specs={runner.specs} onSelect={runner.handleSpecSelect} />;
 	}
 
-	if (phase === "done" && allResult) {
+	if (runner.phase === "done" && allResult) {
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned, ${allResult.skipped.length} skipped)`}</Text>
@@ -385,7 +283,7 @@ export default function Plan(flags: PlanFlags) {
 		);
 	}
 
-	if (phase === "done" && result) {
+	if (runner.phase === "done" && result) {
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ Plan complete for ${result.specName}`}</Text>
@@ -403,14 +301,14 @@ export default function Plan(flags: PlanFlags) {
 					<Text color="yellow">Running in refinement mode...</Text>
 				</>
 			)}
-			{allProgress.total > 0 && (
-				<Text dimColor>{`[${allProgress.current}/${allProgress.total}]`}</Text>
+			{runner.allProgress.total > 0 && (
+				<Text dimColor>{`[${runner.allProgress.current}/${runner.allProgress.total}]`}</Text>
 			)}
 			<Text dimColor>
-				{`Planning: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
+				{`Planning: ${runner.specName || runner.activeFlags.spec} (iteration ${Math.min(runner.currentIteration, runner.maxIterations)}/${runner.maxIterations})`}
 			</Text>
 			<Text dimColor>{"─".repeat(40)}</Text>
-			<StreamOutput events={events} verbose={resolvedVerbose} />
+			<StreamOutput events={runner.events} verbose={runner.resolvedVerbose} />
 		</Box>
 	);
 }

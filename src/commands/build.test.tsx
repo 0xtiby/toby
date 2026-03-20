@@ -49,7 +49,8 @@ import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
-import { executeBuild, executeBuildAll, AbortError } from "./build.js";
+import { executeBuild, executeBuildAll } from "./build.js";
+import { AbortError } from "../lib/errors.js";
 import Build from "./build.js";
 import type { BuildFlags } from "./build.js";
 

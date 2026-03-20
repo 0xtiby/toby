@@ -47,7 +47,8 @@ import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
-import { executePlan, executePlanAll, AbortError } from "./plan.js";
+import { executePlan, executePlanAll } from "./plan.js";
+import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 

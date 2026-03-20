@@ -9,13 +9,6 @@ interface SpecSelectorProps {
 	title?: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-	pending: "yellow",
-	planned: "cyan",
-	building: "blue",
-	done: "green",
-};
-
 export default function SpecSelector({ specs, onSelect, title = "Select a spec to plan:" }: SpecSelectorProps) {
 	if (specs.length === 0) {
 		return <Text color="red">No specs found.</Text>;

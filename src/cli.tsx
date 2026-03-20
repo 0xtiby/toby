@@ -2,18 +2,11 @@ import meow from "meow";
 import React from "react";
 import { render, Text } from "ink";
 import Plan from "./commands/plan.js";
-import type { PlanFlags } from "./commands/plan.js";
 import Build from "./commands/build.js";
-import type { BuildFlags } from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
-import type { StatusFlags } from "./commands/status.js";
 import Config, { ConfigEditor } from "./commands/config.js";
-import type { ConfigFlags } from "./commands/config.js";
 import { ensureGlobalDir } from "./lib/paths.js";
-
-const COMMANDS = ["plan", "build", "init", "status", "config"] as const;
-type Command = (typeof COMMANDS)[number];
 
 function Help({ version }: { version: string }) {
 	return (
@@ -93,54 +86,78 @@ Config Subcommands
 
 ensureGlobalDir();
 
+interface CommandEntry {
+	render: (
+		flags: typeof cli.flags,
+		input: string[],
+		version: string,
+	) => React.ReactElement;
+	waitForExit?: boolean;
+}
+
+const commands: Record<string, CommandEntry> = {
+	plan: {
+		render: (flags) => (
+			<Plan
+				spec={flags.spec}
+				all={flags.all}
+				iterations={flags.iterations}
+				verbose={flags.verbose}
+				cli={flags.cli}
+			/>
+		),
+		waitForExit: true,
+	},
+	build: {
+		render: (flags) => (
+			<Build
+				spec={flags.spec}
+				all={flags.all}
+				iterations={flags.iterations}
+				verbose={flags.verbose}
+				cli={flags.cli}
+			/>
+		),
+		waitForExit: true,
+	},
+	init: {
+		render: (_flags, _input, version) => <Init version={version} />,
+		waitForExit: true,
+	},
+	status: {
+		render: (flags, _input, version) => (
+			<Status spec={flags.spec} version={version} />
+		),
+	},
+	config: {
+		render: (_flags, input, version) => {
+			const [, subcommand, configKey, value] = input;
+			if (!subcommand) return <ConfigEditor version={version} />;
+			return (
+				<Config
+					subcommand={subcommand}
+					configKey={configKey}
+					value={value}
+					version={version}
+				/>
+			);
+		},
+		waitForExit: true,
+	},
+};
+
 const version = cli.pkg.version ?? "0.0.0";
 const [command] = cli.input;
 
 if (!command) {
 	render(<Help version={version} />).unmount();
-} else if (command === "plan") {
-	const flags: PlanFlags = {
-		spec: cli.flags.spec,
-		all: cli.flags.all,
-		iterations: cli.flags.iterations,
-		verbose: cli.flags.verbose,
-		cli: cli.flags.cli,
-	};
-	const app = render(<Plan {...flags} />);
-	await app.waitUntilExit();
-} else if (command === "build") {
-	const flags: BuildFlags = {
-		spec: cli.flags.spec,
-		all: cli.flags.all,
-		iterations: cli.flags.iterations,
-		verbose: cli.flags.verbose,
-		cli: cli.flags.cli,
-	};
-	const app = render(<Build {...flags} />);
-	await app.waitUntilExit();
-} else if (command === "init") {
-	const app = render(<Init version={version} />);
-	await app.waitUntilExit();
-} else if (command === "status") {
-	const flags: StatusFlags = {
-		spec: cli.flags.spec,
-		version,
-	};
-	render(<Status {...flags} />).unmount();
-} else if (command === "config") {
-	const [, subcommand, configKey, value] = cli.input;
-	if (!subcommand) {
-		// Interactive editor mode
-		const app = render(<ConfigEditor version={version} />);
+} else if (command in commands) {
+	const entry = commands[command];
+	const app = render(entry.render(cli.flags, cli.input, version));
+	if (entry.waitForExit) {
 		await app.waitUntilExit();
 	} else {
-		const flags: ConfigFlags = {
-			subcommand,
-			configKey,
-			value,
-			version,
-		};
-		render(<Config {...flags} />).unmount();
+		app.unmount();
 	}
 } else {
 	render(<UnknownCommand command={command} />).unmount();

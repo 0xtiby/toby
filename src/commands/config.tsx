@@ -209,6 +209,24 @@ export function editorValuesToConfig(values: EditorValues): Partial<TobyConfig> 
 	};
 }
 
+const PHASE_ORDER: Record<EditorPhase, number> = {
+	loading: 0,
+	plan_cli: 1,
+	plan_model: 2,
+	plan_iterations: 3,
+	build_cli: 4,
+	build_model: 5,
+	build_iterations: 6,
+	specs_dir: 7,
+	verbose: 8,
+	saving: 9,
+	done: 10,
+};
+
+function pastPhase(current: EditorPhase, target: EditorPhase): boolean {
+	return PHASE_ORDER[current] > PHASE_ORDER[target];
+}
+
 function CompletedField({ label, value }: { label: string; value: string }) {
 	return (
 		<Text>
@@ -335,7 +353,7 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model"].includes(phase) && (
+			{pastPhase(phase, "plan_model") && (
 				<CompletedField label="model" value={values.planModel} />
 			)}
 
@@ -356,12 +374,12 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model", "plan_iterations"].includes(phase) && (
+			{pastPhase(phase, "plan_iterations") && (
 				<CompletedField label="iterations" value={String(values.planIterations)} />
 			)}
 
 			{/* Build section - show after plan is done */}
-			{!["loading", "plan_cli", "plan_model", "plan_iterations"].includes(phase) && (
+			{pastPhase(phase, "plan_iterations") && (
 				<>
 					<Text>{""}</Text>
 					<Text bold color="cyan">Build</Text>
@@ -382,7 +400,7 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model", "plan_iterations", "build_cli"].includes(phase) && (
+			{pastPhase(phase, "build_cli") && (
 				<CompletedField label="cli" value={values.buildCli} />
 			)}
 
@@ -401,7 +419,7 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model", "plan_iterations", "build_cli", "build_model"].includes(phase) && (
+			{pastPhase(phase, "build_model") && (
 				<CompletedField label="model" value={values.buildModel} />
 			)}
 
@@ -423,12 +441,12 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model", "plan_iterations", "build_cli", "build_model", "build_iterations"].includes(phase) && (
+			{pastPhase(phase, "build_iterations") && (
 				<CompletedField label="iterations" value={String(values.buildIterations)} />
 			)}
 
 			{/* General section */}
-			{!["loading", "plan_cli", "plan_model", "plan_iterations", "build_cli", "build_model", "build_iterations"].includes(phase) && (
+			{pastPhase(phase, "build_iterations") && (
 				<>
 					<Text>{""}</Text>
 					<Text bold color="cyan">General</Text>
@@ -450,7 +468,7 @@ export function ConfigEditor({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{!["loading", "plan_cli", "plan_model", "plan_iterations", "build_cli", "build_model", "build_iterations", "specs_dir"].includes(phase) && (
+			{pastPhase(phase, "specs_dir") && (
 				<CompletedField label="specsDir" value={values.specsDir} />
 			)}
 
