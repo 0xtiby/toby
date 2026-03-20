@@ -1,3 +1,13 @@
+---
+required_vars:
+  - SPEC_NAME
+  - ITERATION
+  - SPEC_CONTENT
+optional_vars:
+  - BRANCH
+  - WORKTREE
+  - EPIC_NAME
+---
 # Planning Mode: Spec → PRD
 
 You are in PLANNING mode. Translate a spec into a structured PRD (Product Requirements Document) with actionable tasks.

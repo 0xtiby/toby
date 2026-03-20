@@ -4,9 +4,7 @@ import fs from "node:fs";
 import { loadConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec } from "../lib/specs.js";
 import { readStatus, getSpecStatus } from "../lib/status.js";
-import { readPrd, getTaskSummary } from "../lib/prd.js";
 import { getLocalDir } from "../lib/paths.js";
-import type { Task } from "../types.js";
 
 export interface StatusFlags {
 	spec?: string;
@@ -16,8 +14,26 @@ export interface StatusFlags {
 interface SpecRow {
 	name: string;
 	status: string;
-	tasks: string;
+	tokens: number;
 	iterations: number;
+}
+
+interface IterationRow {
+	index: string;
+	type: string;
+	cli: string;
+	tokens: string;
+	duration: string;
+	exitCode: string;
+}
+
+export function formatDuration(startedAt: string, completedAt: string | null): string {
+	if (!completedAt) return "—";
+	const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+	const seconds = Math.floor(ms / 1000);
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = seconds % 60;
+	return `${minutes}m ${remainingSeconds}s`;
 }
 
 function buildRows(cwd: string): { rows: SpecRow[]; warnings: string[] } {
@@ -35,20 +51,14 @@ function buildRows(cwd: string): { rows: SpecRow[]; warnings: string[] } {
 
 	const rows = specs.map((spec) => {
 		const entry = getSpecStatus(statusData, spec.name);
-		let tasks = "—";
-		try {
-			const prd = readPrd(spec.name, cwd);
-			if (prd) {
-				const summary = getTaskSummary(prd);
-				tasks = `${summary.done}/${prd.tasks.length}`;
-			}
-		} catch {
-			// Corrupt prd.json — show dash instead of crashing
-		}
+		const tokens = entry.iterations.reduce(
+			(sum: number, iter: { tokensUsed: number | null }) => sum + (iter.tokensUsed ?? 0),
+			0,
+		);
 		return {
 			name: spec.name,
 			status: entry.status,
-			tasks,
+			tokens,
 			iterations: entry.iterations.length,
 		};
 	});
@@ -61,16 +71,16 @@ function pad(str: string, len: number): string {
 }
 
 function StatusTable({ rows }: { rows: SpecRow[] }) {
-	const headers = { name: "Spec", status: "Status", tasks: "Tasks", iterations: "Iter" };
+	const headers = { name: "Spec", status: "Status", iterations: "Iter", tokens: "Tokens" };
 	const colWidths = {
 		name: Math.max(headers.name.length, ...rows.map((r) => r.name.length)),
 		status: Math.max(headers.status.length, ...rows.map((r) => r.status.length)),
-		tasks: Math.max(headers.tasks.length, ...rows.map((r) => r.tasks.length)),
 		iterations: Math.max(headers.iterations.length, ...rows.map((r) => String(r.iterations).length)),
+		tokens: Math.max(headers.tokens.length, ...rows.map((r) => String(r.tokens).length)),
 	};
 
-	const separator = `${"─".repeat(colWidths.name + 2)}┼${"─".repeat(colWidths.status + 2)}┼${"─".repeat(colWidths.tasks + 2)}┼${"─".repeat(colWidths.iterations + 2)}`;
-	const headerLine = ` ${pad(headers.name, colWidths.name)} │ ${pad(headers.status, colWidths.status)} │ ${pad(headers.tasks, colWidths.tasks)} │ ${pad(headers.iterations, colWidths.iterations)} `;
+	const separator = `${"─".repeat(colWidths.name + 2)}┼${"─".repeat(colWidths.status + 2)}┼${"─".repeat(colWidths.iterations + 2)}┼${"─".repeat(colWidths.tokens + 2)}`;
+	const headerLine = ` ${pad(headers.name, colWidths.name)} │ ${pad(headers.status, colWidths.status)} │ ${pad(headers.iterations, colWidths.iterations)} │ ${pad(headers.tokens, colWidths.tokens)} `;
 
 	return (
 		<Box flexDirection="column">
@@ -78,48 +88,38 @@ function StatusTable({ rows }: { rows: SpecRow[] }) {
 			<Text dimColor>{separator}</Text>
 			{rows.map((row) => (
 				<Text key={row.name}>
-					{` ${pad(row.name, colWidths.name)} │ ${pad(row.status, colWidths.status)} │ ${pad(row.tasks, colWidths.tasks)} │ ${pad(String(row.iterations), colWidths.iterations)} `}
+					{` ${pad(row.name, colWidths.name)} │ ${pad(row.status, colWidths.status)} │ ${pad(String(row.iterations), colWidths.iterations)} │ ${pad(String(row.tokens), colWidths.tokens)} `}
 				</Text>
 			))}
 		</Box>
 	);
 }
 
-const STATUS_ICONS: Record<string, string> = {
-	done: "✓",
-	in_progress: "●",
-	pending: "○",
-	blocked: "○",
-};
+function IterationTable({ rows }: { rows: IterationRow[] }) {
+	if (rows.length === 0) {
+		return <Text dimColor>No iterations yet</Text>;
+	}
 
-function statusIcon(status: string): string {
-	return STATUS_ICONS[status] ?? "○";
-}
-
-interface TaskRow {
-	id: string;
-	title: string;
-	status: string;
-}
-
-function TaskTable({ tasks }: { tasks: TaskRow[] }) {
-	const headers = { id: "ID", title: "Title", status: "Status" };
-	const colWidths = {
-		id: Math.max(headers.id.length, ...tasks.map((t) => t.id.length)),
-		title: Math.max(headers.title.length, ...tasks.map((t) => t.title.length)),
-		status: Math.max(headers.status.length, ...tasks.map((t) => t.status.length)),
+	const headers = { index: "#", type: "Type", cli: "CLI", tokens: "Tokens", duration: "Duration", exitCode: "Exit" };
+	const w = {
+		index: Math.max(headers.index.length, ...rows.map((r) => r.index.length)),
+		type: Math.max(headers.type.length, ...rows.map((r) => r.type.length)),
+		cli: Math.max(headers.cli.length, ...rows.map((r) => r.cli.length)),
+		tokens: Math.max(headers.tokens.length, ...rows.map((r) => r.tokens.length)),
+		duration: Math.max(headers.duration.length, ...rows.map((r) => r.duration.length)),
+		exitCode: Math.max(headers.exitCode.length, ...rows.map((r) => r.exitCode.length)),
 	};
 
-	const separator = `${"─".repeat(colWidths.id + 2)}┼${"─".repeat(colWidths.title + 2)}┼${"─".repeat(colWidths.status + 2)}`;
-	const headerLine = ` ${pad(headers.id, colWidths.id)} │ ${pad(headers.title, colWidths.title)} │ ${pad(headers.status, colWidths.status)} `;
+	const separator = `${"─".repeat(w.index + 2)}┼${"─".repeat(w.type + 2)}┼${"─".repeat(w.cli + 2)}┼${"─".repeat(w.tokens + 2)}┼${"─".repeat(w.duration + 2)}┼${"─".repeat(w.exitCode + 2)}`;
+	const headerLine = ` ${pad(headers.index, w.index)} │ ${pad(headers.type, w.type)} │ ${pad(headers.cli, w.cli)} │ ${pad(headers.tokens, w.tokens)} │ ${pad(headers.duration, w.duration)} │ ${pad(headers.exitCode, w.exitCode)} `;
 
 	return (
 		<Box flexDirection="column">
 			<Text bold>{headerLine}</Text>
 			<Text dimColor>{separator}</Text>
-			{tasks.map((task) => (
-				<Text key={task.id}>
-					{` ${pad(task.id, colWidths.id)} │ ${pad(task.title, colWidths.title)} │ ${pad(task.status, colWidths.status)} `}
+			{rows.map((row) => (
+				<Text key={row.index}>
+					{` ${pad(row.index, w.index)} │ ${pad(row.type, w.type)} │ ${pad(row.cli, w.cli)} │ ${pad(row.tokens, w.tokens)} │ ${pad(row.duration, w.duration)} │ ${pad(row.exitCode, w.exitCode)} `}
 				</Text>
 			))}
 		</Box>
@@ -145,21 +145,14 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	}
 	const entry = getSpecStatus(statusData, spec.name);
 
-	let prd: import("../types.js").PRDData | null = null;
-	let prdWarning: string | null = null;
-	try {
-		prd = readPrd(spec.name, cwd);
-	} catch {
-		prdWarning = "Corrupt prd.json — task data unavailable.";
-	}
-
-	const taskRows: TaskRow[] = prd
-		? prd.tasks.map((t: Task) => ({
-				id: t.id,
-				title: t.title,
-				status: `${statusIcon(t.status)} ${t.status}`,
-			}))
-		: [];
+	const iterationRows: IterationRow[] = entry.iterations.map((iter, i) => ({
+		index: String(i + 1),
+		type: iter.type,
+		cli: iter.cli,
+		tokens: iter.tokensUsed != null ? String(iter.tokensUsed) : "—",
+		duration: formatDuration(iter.startedAt, iter.completedAt),
+		exitCode: iter.exitCode != null ? String(iter.exitCode) : "—",
+	}));
 
 	const totalTokens = entry.iterations.reduce(
 		(sum: number, iter: { tokensUsed: number | null }) => sum + (iter.tokensUsed ?? 0),
@@ -169,15 +162,10 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	return (
 		<Box flexDirection="column">
 			{statusWarning && <Text color="yellow">{statusWarning}</Text>}
-			{prdWarning && <Text color="yellow">{prdWarning}</Text>}
 			<Text bold>{spec.name}</Text>
 			<Text>Status: {entry.status}</Text>
 			<Text>{""}</Text>
-			{taskRows.length > 0 ? (
-				<TaskTable tasks={taskRows} />
-			) : (
-				<Text dimColor>No tasks — run toby plan first.</Text>
-			)}
+			<IterationTable rows={iterationRows} />
 			<Text>{""}</Text>
 			<Text>Iterations: {entry.iterations.length}</Text>
 			<Text>Tokens used: {totalTokens}</Text>

@@ -63,16 +63,13 @@ describe("paths", () => {
 	});
 
 	describe("ensureLocalDir", () => {
-		it("creates .toby/ with status.json and prd/ when missing", () => {
+		it("creates .toby/ with status.json when missing", () => {
 			vi.mocked(fs.existsSync).mockReturnValue(false);
 
 			const result = ensureLocalDir("/tmp/proj");
 
 			expect(result).toBe("/tmp/proj/.toby");
 			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/proj/.toby", {
-				recursive: true,
-			});
-			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/proj/.toby/prd", {
 				recursive: true,
 			});
 			const written = vi.mocked(fs.writeFileSync).mock.calls[0];

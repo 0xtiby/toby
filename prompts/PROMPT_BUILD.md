@@ -1,3 +1,14 @@
+---
+required_vars:
+  - SPEC_NAME
+  - ITERATION
+  - SPEC_CONTENT
+optional_vars:
+  - BRANCH
+  - WORKTREE
+  - EPIC_NAME
+  - IS_LAST_SPEC
+---
 # Build Mode
 
 You are in BUILD mode. Implement one task from the PRD, validate, and commit.

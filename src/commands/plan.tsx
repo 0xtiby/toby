@@ -12,7 +12,6 @@ import {
 	addIteration,
 	updateSpecStatus,
 } from "../lib/status.js";
-import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
 import { AbortError } from "../lib/errors.js";
@@ -27,13 +26,11 @@ export interface PlanCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
-	onRefinement?: (specName: string, taskCount: number) => void;
+	onRefinement?: (specName: string) => void;
 }
 
 export interface PlanResult {
 	specName: string;
-	taskCount: number;
-	prdPath: string;
 }
 
 /**
@@ -68,20 +65,15 @@ export async function executePlan(
 	}
 
 	const specWithContent = loadSpecContent(found);
-	const prdPath = getPrdPath(found.name, cwd);
 
-	// Detect refinement mode: existing prd.json means we're refining
+	// Detect refinement mode: status 'planned' means we're refining
 	let status = readStatus(cwd);
-	const specStatus = status.specs[found.name];
-	const existingIterations = specStatus?.iterations.length ?? 0;
-	const isRefinement = hasPrd(found.name, cwd);
+	const specEntry = status.specs[found.name];
+	const existingIterations = specEntry?.iterations.length ?? 0;
+	const isRefinement = specEntry?.status === "planned";
 
 	if (isRefinement) {
-		const existingPrd = readPrd(found.name, cwd);
-		const taskCount = existingPrd
-			? Object.values(getTaskSummary(existingPrd)).reduce((a, b) => a + b, 0)
-			: 0;
-		callbacks.onRefinement?.(found.name, taskCount);
+		callbacks.onRefinement?.(found.name);
 	}
 
 	let iterationStartTime = new Date().toISOString();
@@ -97,13 +89,8 @@ export async function executePlan(
 					SPEC_NAME: found.name,
 					ITERATION: String(iteration + existingIterations),
 					SPEC_CONTENT: specWithContent.content ?? "",
-					PRD_PATH: prdPath,
-					BRANCH: "",
-					WORKTREE: "",
-					EPIC_NAME: "",
-					IS_LAST_SPEC: "",
 				},
-				cwd,
+				{ cwd, configVars: commandConfig.templateVars },
 			),
 		cli: commandConfig.cli,
 		model: commandConfig.model,
@@ -143,14 +130,7 @@ export async function executePlan(
 	status = updateSpecStatus(status, found.name, "planned");
 	writeStatus(status, cwd);
 
-	const prd = readPrd(found.name, cwd);
-	let taskCount = 0;
-	if (prd) {
-		const taskSummary = getTaskSummary(prd);
-		taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
-	}
-
-	return { specName: found.name, taskCount, prdPath };
+	return { specName: found.name };
 }
 
 export interface PlanAllCallbacks {
@@ -159,7 +139,7 @@ export interface PlanAllCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
-	onRefinement?: (specName: string, taskCount: number) => void;
+	onRefinement?: (specName: string) => void;
 }
 
 export interface PlanAllResult {
@@ -222,7 +202,7 @@ export default function Plan(flags: PlanFlags) {
 
 	const [result, setResult] = useState<PlanResult | null>(null);
 	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
-	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
+	const [refinementInfo, setRefinementInfo] = useState<{ specName: string } | null>(null);
 
 	// Run --all mode
 	useEffect(() => {
@@ -231,7 +211,7 @@ export default function Plan(flags: PlanFlags) {
 			onSpecStart: runner.onSpecStartCallback,
 			onSpecComplete: () => {},
 			onPhase: runner.onPhaseCallback,
-			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
+			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
 			onIteration: runner.onIterationCallback,
 			onEvent: runner.addEvent,
 		}, undefined, runner.abortSignal)
@@ -244,7 +224,7 @@ export default function Plan(flags: PlanFlags) {
 		if (runner.phase !== "init") return;
 		executePlan(runner.activeFlags, {
 			onPhase: runner.onPhaseCallback,
-			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
+			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
 			onIteration: runner.onIterationCallback,
 			onEvent: runner.addEvent,
 		}, undefined, runner.abortSignal)
@@ -274,7 +254,7 @@ export default function Plan(flags: PlanFlags) {
 			<Box flexDirection="column">
 				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned, ${allResult.skipped.length} skipped)`}</Text>
 				{allResult.planned.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks`}</Text>
+					<Text key={r.specName}>{`  ${r.specName}`}</Text>
 				))}
 				{allResult.skipped.length > 0 && (
 					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
@@ -287,8 +267,6 @@ export default function Plan(flags: PlanFlags) {
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ Plan complete for ${result.specName}`}</Text>
-				<Text>{`  Tasks created: ${result.taskCount}`}</Text>
-				<Text>{`  PRD: ${result.prdPath}`}</Text>
 			</Box>
 		);
 	}
@@ -297,7 +275,7 @@ export default function Plan(flags: PlanFlags) {
 		<Box flexDirection="column">
 			{refinementInfo && (
 				<>
-					<Text color="yellow">{`Existing plan found for ${refinementInfo.specName} (${refinementInfo.taskCount} tasks)`}</Text>
+					<Text color="yellow">{`Existing plan found for ${refinementInfo.specName}`}</Text>
 					<Text color="yellow">Running in refinement mode...</Text>
 				</>
 			)}

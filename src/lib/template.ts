@@ -3,8 +3,10 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
 	PromptTemplate,
+	PromptFrontmatter,
 	PromptName,
 	TemplateVars,
+	LoadPromptOptions,
 } from "../types.js";
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
@@ -57,17 +59,107 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Load a prompt by name: resolve its path, read the file, and substitute variables.
- * Returns the final prompt string with all provided variables replaced.
+ * Load a prompt by name: resolve its path, read the file, parse frontmatter,
+ * merge configVars with built-in vars, validate required vars, and substitute.
+ * Returns the final prompt string with frontmatter stripped and all variables replaced.
  */
 export function loadPrompt(
 	name: PromptName,
-	vars: Partial<TemplateVars>,
-	cwd?: string,
+	vars: TemplateVars,
+	options: LoadPromptOptions = {},
 ): string {
+	const { cwd, configVars } = options;
 	const promptPath = resolvePromptPath(name, cwd);
-	const content = fs.readFileSync(promptPath, "utf-8");
-	return substitute(content, vars);
+	const raw = fs.readFileSync(promptPath, "utf-8");
+	const { frontmatter, content } = parseFrontmatter(raw);
+	const merged: TemplateVars = { ...(configVars ?? {}), ...vars };
+	validateRequiredVars(frontmatter, merged, name);
+	return substitute(content, merged);
+}
+
+/**
+ * Parse frontmatter directives from a prompt string.
+ * Frontmatter must start with `---\n` and end with `---\n`.
+ * Supports two directive formats:
+ *   - List style:  `required_vars:\n  - A\n  - B`
+ *   - Inline style: `required_vars: [A, B, C]`
+ * Unrecognized keys are ignored.
+ * Returns null frontmatter and original content if no valid frontmatter found.
+ */
+export function parseFrontmatter(raw: string): {
+	frontmatter: PromptFrontmatter | null;
+	content: string;
+} {
+	if (!raw.startsWith("---\n")) {
+		return { frontmatter: null, content: raw };
+	}
+
+	const closingIndex = raw.indexOf("\n---\n", 4);
+	if (closingIndex === -1) {
+		return { frontmatter: null, content: raw };
+	}
+
+	const yamlBlock = raw.slice(4, closingIndex);
+	const content = raw.slice(closingIndex + 5);
+
+	const frontmatter: PromptFrontmatter = {};
+
+	let currentKey: "required_vars" | "optional_vars" | null = null;
+	for (const line of yamlBlock.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
+
+		const keyMatch = trimmed.match(/^(required_vars|optional_vars):\s*(.*)$/);
+		if (keyMatch) {
+			const key = keyMatch[1] as "required_vars" | "optional_vars";
+			const rest = keyMatch[2].trim();
+
+			// Inline array: required_vars: [A, B, C]
+			const inlineMatch = rest.match(/^\[(.+)\]$/);
+			if (inlineMatch) {
+				frontmatter[key] = inlineMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
+				currentKey = null;
+			} else {
+				// Block list follows
+				frontmatter[key] = [];
+				currentKey = key;
+			}
+		} else if (currentKey && trimmed.startsWith("- ")) {
+			const value = trimmed.slice(2).trim();
+			if (value) {
+				frontmatter[currentKey]!.push(value);
+			}
+		} else {
+			currentKey = null;
+		}
+	}
+
+	return { frontmatter, content };
+}
+
+/**
+ * Validate that all required vars from frontmatter are present.
+ * Throws when required variables are missing.
+ */
+export function validateRequiredVars(
+	frontmatter: PromptFrontmatter | null,
+	vars: TemplateVars,
+	promptName: string,
+): void {
+	if (!frontmatter?.required_vars?.length) return;
+
+	const missing: string[] = [];
+	for (const varName of frontmatter.required_vars) {
+		if (vars[varName] === undefined) {
+			missing.push(varName);
+		}
+	}
+
+	if (missing.length > 0) {
+		throw new Error(
+			`Prompt "${promptName}" is missing required variable(s): ${missing.join(", ")}`,
+		);
+	}
 }
 
 /**
@@ -76,10 +168,10 @@ export function loadPrompt(
  */
 export function substitute(
 	template: string,
-	vars: Partial<TemplateVars>,
+	vars: TemplateVars,
 ): string {
 	return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-		const value = vars[key as keyof TemplateVars];
+		const value = vars[key];
 		return value !== undefined ? value : match;
 	});
 }

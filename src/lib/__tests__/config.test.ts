@@ -250,6 +250,7 @@ describe("config", () => {
 				cli: "claude",
 				model: "default",
 				iterations: 2,
+				templateVars: {},
 			});
 		});
 
@@ -292,6 +293,7 @@ describe("config", () => {
 				cli: "claude",
 				model: "gpt-4",
 				iterations: 5,
+				templateVars: {},
 			});
 		});
 

@@ -6,6 +6,8 @@ import {
 	resolvePromptPath,
 	getShippedPromptPath,
 	loadPrompt,
+	parseFrontmatter,
+	validateRequiredVars,
 } from "../template.js";
 
 /**
@@ -156,7 +158,7 @@ describe("loadPrompt (integration)", () => {
 		const result = loadPrompt(
 			"PROMPT_PLAN",
 			{ SPEC_NAME: "01-auth", BRANCH: "feat/auth", ITERATION: "2" },
-			tmpDir,
+			{ cwd: tmpDir },
 		);
 		expect(result).toBe("Planning 01-auth on branch feat/auth iteration 2");
 	});
@@ -173,7 +175,7 @@ describe("loadPrompt (integration)", () => {
 		const result = loadPrompt(
 			"PROMPT_BUILD",
 			{ SPEC_CONTENT: specContent, BRANCH: "feat/auth" },
-			tmpDir,
+			{ cwd: tmpDir },
 		);
 		expect(result).toBe(
 			`# Build\n\n${specContent}\n\nBranch: feat/auth`,
@@ -191,7 +193,7 @@ describe("loadPrompt (integration)", () => {
 		const result = loadPrompt(
 			"PROMPT_BUILD_ALL",
 			{ EPIC_NAME: "authentication", IS_LAST_SPEC: "false" },
-			tmpDir,
+			{ cwd: tmpDir },
 		);
 		expect(result).toBe("Build all: authentication last=false");
 	});
@@ -204,7 +206,7 @@ describe("loadPrompt (integration)", () => {
 		const result = loadPrompt(
 			"PROMPT_PLAN",
 			{ SPEC_NAME: "anything" },
-			tmpDir,
+			{ cwd: tmpDir },
 		);
 		expect(result).toBe("");
 	});
@@ -212,8 +214,100 @@ describe("loadPrompt (integration)", () => {
 	it("throws when prompt not found", () => {
 		vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
-		expect(() => loadPrompt("PROMPT_PLAN", {}, tmpDir)).toThrow(
+		expect(() => loadPrompt("PROMPT_PLAN", {}, { cwd: tmpDir })).toThrow(
 			/Prompt "PROMPT_PLAN" not found/,
 		);
+	});
+});
+
+describe("parseFrontmatter", () => {
+	it("extracts required and optional vars from valid frontmatter", () => {
+		const raw = `---\nrequired_vars:\n  - API_KEY\n  - DB_URL\noptional_vars:\n  - VERBOSE\n---\nHello {{API_KEY}}`;
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({
+			required_vars: ["API_KEY", "DB_URL"],
+			optional_vars: ["VERBOSE"],
+		});
+		expect(content).toBe("Hello {{API_KEY}}");
+	});
+
+	it("returns null frontmatter and original content when no frontmatter", () => {
+		const raw = "Just a plain prompt with {{VAR}}";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toBeNull();
+		expect(content).toBe(raw);
+	});
+
+	it("returns null frontmatter when closing --- is missing (malformed)", () => {
+		const raw = "---\nrequired_vars:\n  - FOO\nno closing marker here";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toBeNull();
+		expect(content).toBe(raw);
+	});
+
+	it("handles frontmatter with only required_vars", () => {
+		const raw = "---\nrequired_vars:\n  - ONLY_ONE\n---\ncontent";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({ required_vars: ["ONLY_ONE"] });
+		expect(content).toBe("content");
+	});
+
+	it("handles frontmatter with only optional_vars", () => {
+		const raw = "---\noptional_vars:\n  - DEBUG\n---\ncontent";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({ optional_vars: ["DEBUG"] });
+		expect(content).toBe("content");
+	});
+
+	it("handles empty frontmatter block", () => {
+		const raw = "---\n\n---\ncontent after";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({});
+		expect(content).toBe("content after");
+	});
+
+	it("parses inline array format", () => {
+		const raw = "---\nrequired_vars: [A, B, C]\noptional_vars: [DEBUG]\n---\ncontent";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({
+			required_vars: ["A", "B", "C"],
+			optional_vars: ["DEBUG"],
+		});
+		expect(content).toBe("content");
+	});
+
+	it("ignores comment lines in frontmatter", () => {
+		const raw = "---\n# This is a comment\nrequired_vars:\n  - FOO\n---\ncontent";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({ required_vars: ["FOO"] });
+		expect(content).toBe("content");
+	});
+});
+
+describe("validateRequiredVars", () => {
+	it("does not throw when all required vars are present", () => {
+		const frontmatter = { required_vars: ["A", "B"] };
+		const vars = { A: "1", B: "2" };
+		expect(() => validateRequiredVars(frontmatter, vars, "test")).not.toThrow();
+	});
+
+	it("throws with missing var names listed", () => {
+		const frontmatter = { required_vars: ["A", "B", "C"] };
+		const vars = { A: "1" };
+		expect(() => validateRequiredVars(frontmatter, vars, "my-prompt")).toThrow(
+			'Prompt "my-prompt" is missing required variable(s): B, C',
+		);
+	});
+
+	it("does not throw when frontmatter is null (backward compat)", () => {
+		expect(() => validateRequiredVars(null, {}, "test")).not.toThrow();
+	});
+
+	it("does not throw when frontmatter has no required_vars", () => {
+		expect(() => validateRequiredVars({ optional_vars: ["X"] }, {}, "test")).not.toThrow();
+	});
+
+	it("does not throw when required_vars is empty array", () => {
+		expect(() => validateRequiredVars({ required_vars: [] }, {}, "test")).not.toThrow();
 	});
 });

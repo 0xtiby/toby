@@ -12,9 +12,8 @@ import {
 	addIteration,
 	updateSpecStatus,
 } from "../lib/status.js";
-import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration } from "../types.js";
+import type { Iteration, TemplateVars, PromptName, CommandConfig, StatusData, SpecFile } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
@@ -31,13 +30,95 @@ export interface BuildCallbacks {
 
 export interface BuildResult {
 	specName: string;
-	taskCount: number;
-	prdPath: string;
 	totalIterations: number;
 	totalTokens: number;
 	specDone: boolean;
 	error?: string;
-	remainingTasks?: number;
+}
+
+interface RunSpecBuildOptions {
+	spec: SpecFile;
+	promptName: PromptName;
+	extraVars?: TemplateVars;
+	existingIterations: number;
+	commandConfig: CommandConfig;
+	cwd: string;
+	abortSignal?: AbortSignal;
+	callbacks: BuildCallbacks;
+}
+
+async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
+	const { spec, promptName, extraVars, existingIterations, commandConfig, cwd, abortSignal, callbacks } = options;
+	let status = readStatus(cwd);
+	let iterationStartTime = new Date().toISOString();
+
+	callbacks.onPhase?.("building");
+	callbacks.onIteration?.(1, commandConfig.iterations);
+
+	const loopResult = await runLoop({
+		maxIterations: commandConfig.iterations,
+		getPrompt: (iteration) =>
+			loadPrompt(
+				promptName,
+				{
+					SPEC_NAME: spec.name,
+					ITERATION: String(iteration + existingIterations),
+					SPEC_CONTENT: spec.content ?? "",
+					...extraVars,
+				},
+				{ cwd, configVars: commandConfig.templateVars },
+			),
+		cli: commandConfig.cli,
+		model: commandConfig.model,
+		cwd,
+		continueSession: true,
+		abortSignal,
+		onEvent: (event) => {
+			callbacks.onEvent?.(event);
+		},
+		onIterationComplete: (iterResult: IterationResult) => {
+			const completedAt = new Date().toISOString();
+			const iteration: Iteration = {
+				type: "build",
+				iteration: iterResult.iteration,
+				sessionId: iterResult.sessionId,
+				cli: commandConfig.cli,
+				model: iterResult.model ?? commandConfig.model,
+				startedAt: iterationStartTime,
+				completedAt,
+				exitCode: iterResult.exitCode,
+				taskCompleted: null,
+				tokensUsed: iterResult.tokensUsed,
+			};
+			iterationStartTime = new Date().toISOString();
+			status = addIteration(status, spec.name, iteration);
+			writeStatus(status, cwd);
+			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+		},
+	});
+
+	if (loopResult.stopReason === "aborted") {
+		status = updateSpecStatus(status, spec.name, "building");
+		writeStatus(status, cwd);
+		throw new AbortError(spec.name, loopResult.iterations.length);
+	}
+
+	const totalIterations = loopResult.iterations.length;
+	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+
+	if (loopResult.stopReason === "error") {
+		status = updateSpecStatus(status, spec.name, "building");
+		writeStatus(status, cwd);
+		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
+		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
+		return { result: { specName: spec.name, totalIterations, totalTokens, specDone: false, error: errorMsg }, status };
+	}
+
+	const specDone = loopResult.stopReason === "sentinel";
+	status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
+	writeStatus(status, cwd);
+
+	return { result: { specName: spec.name, totalIterations, totalTokens, specDone }, status };
 }
 
 /**
@@ -71,116 +152,27 @@ export async function executeBuild(
 		throw new Error(`Spec '${flags.spec}' not found`);
 	}
 
-	if (!hasPrd(found.name, cwd)) {
+	const status = readStatus(cwd);
+	const specEntry = status.specs[found.name];
+	if (!specEntry || (specEntry.status !== "planned" && specEntry.status !== "building")) {
 		throw new Error(`No plan found for ${found.name}. Run 'toby plan --spec=${flags.spec}' first.`);
 	}
 
 	const specWithContent = loadSpecContent(found);
-	const prdPath = getPrdPath(found.name, cwd);
+	const existingIterations = specEntry.iterations.length;
 
-	// Check task state before starting the loop
-	const preBuildPrd = readPrd(found.name, cwd);
-	if (preBuildPrd) {
-		const preSummary = getTaskSummary(preBuildPrd);
-		const totalTasks = Object.values(preSummary).reduce((a, b) => a + b, 0);
-
-		if (totalTasks === 0) {
-			return { specName: found.name, taskCount: 0, prdPath, totalIterations: 0, totalTokens: 0, specDone: true };
-		}
-
-		if (preSummary.done === totalTasks) {
-			return { specName: found.name, taskCount: totalTasks, prdPath, totalIterations: 0, totalTokens: 0, specDone: true };
-		}
-	}
-
-	let status = readStatus(cwd);
-	const specStatus = status.specs[found.name];
-	const existingIterations = specStatus?.iterations.length ?? 0;
-
-	let iterationStartTime = new Date().toISOString();
-	callbacks.onPhase?.("building");
-	callbacks.onIteration?.(1, commandConfig.iterations);
-
-	const loopResult = await runLoop({
-		maxIterations: commandConfig.iterations,
-		getPrompt: (iteration) =>
-			loadPrompt(
-				"PROMPT_BUILD",
-				{
-					SPEC_NAME: found.name,
-					ITERATION: String(iteration + existingIterations),
-					SPEC_CONTENT: specWithContent.content ?? "",
-					PRD_PATH: prdPath,
-					BRANCH: "",
-					WORKTREE: "",
-					EPIC_NAME: "",
-					IS_LAST_SPEC: "false",
-				},
-				cwd,
-			),
-		cli: commandConfig.cli,
-		model: commandConfig.model,
+	const { result } = await runSpecBuild({
+		spec: specWithContent,
+		promptName: "PROMPT_BUILD",
+		extraVars: { IS_LAST_SPEC: "false" },
+		existingIterations,
+		commandConfig,
 		cwd,
-		continueSession: true,
 		abortSignal,
-		onEvent: (event) => {
-			callbacks.onEvent?.(event);
-		},
-		onIterationComplete: (iterResult: IterationResult) => {
-			const completedAt = new Date().toISOString();
-			const iteration: Iteration = {
-				type: "build",
-				iteration: iterResult.iteration,
-				sessionId: iterResult.sessionId,
-				cli: commandConfig.cli,
-				model: iterResult.model ?? commandConfig.model,
-				startedAt: iterationStartTime,
-				completedAt,
-				exitCode: iterResult.exitCode,
-				taskCompleted: null,
-				tokensUsed: iterResult.tokensUsed,
-			};
-			iterationStartTime = new Date().toISOString();
-			status = addIteration(status, found.name, iteration);
-			writeStatus(status, cwd);
-			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
-		},
+		callbacks,
 	});
 
-	if (loopResult.stopReason === "aborted") {
-		status = updateSpecStatus(status, found.name, "building");
-		writeStatus(status, cwd);
-		throw new AbortError(found.name, loopResult.iterations.length);
-	}
-
-	const totalIterations = loopResult.iterations.length;
-	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
-
-	const prd = readPrd(found.name, cwd);
-	let taskCount = 0;
-	let allTasksDone = false;
-	let remainingTasks = 0;
-	if (prd) {
-		const taskSummary = getTaskSummary(prd);
-		taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
-		allTasksDone = taskSummary.done === taskCount && taskCount > 0;
-		remainingTasks = taskCount - taskSummary.done;
-	}
-
-	// Handle fatal error during iteration
-	if (loopResult.stopReason === "error") {
-		status = updateSpecStatus(status, found.name, "building");
-		writeStatus(status, cwd);
-		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
-		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
-		return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone: false, error: errorMsg, remainingTasks };
-	}
-
-	const specDone = loopResult.stopReason === "sentinel" || allTasksDone;
-	status = updateSpecStatus(status, found.name, specDone ? "done" : "building");
-	writeStatus(status, cwd);
-
-	return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone, remainingTasks: specDone ? 0 : remainingTasks };
+	return result;
 }
 
 export interface BuildAllCallbacks {
@@ -229,92 +221,27 @@ export async function executeBuildAll(
 		const isLastSpec = i === planned.length - 1;
 		callbacks.onSpecStart?.(spec.name, i, planned.length);
 
-		if (!hasPrd(spec.name, cwd)) {
-			throw new Error(`No plan found for ${spec.name}. Run 'toby plan --spec=${spec.name}' first.`);
-		}
-
 		const specWithContent = loadSpecContent(spec);
-		const prdPath = getPrdPath(spec.name, cwd);
 		const commandConfig = resolveCommandConfig(config, "build", {
 			cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
 			iterations: flags.iterations,
 		});
 
-		let status = readStatus(cwd);
-
-		let iterationStartTime = new Date().toISOString();
-		callbacks.onPhase?.("building");
-		callbacks.onIteration?.(1, commandConfig.iterations);
-
-		const loopResult = await runLoop({
-			maxIterations: commandConfig.iterations,
-			getPrompt: (iteration) =>
-				loadPrompt(
-					"PROMPT_BUILD_ALL",
-					{
-						SPEC_NAME: spec.name,
-						ITERATION: String(iteration),
-						SPEC_CONTENT: specWithContent.content ?? "",
-						PRD_PATH: prdPath,
-						BRANCH: "",
-						WORKTREE: "",
-						EPIC_NAME: "",
-						IS_LAST_SPEC: isLastSpec ? "true" : "false",
-					},
-					cwd,
-				),
-			cli: commandConfig.cli,
-			model: commandConfig.model,
+		const { result } = await runSpecBuild({
+			spec: specWithContent,
+			promptName: "PROMPT_BUILD_ALL",
+			extraVars: { IS_LAST_SPEC: isLastSpec ? "true" : "false" },
+			existingIterations: 0,
+			commandConfig,
 			cwd,
-			continueSession: true,
 			abortSignal,
-			onEvent: (event) => {
-				callbacks.onEvent?.(event);
-			},
-			onIterationComplete: (iterResult: IterationResult) => {
-				const completedAt = new Date().toISOString();
-				const iteration: Iteration = {
-					type: "build",
-					iteration: iterResult.iteration,
-					sessionId: iterResult.sessionId,
-					cli: commandConfig.cli,
-					model: iterResult.model ?? commandConfig.model,
-					startedAt: iterationStartTime,
-					completedAt,
-					exitCode: iterResult.exitCode,
-					taskCompleted: null,
-					tokensUsed: iterResult.tokensUsed,
-				};
-				iterationStartTime = new Date().toISOString();
-				status = addIteration(status, spec.name, iteration);
-				writeStatus(status, cwd);
-				callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+			callbacks: {
+				onPhase: callbacks.onPhase,
+				onIteration: callbacks.onIteration,
+				onEvent: callbacks.onEvent,
 			},
 		});
 
-		if (loopResult.stopReason === "aborted") {
-			status = updateSpecStatus(status, spec.name, "building");
-			writeStatus(status, cwd);
-			throw new AbortError(spec.name, loopResult.iterations.length);
-		}
-
-		const totalIterations = loopResult.iterations.length;
-		const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
-
-		const prd = readPrd(spec.name, cwd);
-		let taskCount = 0;
-		let allTasksDone = false;
-		if (prd) {
-			const taskSummary = getTaskSummary(prd);
-			taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
-			allTasksDone = taskSummary.done === taskCount && taskCount > 0;
-		}
-
-		const specDone = loopResult.stopReason === "sentinel" || allTasksDone;
-		status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
-		writeStatus(status, cwd);
-
-		const result: BuildResult = { specName: spec.name, taskCount, prdPath, totalIterations, totalTokens, specDone };
 		built.push(result);
 		callbacks.onSpecComplete?.(result);
 	}
@@ -389,7 +316,7 @@ export default function Build(flags: BuildFlags) {
 			<Box flexDirection="column">
 				<Text color="green">{`✓ All specs built (${allResult.built.length} built, ${allResult.skipped.length} skipped)`}</Text>
 				{allResult.built.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks, ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
+					<Text key={r.specName}>{`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
 				))}
 				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
 				{allResult.skipped.length > 0 && (
@@ -400,30 +327,17 @@ export default function Build(flags: BuildFlags) {
 	}
 
 	if (runner.phase === "done" && result) {
-		if (result.taskCount === 0 && result.totalIterations === 0) {
-			return <Text color="yellow">{`No tasks found in ${result.specName} — nothing to build`}</Text>;
-		}
-		if (result.specDone && result.totalIterations === 0) {
-			return <Text color="green">{`✓ All tasks already complete for ${result.specName}`}</Text>;
-		}
 		if (result.error) {
 			return (
 				<Box flexDirection="column">
 					<Text color="red">{`✗ ${result.error}`}</Text>
-					{(result.remainingTasks ?? 0) > 0 && (
-						<Text dimColor>{`  ${result.remainingTasks} task(s) remaining`}</Text>
-					)}
 				</Box>
 			);
 		}
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ Build ${result.specDone ? "complete" : "paused"} for ${result.specName}`}</Text>
-				<Text>{`  Tasks: ${result.taskCount}, Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
-				{!result.specDone && (result.remainingTasks ?? 0) > 0 && (
-					<Text dimColor>{`  ${result.remainingTasks} task(s) remaining (max iterations reached)`}</Text>
-				)}
-				<Text>{`  PRD: ${result.prdPath}`}</Text>
+				<Text>{`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
 			</Box>
 		);
 	}

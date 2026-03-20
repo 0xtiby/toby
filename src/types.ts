@@ -9,6 +9,7 @@ export const CommandConfigSchema = z.object({
 	cli: z.enum(CLI_NAMES).default("claude"),
 	model: z.string().default("default"),
 	iterations: z.number().int().positive(),
+	templateVars: z.record(z.string(), z.string()).default({}),
 });
 
 export const PlanConfigSchema = CommandConfigSchema.extend({
@@ -40,44 +41,6 @@ export interface SpecFile {
 	/** Raw markdown content (loaded on demand) */
 	content?: string;
 }
-
-// ── PRD / Tasks (spec 04) ─────────────────────────────────────────
-
-export const TaskStatusSchema = z.enum([
-	"pending",
-	"in_progress",
-	"done",
-	"blocked",
-]);
-
-export const TaskSchema = z.object({
-	id: z.string(),
-	title: z.string(),
-	description: z.string(),
-	acceptanceCriteria: z.array(z.string()),
-	files: z.array(z.string()),
-	dependencies: z.array(z.string()),
-	status: TaskStatusSchema.default("pending"),
-	priority: z.number().int().positive(),
-});
-
-export const PrdSchema = z
-	.object({
-		spec: z.string(),
-		createdAt: z.string().datetime(),
-		tasks: z.array(TaskSchema),
-	})
-	.refine(
-		(prd) => {
-			const ids = prd.tasks.map((t) => t.id);
-			return new Set(ids).size === ids.length;
-		},
-		{ message: "Task IDs must be unique" },
-	);
-
-export type PRDData = z.infer<typeof PrdSchema>;
-export type Task = z.infer<typeof TaskSchema>;
-export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 // ── Status (spec 04) ──────────────────────────────────────────────
 
@@ -119,13 +82,14 @@ export interface PromptTemplate {
 
 export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD" | "PROMPT_BUILD_ALL";
 
-export interface TemplateVars {
-	SPEC_NAME: string;
-	ITERATION: string;
-	BRANCH: string;
-	WORKTREE: string;
-	EPIC_NAME: string;
-	IS_LAST_SPEC: string;
-	PRD_PATH: string;
-	SPEC_CONTENT: string;
+export type TemplateVars = Record<string, string>;
+
+export interface LoadPromptOptions {
+	cwd?: string;
+	configVars?: TemplateVars;
+}
+
+export interface PromptFrontmatter {
+	required_vars?: string[];
+	optional_vars?: string[];
 }

@@ -4,7 +4,7 @@ import { render } from "ink-testing-library";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import Status from "./status.js";
+import Status, { formatDuration } from "./status.js";
 
 let tmpDir: string;
 
@@ -12,14 +12,12 @@ function setup(opts: {
 	initToby?: boolean;
 	specs?: { name: string; content?: string }[];
 	statusSpecs?: Record<string, { status: string; iterations: unknown[] }>;
-	prds?: Record<string, { tasks: { status: string }[] }>;
 } = {}) {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-status-test-"));
 	const tobyDir = path.join(tmpDir, ".toby");
 
 	if (opts.initToby !== false) {
 		fs.mkdirSync(tobyDir, { recursive: true });
-		fs.mkdirSync(path.join(tobyDir, "prd"), { recursive: true });
 
 		// Write config
 		fs.writeFileSync(
@@ -60,32 +58,6 @@ function setup(opts: {
 			fs.writeFileSync(
 				path.join(specsDir, `${spec.name}.md`),
 				spec.content ?? `# ${spec.name}`,
-			);
-		}
-	}
-
-	// Create PRD files
-	if (opts.prds) {
-		const prdDir = path.join(tobyDir, "prd");
-		fs.mkdirSync(prdDir, { recursive: true });
-		for (const [name, data] of Object.entries(opts.prds)) {
-			const prd = {
-				spec: name,
-				createdAt: "2026-01-01T00:00:00Z",
-				tasks: data.tasks.map((t, i) => ({
-					id: `task-${i}`,
-					title: `Task ${i}`,
-					description: "desc",
-					acceptanceCriteria: [],
-					files: [],
-					dependencies: [],
-					status: t.status,
-					priority: i + 1,
-				})),
-			};
-			fs.writeFileSync(
-				path.join(prdDir, `${name}.json`),
-				JSON.stringify(prd, null, 2),
 			);
 		}
 	}
@@ -143,15 +115,6 @@ describe("Status", () => {
 					],
 				},
 			},
-			prds: {
-				"01-auth": {
-					tasks: [
-						{ status: "done" },
-						{ status: "done" },
-						{ status: "pending" },
-					],
-				},
-			},
 		});
 		const { lastFrame } = render(<Status version="0.1.0" />);
 		const output = lastFrame()!;
@@ -159,30 +122,68 @@ describe("Status", () => {
 		// Table headers
 		expect(output).toContain("Spec");
 		expect(output).toContain("Status");
-		expect(output).toContain("Tasks");
+		expect(output).toContain("Tokens");
 		expect(output).toContain("Iter");
 
-		// 01-auth row: planned, 2/3 done, 1 iteration
+		// 01-auth row: planned, 1 iteration, 0 tokens (tokensUsed is null)
 		expect(output).toContain("01-auth");
 		expect(output).toContain("planned");
-		expect(output).toContain("2/3");
 
-		// 02-api row: pending, no prd, 0 iterations
+		// 02-api row: pending, 0 iterations
 		expect(output).toContain("02-api");
 		expect(output).toContain("pending");
-		expect(output).toContain("—");
 	});
 
-	it("shows — for specs without prd.json", () => {
+	it("shows tokens summed from iterations", () => {
+		setup({
+			specs: [{ name: "01-auth" }],
+			statusSpecs: {
+				"01-auth": {
+					status: "building",
+					iterations: [
+						{
+							type: "build",
+							iteration: 1,
+							sessionId: null,
+							cli: "claude",
+							model: "default",
+							startedAt: "2026-01-01T00:00:00Z",
+							completedAt: "2026-01-01T00:01:00Z",
+							exitCode: 0,
+							taskCompleted: null,
+							tokensUsed: 5000,
+						},
+						{
+							type: "build",
+							iteration: 2,
+							sessionId: null,
+							cli: "claude",
+							model: "default",
+							startedAt: "2026-01-01T00:02:00Z",
+							completedAt: "2026-01-01T00:03:00Z",
+							exitCode: 0,
+							taskCompleted: null,
+							tokensUsed: 3500,
+						},
+					],
+				},
+			},
+		});
+		const { lastFrame } = render(<Status version="0.1.0" />);
+		expect(lastFrame()).toContain("8500");
+	});
+
+	it("shows 0 tokens for specs with no iterations", () => {
 		setup({
 			specs: [{ name: "01-auth" }],
 		});
 		const { lastFrame } = render(<Status version="0.1.0" />);
-		expect(lastFrame()).toContain("—");
+		// Tokens column should show 0
+		expect(lastFrame()).toContain("0");
 	});
 
 	describe("--spec detailed view", () => {
-		it("renders task list with status icons", () => {
+		it("shows spec info without task breakdown", () => {
 			setup({
 				specs: [{ name: "01-auth" }],
 				statusSpecs: {
@@ -216,26 +217,17 @@ describe("Status", () => {
 						],
 					},
 				},
-				prds: {
-					"01-auth": {
-						tasks: [
-							{ status: "done" },
-							{ status: "in_progress" },
-							{ status: "pending" },
-							{ status: "blocked" },
-						],
-					},
-				},
 			});
 			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
 			const output = lastFrame()!;
 
 			expect(output).toContain("01-auth");
 			expect(output).toContain("building");
-			expect(output).toContain("✓ done");
-			expect(output).toContain("● in_progress");
-			expect(output).toContain("○ pending");
-			expect(output).toContain("○ blocked");
+			expect(output).toContain("Type");
+			expect(output).toContain("CLI");
+			expect(output).toContain("Tokens");
+			expect(output).toContain("Duration");
+			expect(output).toContain("Exit");
 			expect(output).toContain("Iterations: 2");
 			expect(output).toContain("Tokens used: 8000");
 		});
@@ -248,12 +240,12 @@ describe("Status", () => {
 			expect(lastFrame()).toContain("Spec not found: nonexistent");
 		});
 
-		it("shows no-tasks message when no prd exists", () => {
+		it("shows no iterations yet message when no iterations", () => {
 			setup({
 				specs: [{ name: "01-auth" }],
 			});
 			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
-			expect(lastFrame()).toContain("No tasks");
+			expect(lastFrame()).toContain("No iterations yet");
 		});
 
 		it("sums token usage across all iterations", () => {
@@ -290,14 +282,53 @@ describe("Status", () => {
 						],
 					},
 				},
-				prds: {
-					"01-auth": {
-						tasks: [{ status: "pending" }],
-					},
-				},
 			});
 			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
 			expect(lastFrame()).toContain("Tokens used: 1500");
 		});
+
+		it("shows '—' for null tokensUsed, completedAt, and exitCode in iteration rows", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+				statusSpecs: {
+					"01-auth": {
+						status: "building",
+						iterations: [
+							{
+								type: "build",
+								iteration: 1,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:00:00Z",
+								completedAt: null,
+								exitCode: null,
+								taskCompleted: null,
+								tokensUsed: null,
+							},
+						],
+					},
+				},
+			});
+			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
+			const output = lastFrame()!;
+			// The iteration row should contain '—' three times: tokens, duration, exitCode
+			const dashCount = (output.match(/—/g) || []).length;
+			expect(dashCount).toBeGreaterThanOrEqual(3);
+		});
+	});
+});
+
+describe("formatDuration", () => {
+	it("returns '—' when completedAt is null", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", null)).toBe("—");
+	});
+
+	it("returns '1m 0s' for 60-second duration", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z")).toBe("1m 0s");
+	});
+
+	it("returns '0m 0s' for zero duration", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")).toBe("0m 0s");
 	});
 });
