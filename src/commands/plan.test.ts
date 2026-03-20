@@ -318,6 +318,44 @@ describe("executePlan", () => {
 			);
 		});
 	});
+
+	describe("verbose mode", () => {
+		it("passes all events to onEvent callback regardless of verbose flag", async () => {
+			const events: Array<{ type: string; content?: string }> = [];
+
+			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+				options.onEvent?.({ type: "text", timestamp: 1, content: "hello" } as never);
+				options.onEvent?.({ type: "tool_use", timestamp: 2, tool: { name: "Read" } } as never);
+				options.onEvent?.({ type: "text", timestamp: 3, content: "world" } as never);
+
+				const iterResult = {
+					iteration: 1,
+					sessionId: "sess-1",
+					exitCode: 0,
+					tokensUsed: 150,
+					model: "claude-sonnet-4-6",
+					durationMs: 1000,
+					sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			});
+
+			await executePlan(defaultFlags, {
+				onEvent: (event) => { events.push({ type: event.type, content: event.content }); },
+			}, "/project");
+
+			expect(events).toHaveLength(3);
+			expect(events[0]).toEqual({ type: "text", content: "hello" });
+			expect(events[1]).toEqual({ type: "tool_use", content: undefined });
+			expect(events[2]).toEqual({ type: "text", content: "world" });
+		});
+
+		it("verbose flag is part of PlanFlags interface", () => {
+			const verboseFlags: PlanFlags = { ...defaultFlags, verbose: true };
+			expect(verboseFlags.verbose).toBe(true);
+		});
+	});
 });
 
 describe("executePlanAll", () => {

@@ -17,6 +17,7 @@ import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
 import SpecSelector from "../components/SpecSelector.js";
+import StreamOutput from "../components/StreamOutput.js";
 
 export interface PlanFlags {
 	spec?: string;
@@ -219,7 +220,7 @@ export default function Plan(flags: PlanFlags) {
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
 	const [specName, setSpecName] = useState("");
-	const [lastLine, setLastLine] = useState("");
+	const [events, setEvents] = useState<CliEvent[]>([]);
 	const [errorMessage, setErrorMessage] = useState("");
 	const [result, setResult] = useState<PlanResult | null>(null);
 	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
@@ -227,6 +228,11 @@ export default function Plan(flags: PlanFlags) {
 	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
 	const [allProgress, setAllProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+
+	// Resolve verbose: --verbose flag overrides config.verbose
+	const resolvedVerbose = flags.verbose || (() => {
+		try { return loadConfig().verbose; } catch { return false; }
+	})();
 
 	// Discover specs for the selector when no --spec flag
 	useEffect(() => {
@@ -258,9 +264,7 @@ export default function Plan(flags: PlanFlags) {
 				setMaxIterations(max);
 			},
 			onEvent: (event) => {
-				if (event.type === "text" && event.content) {
-					setLastLine(event.content);
-				}
+				setEvents((prev) => [...prev, event]);
 			},
 		})
 			.then((r) => {
@@ -286,9 +290,7 @@ export default function Plan(flags: PlanFlags) {
 				setMaxIterations(max);
 			},
 			onEvent: (event) => {
-				if (event.type === "text" && event.content) {
-					setLastLine(event.content);
-				}
+				setEvents((prev) => [...prev, event]);
 			},
 		})
 			.then((r) => {
@@ -357,7 +359,7 @@ export default function Plan(flags: PlanFlags) {
 				{`Planning: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
 			</Text>
 			<Text dimColor>{"─".repeat(40)}</Text>
-			{lastLine && <Text>{lastLine}</Text>}
+			<StreamOutput events={events} verbose={resolvedVerbose} />
 		</Box>
 	);
 }
