@@ -12,14 +12,12 @@ function setup(opts: {
 	initToby?: boolean;
 	specs?: { name: string; content?: string }[];
 	statusSpecs?: Record<string, { status: string; iterations: unknown[] }>;
-	prds?: Record<string, { tasks: { status: string }[] }>;
 } = {}) {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-status-test-"));
 	const tobyDir = path.join(tmpDir, ".toby");
 
 	if (opts.initToby !== false) {
 		fs.mkdirSync(tobyDir, { recursive: true });
-		fs.mkdirSync(path.join(tobyDir, "prd"), { recursive: true });
 
 		// Write config
 		fs.writeFileSync(
@@ -60,32 +58,6 @@ function setup(opts: {
 			fs.writeFileSync(
 				path.join(specsDir, `${spec.name}.md`),
 				spec.content ?? `# ${spec.name}`,
-			);
-		}
-	}
-
-	// Create PRD files
-	if (opts.prds) {
-		const prdDir = path.join(tobyDir, "prd");
-		fs.mkdirSync(prdDir, { recursive: true });
-		for (const [name, data] of Object.entries(opts.prds)) {
-			const prd = {
-				spec: name,
-				createdAt: "2026-01-01T00:00:00Z",
-				tasks: data.tasks.map((t, i) => ({
-					id: `task-${i}`,
-					title: `Task ${i}`,
-					description: "desc",
-					acceptanceCriteria: [],
-					files: [],
-					dependencies: [],
-					status: t.status,
-					priority: i + 1,
-				})),
-			};
-			fs.writeFileSync(
-				path.join(prdDir, `${name}.json`),
-				JSON.stringify(prd, null, 2),
 			);
 		}
 	}
@@ -143,15 +115,6 @@ describe("Status", () => {
 					],
 				},
 			},
-			prds: {
-				"01-auth": {
-					tasks: [
-						{ status: "done" },
-						{ status: "done" },
-						{ status: "pending" },
-					],
-				},
-			},
 		});
 		const { lastFrame } = render(<Status version="0.1.0" />);
 		const output = lastFrame()!;
@@ -162,18 +125,17 @@ describe("Status", () => {
 		expect(output).toContain("Tasks");
 		expect(output).toContain("Iter");
 
-		// 01-auth row: planned, 2/3 done, 1 iteration
+		// 01-auth row: planned, tasks always —, 1 iteration
 		expect(output).toContain("01-auth");
 		expect(output).toContain("planned");
-		expect(output).toContain("2/3");
+		expect(output).toContain("—");
 
-		// 02-api row: pending, no prd, 0 iterations
+		// 02-api row: pending, 0 iterations
 		expect(output).toContain("02-api");
 		expect(output).toContain("pending");
-		expect(output).toContain("—");
 	});
 
-	it("shows — for specs without prd.json", () => {
+	it("shows — in Tasks column for all specs", () => {
 		setup({
 			specs: [{ name: "01-auth" }],
 		});
@@ -182,7 +144,7 @@ describe("Status", () => {
 	});
 
 	describe("--spec detailed view", () => {
-		it("renders task list with status icons", () => {
+		it("shows spec info without task breakdown", () => {
 			setup({
 				specs: [{ name: "01-auth" }],
 				statusSpecs: {
@@ -216,26 +178,13 @@ describe("Status", () => {
 						],
 					},
 				},
-				prds: {
-					"01-auth": {
-						tasks: [
-							{ status: "done" },
-							{ status: "in_progress" },
-							{ status: "pending" },
-							{ status: "blocked" },
-						],
-					},
-				},
 			});
 			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
 			const output = lastFrame()!;
 
 			expect(output).toContain("01-auth");
 			expect(output).toContain("building");
-			expect(output).toContain("✓ done");
-			expect(output).toContain("● in_progress");
-			expect(output).toContain("○ pending");
-			expect(output).toContain("○ blocked");
+			expect(output).toContain("No task data available");
 			expect(output).toContain("Iterations: 2");
 			expect(output).toContain("Tokens used: 8000");
 		});
@@ -248,12 +197,12 @@ describe("Status", () => {
 			expect(lastFrame()).toContain("Spec not found: nonexistent");
 		});
 
-		it("shows no-tasks message when no prd exists", () => {
+		it("shows no task data available message", () => {
 			setup({
 				specs: [{ name: "01-auth" }],
 			});
 			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
-			expect(lastFrame()).toContain("No tasks");
+			expect(lastFrame()).toContain("No task data available");
 		});
 
 		it("sums token usage across all iterations", () => {
@@ -288,11 +237,6 @@ describe("Status", () => {
 								tokensUsed: null,
 							},
 						],
-					},
-				},
-				prds: {
-					"01-auth": {
-						tasks: [{ status: "pending" }],
 					},
 				},
 			});

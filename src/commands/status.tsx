@@ -4,9 +4,7 @@ import fs from "node:fs";
 import { loadConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec } from "../lib/specs.js";
 import { readStatus, getSpecStatus } from "../lib/status.js";
-import { readPrd, getTaskSummary } from "../lib/prd.js";
 import { getLocalDir } from "../lib/paths.js";
-import type { Task } from "../types.js";
 
 export interface StatusFlags {
 	spec?: string;
@@ -35,20 +33,10 @@ function buildRows(cwd: string): { rows: SpecRow[]; warnings: string[] } {
 
 	const rows = specs.map((spec) => {
 		const entry = getSpecStatus(statusData, spec.name);
-		let tasks = "—";
-		try {
-			const prd = readPrd(spec.name, cwd);
-			if (prd) {
-				const summary = getTaskSummary(prd);
-				tasks = `${summary.done}/${prd.tasks.length}`;
-			}
-		} catch {
-			// Corrupt prd.json — show dash instead of crashing
-		}
 		return {
 			name: spec.name,
 			status: entry.status,
-			tasks,
+			tasks: "—",
 			iterations: entry.iterations.length,
 		};
 	});
@@ -85,47 +73,6 @@ function StatusTable({ rows }: { rows: SpecRow[] }) {
 	);
 }
 
-const STATUS_ICONS: Record<string, string> = {
-	done: "✓",
-	in_progress: "●",
-	pending: "○",
-	blocked: "○",
-};
-
-function statusIcon(status: string): string {
-	return STATUS_ICONS[status] ?? "○";
-}
-
-interface TaskRow {
-	id: string;
-	title: string;
-	status: string;
-}
-
-function TaskTable({ tasks }: { tasks: TaskRow[] }) {
-	const headers = { id: "ID", title: "Title", status: "Status" };
-	const colWidths = {
-		id: Math.max(headers.id.length, ...tasks.map((t) => t.id.length)),
-		title: Math.max(headers.title.length, ...tasks.map((t) => t.title.length)),
-		status: Math.max(headers.status.length, ...tasks.map((t) => t.status.length)),
-	};
-
-	const separator = `${"─".repeat(colWidths.id + 2)}┼${"─".repeat(colWidths.title + 2)}┼${"─".repeat(colWidths.status + 2)}`;
-	const headerLine = ` ${pad(headers.id, colWidths.id)} │ ${pad(headers.title, colWidths.title)} │ ${pad(headers.status, colWidths.status)} `;
-
-	return (
-		<Box flexDirection="column">
-			<Text bold>{headerLine}</Text>
-			<Text dimColor>{separator}</Text>
-			{tasks.map((task) => (
-				<Text key={task.id}>
-					{` ${pad(task.id, colWidths.id)} │ ${pad(task.title, colWidths.title)} │ ${pad(task.status, colWidths.status)} `}
-				</Text>
-			))}
-		</Box>
-	);
-}
-
 function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	const config = loadConfig(cwd);
 	const specs = discoverSpecs(cwd, config);
@@ -145,22 +92,6 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	}
 	const entry = getSpecStatus(statusData, spec.name);
 
-	let prd: import("../types.js").PRDData | null = null;
-	let prdWarning: string | null = null;
-	try {
-		prd = readPrd(spec.name, cwd);
-	} catch {
-		prdWarning = "Corrupt prd.json — task data unavailable.";
-	}
-
-	const taskRows: TaskRow[] = prd
-		? prd.tasks.map((t: Task) => ({
-				id: t.id,
-				title: t.title,
-				status: `${statusIcon(t.status)} ${t.status}`,
-			}))
-		: [];
-
 	const totalTokens = entry.iterations.reduce(
 		(sum: number, iter: { tokensUsed: number | null }) => sum + (iter.tokensUsed ?? 0),
 		0,
@@ -169,15 +100,10 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	return (
 		<Box flexDirection="column">
 			{statusWarning && <Text color="yellow">{statusWarning}</Text>}
-			{prdWarning && <Text color="yellow">{prdWarning}</Text>}
 			<Text bold>{spec.name}</Text>
 			<Text>Status: {entry.status}</Text>
 			<Text>{""}</Text>
-			{taskRows.length > 0 ? (
-				<TaskTable tasks={taskRows} />
-			) : (
-				<Text dimColor>No tasks — run toby plan first.</Text>
-			)}
+			<Text dimColor>No task data available</Text>
 			<Text>{""}</Text>
 			<Text>Iterations: {entry.iterations.length}</Text>
 			<Text>Tokens used: {totalTokens}</Text>
