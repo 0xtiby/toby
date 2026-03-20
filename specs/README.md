@@ -25,3 +25,6 @@
 | [Init, Status & Config Commands](./09-init-status-config.md) | `src/commands/init.tsx`, `src/commands/status.tsx`, `src/commands/config.tsx` | Interactive setup wizard, status display, and config editing |
 | [Default Prompt Files](./10-default-prompts.md) | `prompts/PROMPT_PLAN.md`, `prompts/PROMPT_BUILD.md`, `prompts/PROMPT_BUILD_ALL.md` | Shipped prompt templates for plan and build phases |
 | [Non-Interactive CLI Mode](./11-non-interactive-cli-mode.md) | `src/commands/init.tsx`, `src/commands/config.tsx`, `src/cli.tsx` | Non-interactive init flags and batch config set for CI/scripting |
+| [Decouple PRD from Code](./12-decouple-prd-from-code.md) | `src/lib/prd.ts`, `src/types.ts`, `src/commands/` | Remove hardcoded PRD tracking — task management lives in prompts, not code |
+| [Dynamic Template Variables](./13-dynamic-template-variables.md) | `src/lib/template.ts`, `src/types.ts` | Replace fixed TemplateVars with dynamic Record, YAML frontmatter, per-command config vars |
+| [Status Command Adaptation](./14-status-command-adaptation.md) | `src/commands/status.tsx` | Replace PRD-derived task display with iteration history from status.json |
