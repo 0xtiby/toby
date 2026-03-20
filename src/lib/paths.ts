@@ -67,7 +67,7 @@ export function ensureLocalDir(cwd?: string): string {
 	fs.mkdirSync(prdPath, { recursive: true });
 
 	if (!fs.existsSync(statusPath)) {
-		fs.writeFileSync(statusPath, "{}\n");
+		fs.writeFileSync(statusPath, JSON.stringify({ specs: {} }, null, 2) + "\n");
 	}
 
 	return dir;

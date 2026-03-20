@@ -10,11 +10,23 @@ import { getLocalDir, getGlobalDir } from "./paths.js";
 
 /**
  * Returns the absolute path to a shipped prompt file inside the package's prompts/ directory.
+ * Walks up from the current file's location until it finds a directory containing prompts/.
+ * This works both in development (src/lib/) and after bundling (dist/).
  */
 export function getShippedPromptPath(name: PromptName): string {
 	const thisFile = fileURLToPath(import.meta.url);
-	const promptsDir = path.resolve(path.dirname(thisFile), "..", "..", "prompts");
-	return path.join(promptsDir, `${name}.md`);
+	let dir = path.dirname(thisFile);
+	// Walk up to find the package root (directory containing prompts/)
+	while (dir !== path.dirname(dir)) {
+		const candidate = path.join(dir, "prompts");
+		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+			return path.join(candidate, `${name}.md`);
+		}
+		dir = path.dirname(dir);
+	}
+	// Fallback: assume prompts/ is sibling to the directory containing this file
+	const fallback = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
+	return path.join(fallback, `${name}.md`);
 }
 
 /**

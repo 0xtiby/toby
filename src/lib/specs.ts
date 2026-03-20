@@ -65,6 +65,9 @@ export function findSpec(specs: Spec[], query: string): Spec | undefined {
 		if (`${s.name}.md` === query) return true;
 		const withoutPrefix = s.name.replace(/^\d+-/, "");
 		if (withoutPrefix === query) return true;
+		// Match by numeric prefix alone (e.g., "09" matches "09-init-status-config")
+		const prefixMatch = /^(\d+)-/.exec(s.name);
+		if (prefixMatch && prefixMatch[1] === query) return true;
 		return false;
 	});
 }

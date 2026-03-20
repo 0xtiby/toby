@@ -22,6 +22,7 @@ import {
 	mergeConfigs,
 	loadConfig,
 	resolveCommandConfig,
+	validateCliName,
 	writeConfig,
 } from "../config.js";
 
@@ -298,6 +299,38 @@ describe("config", () => {
 			const config = loadConfig("/tmp/proj");
 			const result = resolveCommandConfig(config, "build");
 			expect(result.iterations).toBe(10);
+		});
+
+		it("throws on invalid --cli value", () => {
+			const config = loadConfig("/tmp/proj");
+			expect(() =>
+				resolveCommandConfig(config, "plan", { cli: "nonexistent" as never }),
+			).toThrow("Unknown CLI: nonexistent. Must be one of: claude, codex, opencode");
+		});
+
+		it("accepts valid --cli values without throwing", () => {
+			const config = loadConfig("/tmp/proj");
+			expect(() => resolveCommandConfig(config, "plan", { cli: "claude" })).not.toThrow();
+			expect(() => resolveCommandConfig(config, "plan", { cli: "codex" })).not.toThrow();
+			expect(() => resolveCommandConfig(config, "plan", { cli: "opencode" })).not.toThrow();
+		});
+	});
+
+	describe("validateCliName", () => {
+		it("does not throw for valid CLI names", () => {
+			expect(() => validateCliName("claude")).not.toThrow();
+			expect(() => validateCliName("codex")).not.toThrow();
+			expect(() => validateCliName("opencode")).not.toThrow();
+		});
+
+		it("does not throw for undefined", () => {
+			expect(() => validateCliName(undefined)).not.toThrow();
+		});
+
+		it("throws for invalid CLI name", () => {
+			expect(() => validateCliName("invalid")).toThrow(
+				"Unknown CLI: invalid. Must be one of: claude, codex, opencode",
+			);
 		});
 	});
 });
