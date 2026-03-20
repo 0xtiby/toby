@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { substitute } from "./template.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import {
+	substitute,
+	resolvePromptPath,
+	getShippedPromptPath,
+} from "./template.js";
 
 describe("substitute", () => {
 	it("replaces a single variable", () => {
@@ -81,5 +88,85 @@ describe("substitute", () => {
 		expect(substitute(template, vars)).toBe(
 			"01-auth|3|feat/auth|.worktrees/feat/auth|authentication|true|.toby/prd/01-auth.json|# Auth Spec",
 		);
+	});
+});
+
+describe("getShippedPromptPath", () => {
+	it("returns correct path under prompts/ dir", () => {
+		const result = getShippedPromptPath("PROMPT_PLAN");
+		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
+	});
+
+	it("returns path for each PromptName", () => {
+		for (const name of [
+			"PROMPT_PLAN",
+			"PROMPT_BUILD",
+			"PROMPT_BUILD_ALL",
+		] as const) {
+			const result = getShippedPromptPath(name);
+			expect(result).toContain(`${name}.md`);
+		}
+	});
+});
+
+describe("resolvePromptPath", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("returns local path when exists in .toby/", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(path.join(localDir, "PROMPT_PLAN.md"), "local");
+
+		const result = resolvePromptPath("PROMPT_PLAN", tmpDir);
+		expect(result).toBe(path.join(localDir, "PROMPT_PLAN.md"));
+	});
+
+	it("returns shipped path when no overrides exist", () => {
+		const result = resolvePromptPath("PROMPT_PLAN", tmpDir);
+		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
+	});
+
+	it("prefers local over shipped", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(path.join(localDir, "PROMPT_BUILD.md"), "local override");
+
+		const result = resolvePromptPath("PROMPT_BUILD", tmpDir);
+		expect(result).toBe(path.join(localDir, "PROMPT_BUILD.md"));
+	});
+
+	it("throws when not found anywhere", () => {
+		// Use a name that doesn't exist as shipped either — mock existsSync
+		const origExistsSync = fs.existsSync;
+		vi.spyOn(fs, "existsSync").mockReturnValue(false);
+
+		expect(() => resolvePromptPath("PROMPT_PLAN", tmpDir)).toThrow(
+			/Prompt "PROMPT_PLAN" not found/,
+		);
+
+		vi.mocked(fs.existsSync).mockRestore();
+	});
+
+	it("error message lists all checked paths", () => {
+		vi.spyOn(fs, "existsSync").mockReturnValue(false);
+
+		try {
+			resolvePromptPath("PROMPT_PLAN", tmpDir);
+		} catch (e) {
+			const msg = (e as Error).message;
+			expect(msg).toContain(".toby");
+			expect(msg).toContain("PROMPT_PLAN.md");
+			expect(msg).toContain("prompts");
+		}
+
+		vi.mocked(fs.existsSync).mockRestore();
 	});
 });
