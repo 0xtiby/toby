@@ -8,7 +8,7 @@ import type { BuildFlags } from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import type { StatusFlags } from "./commands/status.js";
-import Config from "./commands/config.js";
+import Config, { ConfigEditor } from "./commands/config.js";
 import type { ConfigFlags } from "./commands/config.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
@@ -129,13 +129,19 @@ if (!command) {
 	render(<Status {...flags} />).unmount();
 } else if (command === "config") {
 	const [, subcommand, configKey, value] = cli.input;
-	const flags: ConfigFlags = {
-		subcommand,
-		configKey,
-		value,
-		version,
-	};
-	render(<Config {...flags} />).unmount();
+	if (!subcommand) {
+		// Interactive editor mode
+		const app = render(<ConfigEditor version={version} />);
+		await app.waitUntilExit();
+	} else {
+		const flags: ConfigFlags = {
+			subcommand,
+			configKey,
+			value,
+			version,
+		};
+		render(<Config {...flags} />).unmount();
+	}
 } else {
 	render(<UnknownCommand command={command} />).unmount();
 	process.exitCode = 1;
