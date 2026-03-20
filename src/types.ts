@@ -58,11 +58,19 @@ export const TaskSchema = z.object({
 	priority: z.number().int().positive(),
 });
 
-export const PrdSchema = z.object({
-	spec: z.string(),
-	createdAt: z.string().datetime(),
-	tasks: z.array(TaskSchema),
-});
+export const PrdSchema = z
+	.object({
+		spec: z.string(),
+		createdAt: z.string().datetime(),
+		tasks: z.array(TaskSchema),
+	})
+	.refine(
+		(prd) => {
+			const ids = prd.tasks.map((t) => t.id);
+			return new Set(ids).size === ids.length;
+		},
+		{ message: "Task IDs must be unique" },
+	);
 
 export type PRDData = z.infer<typeof PrdSchema>;
 export type Task = z.infer<typeof TaskSchema>;
