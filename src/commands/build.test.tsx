@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
+import type { CliEvent } from "@0xtiby/spawner";
 
 vi.mock("../lib/config.js", () => ({
 	loadConfig: vi.fn(),
@@ -453,6 +454,104 @@ describe("Build component", () => {
 			const output = lastFrame()!;
 			expect(output).toContain("No plan found");
 		});
+	});
+
+	it("default mode filters tool call events from output", async () => {
+		let resolveLoop: (value: unknown) => void;
+		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const textEvent: CliEvent = { type: "text", timestamp: Date.now(), content: "Building auth" } as CliEvent;
+			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Read" } } as CliEvent;
+			options.onEvent?.(textEvent);
+			options.onEvent?.(toolEvent);
+			await loopPromise;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Building auth");
+			expect(output).not.toContain("Read");
+		});
+
+		resolveLoop!(undefined);
+	});
+
+	it("--verbose shows all event types including tool calls", async () => {
+		let resolveLoop: (value: unknown) => void;
+		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const textEvent: CliEvent = { type: "text", timestamp: Date.now(), content: "Building auth" } as CliEvent;
+			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Read" } } as CliEvent;
+			options.onEvent?.(textEvent);
+			options.onEvent?.(toolEvent);
+			await loopPromise;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={true} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Building auth");
+			expect(output).toContain("Read");
+		});
+
+		resolveLoop!(undefined);
+	});
+
+	it("config verbose setting used when flag not provided", async () => {
+		mockLoadConfig.mockReturnValue({
+			plan: { cli: "claude", model: "default", iterations: 2 },
+			build: { cli: "claude", model: "default", iterations: 10 },
+			specsDir: "specs",
+			excludeSpecs: ["README.md"],
+			verbose: true,
+		});
+
+		let resolveLoop: (value: unknown) => void;
+		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Bash" } } as CliEvent;
+			options.onEvent?.(toolEvent);
+			await loopPromise;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Bash");
+		});
+
+		resolveLoop!(undefined);
 	});
 });
 
