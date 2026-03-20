@@ -201,13 +201,13 @@ describe("executeBuild", () => {
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				PRD_PATH: "",
 				BRANCH: "",
 				WORKTREE: "",
 				EPIC_NAME: "",
 				IS_LAST_SPEC: "false",
 			},
 			"/project",
+			{},
 		);
 	});
 
@@ -323,6 +323,7 @@ describe("executeBuild", () => {
 			"PROMPT_BUILD",
 			expect.objectContaining({ ITERATION: "3" }),
 			"/project",
+			{},
 		);
 	});
 
