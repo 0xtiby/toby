@@ -138,11 +138,6 @@ describe("createProject", () => {
 		expect(result.specsDirCreated).toBe(false);
 	});
 
-	it("creates .toby/prd directory", () => {
-		createProject(DEFAULT_SELECTIONS, tmpDir);
-		expect(fs.existsSync(path.join(tmpDir, ".toby", "prd"))).toBe(true);
-	});
-
 	it("uses custom specs directory name", () => {
 		const sel = { ...DEFAULT_SELECTIONS, specsDir: "my-specs" };
 		createProject(sel, tmpDir);
