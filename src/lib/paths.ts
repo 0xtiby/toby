@@ -2,6 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ConfigSchema } from "../types.js";
 
 /** Global config directory: ~/.toby */
 export const GLOBAL_TOBY_DIR = ".toby";
@@ -24,6 +25,28 @@ export const CONFIG_FILE = "config.json";
 /** Returns absolute path to ~/.toby */
 export function getGlobalDir(): string {
 	return path.join(os.homedir(), GLOBAL_TOBY_DIR);
+}
+
+/**
+ * Ensure ~/.toby/ exists with default config.json.
+ * Warns and continues if the directory is not writable.
+ */
+export function ensureGlobalDir(): void {
+	const dir = getGlobalDir();
+	const configPath = path.join(dir, CONFIG_FILE);
+
+	try {
+		fs.mkdirSync(dir, { recursive: true });
+
+		if (!fs.existsSync(configPath)) {
+			const defaults = ConfigSchema.parse({});
+			fs.writeFileSync(configPath, JSON.stringify(defaults, null, 2) + "\n");
+		}
+	} catch (err) {
+		console.warn(
+			`Warning: could not initialize ${dir}: ${(err as Error).message}`,
+		);
+	}
 }
 
 /** Returns absolute path to <cwd>/.toby */

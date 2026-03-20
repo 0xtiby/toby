@@ -6,6 +6,7 @@ import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import Config from "./commands/config.js";
+import { ensureGlobalDir } from "./lib/paths.js";
 
 const COMMANDS = ["plan", "build", "init", "status", "config"] as const;
 type Command = (typeof COMMANDS)[number];
@@ -65,6 +66,8 @@ Commands
 		flags: {},
 	},
 );
+
+ensureGlobalDir();
 
 const [command] = cli.input;
 
