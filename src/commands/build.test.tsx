@@ -31,13 +31,6 @@ vi.mock("../lib/status.js", () => ({
 	updateSpecStatus: vi.fn(),
 }));
 
-vi.mock("../lib/prd.js", () => ({
-	hasPrd: vi.fn(),
-	getPrdPath: vi.fn(),
-	readPrd: vi.fn(),
-	getTaskSummary: vi.fn(),
-}));
-
 vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
@@ -48,7 +41,6 @@ import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
-import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
 import { executeBuild, executeBuildAll } from "./build.js";
 import { AbortError } from "../lib/errors.js";
 import Build from "./build.js";
@@ -67,11 +59,6 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
-const mockHasPrd = vi.mocked(hasPrd);
-const mockGetPrdPath = vi.mocked(getPrdPath);
-const mockReadPrd = vi.mocked(readPrd);
-const mockGetTaskSummary = vi.mocked(getTaskSummary);
-
 const defaultFlags: BuildFlags = {
 	spec: "auth",
 	all: false,
@@ -107,20 +94,18 @@ function setupDefaults() {
 	mockSortSpecs.mockImplementation((specs) => [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
-	mockHasPrd.mockReturnValue(true);
-	mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
 	mockLoadPrompt.mockReturnValue("Build prompt for 01-auth");
-	mockReadStatus.mockReturnValue({ specs: {} });
+	mockReadStatus.mockReturnValue({
+		specs: {
+			"01-auth": {
+				status: "planned",
+				plannedAt: "2026-03-20T00:00:00.000Z",
+				iterations: [],
+			},
+		},
+	});
 	mockAddIteration.mockImplementation((status) => status);
 	mockUpdateSpecStatus.mockImplementation((status) => status);
-	mockReadPrd.mockReturnValue({
-		spec: "01-auth",
-		createdAt: "2026-03-20T00:00:00.000Z",
-		tasks: [
-			{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
-		],
-	});
-	mockGetTaskSummary.mockReturnValue({ pending: 1, in_progress: 0, done: 0, blocked: 0 });
 
 	mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 		const iterResult = {
@@ -157,8 +142,8 @@ describe("executeBuild", () => {
 		expect(opts.continueSession).toBe(true);
 	});
 
-	it("errors when prd.json is missing for the spec", async () => {
-		mockHasPrd.mockReturnValue(false);
+	it("errors when spec has no plan in status.json", async () => {
+		mockReadStatus.mockReturnValue({ specs: {} });
 
 		await expect(
 			executeBuild(defaultFlags, {}, "/project"),
@@ -213,7 +198,7 @@ describe("executeBuild", () => {
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				PRD_PATH: "/project/.toby/prd/01-auth.json",
+				PRD_PATH: "",
 				BRANCH: "",
 				WORKTREE: "",
 				EPIC_NAME: "",
@@ -247,50 +232,6 @@ describe("executeBuild", () => {
 		await expect(
 			executeBuild({ ...defaultFlags, spec: undefined }, {}, "/project"),
 		).rejects.toThrow("No --spec flag provided");
-	});
-
-	it("completes gracefully when prd has 0 tasks", async () => {
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
-
-		const result = await executeBuild(defaultFlags, {}, "/project");
-
-		expect(result.taskCount).toBe(0);
-		expect(result.totalIterations).toBe(0);
-		expect(result.specDone).toBe(true);
-		expect(mockRunLoop).not.toHaveBeenCalled();
-	});
-
-	it("completes with 'all done' when all tasks already complete", async () => {
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [
-				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
-				{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
-			],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 2, blocked: 0 });
-
-		const result = await executeBuild(defaultFlags, {}, "/project");
-
-		expect(result.taskCount).toBe(2);
-		expect(result.totalIterations).toBe(0);
-		expect(result.specDone).toBe(true);
-		expect(mockRunLoop).not.toHaveBeenCalled();
-	});
-
-	it("returns remaining task count when max iterations reached", async () => {
-		mockGetTaskSummary.mockReturnValue({ pending: 2, in_progress: 1, done: 1, blocked: 0 });
-
-		const result = await executeBuild(defaultFlags, {}, "/project");
-
-		expect(result.specDone).toBe(false);
-		expect(result.remainingTasks).toBe(3);
 	});
 
 	it("allows build on spec with building status", async () => {
@@ -390,35 +331,6 @@ describe("executeBuild", () => {
 			};
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
-		});
-
-		const result = await executeBuild(defaultFlags, {}, "/project");
-
-		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
-			expect.anything(),
-			"01-auth",
-			"done",
-		);
-		expect(result.specDone).toBe(true);
-	});
-
-	it("marks spec as done when all tasks complete after build", async () => {
-		// Pre-build: 1 pending task (so build proceeds)
-		// Post-build: all done (so spec marked done)
-		let callCount = 0;
-		mockGetTaskSummary.mockImplementation(() => {
-			callCount++;
-			if (callCount === 1) return { pending: 1, in_progress: 0, done: 2, blocked: 0 };
-			return { pending: 0, in_progress: 0, done: 3, blocked: 0 };
-		});
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [
-				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
-				{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
-				{ id: "t3", title: "Task 3", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 3 },
-			],
 		});
 
 		const result = await executeBuild(defaultFlags, {}, "/project");
@@ -615,8 +527,8 @@ describe("Build component", () => {
 		});
 	});
 
-	it("shows error when prd.json missing", async () => {
-		mockHasPrd.mockReturnValue(false);
+	it("shows error when no plan in status.json", async () => {
+		mockReadStatus.mockReturnValue({ specs: {} });
 
 		const { lastFrame } = render(
 			<Build spec="auth" all={false} verbose={false} />,
@@ -625,59 +537,6 @@ describe("Build component", () => {
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
 			expect(output).toContain("No plan found");
-		});
-	});
-
-	it("shows 'no tasks' message when prd has 0 tasks", async () => {
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
-
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("No tasks found");
-			expect(output).toContain("nothing to build");
-		});
-	});
-
-	it("shows 'all complete' message when all tasks already done", async () => {
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [
-				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
-			],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 1, blocked: 0 });
-
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("All tasks already complete");
-		});
-	});
-
-	it("shows remaining tasks when max iterations reached", async () => {
-		mockGetTaskSummary.mockReturnValue({ pending: 2, in_progress: 0, done: 1, blocked: 0 });
-
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("remaining");
-			expect(output).toContain("max iterations");
 		});
 	});
 
@@ -825,14 +684,6 @@ describe("integration: full build flow with mocked spawner", () => {
 			return { iterations, stopReason: "sentinel" as const };
 		});
 
-		// Post-build: re-read prd shows all tasks done
-		let readCount = 0;
-		mockGetTaskSummary.mockImplementation(() => {
-			readCount++;
-			if (readCount === 1) return { pending: 1, in_progress: 0, done: 0, blocked: 0 };
-			return { pending: 0, in_progress: 0, done: 1, blocked: 0 };
-		});
-
 		const result = await executeBuild(defaultFlags, {}, "/project");
 
 		expect(result.totalIterations).toBe(4);
@@ -850,9 +701,7 @@ describe("integration: full build flow with mocked spawner", () => {
 			{ name: "03-ui", path: "/p/specs/03-ui.md", order: 3, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		const specOrder: string[] = [];
 		const isLastValues: Record<string, string> = {};
@@ -887,8 +736,8 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(result.built.map((r) => r.specName)).toEqual(["01-auth", "02-api", "03-ui"]);
 	});
 
-	it("error flow when prd.json missing halts before loop", async () => {
-		mockHasPrd.mockReturnValue(false);
+	it("error flow when spec not planned halts before loop", async () => {
+		mockReadStatus.mockReturnValue({ specs: {} });
 
 		await expect(
 			executeBuild(defaultFlags, {}, "/project"),
@@ -913,12 +762,9 @@ describe("integration: full build flow with mocked spawner", () => {
 			return { iterations, stopReason: "max_iterations" as const };
 		});
 
-		mockGetTaskSummary.mockReturnValue({ pending: 3, in_progress: 1, done: 1, blocked: 0 });
-
 		const result = await executeBuild(defaultFlags, {}, "/project");
 
 		expect(result.specDone).toBe(false);
-		expect(result.remainingTasks).toBe(4); // pending + in_progress
 		expect(result.totalIterations).toBe(2);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
 		// Should NOT be marked done
@@ -930,9 +776,15 @@ describe("integration: full build flow with mocked spawner", () => {
 		mockDiscoverSpecs.mockReturnValue([spec]);
 		mockFindSpec.mockReturnValue(spec);
 		mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth\nFull spec content" });
-		mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
-		mockHasPrd.mockReturnValue(true);
-		mockReadStatus.mockReturnValue({ specs: {} });
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
 
 		const updatedStatus = { specs: { "01-auth": { status: "building", plannedAt: null, iterations: [] } } };
 		mockAddIteration.mockReturnValue(updatedStatus);
@@ -958,16 +810,6 @@ describe("integration: full build flow with mocked spawner", () => {
 			return { iterations, stopReason: "max_iterations" as const };
 		});
 
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [
-				{ id: "t1", title: "Setup auth middleware", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
-				{ id: "t2", title: "Add login endpoint", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
-			],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 1, in_progress: 0, done: 1, blocked: 0 });
-
 		const callbacks = {
 			onPhase: vi.fn(),
 			onIteration: vi.fn(),
@@ -983,7 +825,6 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(mockLoadConfig).toHaveBeenCalledWith("/project");
 		expect(mockDiscoverSpecs).toHaveBeenCalledWith("/project", expect.anything());
 		expect(mockFindSpec).toHaveBeenCalledWith(expect.anything(), "auth");
-		expect(mockHasPrd).toHaveBeenCalledWith("01-auth", "/project");
 		expect(mockLoadSpecContent).toHaveBeenCalledWith(spec);
 		expect(mockRunLoop).toHaveBeenCalledOnce();
 		expect(iterationCount).toBe(3);
@@ -992,8 +833,6 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(mockWriteStatus).toHaveBeenCalledTimes(4); // 3 iterations + 1 final
 
 		expect(result.specName).toBe("01-auth");
-		expect(result.taskCount).toBe(2);
-		expect(result.prdPath).toBe("/project/.toby/prd/01-auth.json");
 
 		expect(callbacks.onPhase).toHaveBeenCalledWith("building");
 		expect(callbacks.onIteration).toHaveBeenCalledTimes(4); // initial + 3 iteration completions
@@ -1012,9 +851,7 @@ describe("executeBuildAll", () => {
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		const specOrder: string[] = [];
 		await executeBuildAll(
@@ -1034,9 +871,7 @@ describe("executeBuildAll", () => {
 			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
@@ -1062,9 +897,7 @@ describe("executeBuildAll", () => {
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
@@ -1092,9 +925,7 @@ describe("executeBuildAll", () => {
 			{ name: "03-ui", path: "/p/specs/03-ui.md", order: 3, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
@@ -1134,9 +965,7 @@ describe("executeBuildAll", () => {
 			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "pending" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
-		mockHasPrd.mockReturnValue(true);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
 
 		const result = await executeBuildAll({ all: true, verbose: false }, {}, "/p");
 
