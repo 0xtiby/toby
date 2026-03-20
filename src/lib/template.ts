@@ -45,13 +45,17 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Resolve a prompt template by name, searching local then global then bundled.
+ * Load a prompt by name: resolve its path, read the file, and substitute variables.
+ * Returns the final prompt string with all provided variables replaced.
  */
-export function resolvePrompt(
-	_name: PromptName,
-	_projectRoot?: string,
-): Promise<PromptTemplate> {
-	throw new Error("resolvePrompt: not implemented");
+export function loadPrompt(
+	name: PromptName,
+	vars: Partial<TemplateVars>,
+	cwd?: string,
+): string {
+	const promptPath = resolvePromptPath(name, cwd);
+	const content = fs.readFileSync(promptPath, "utf-8");
+	return substitute(content, vars);
 }
 
 /**

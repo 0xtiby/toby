@@ -6,6 +6,7 @@ import {
 	substitute,
 	resolvePromptPath,
 	getShippedPromptPath,
+	loadPrompt,
 } from "./template.js";
 
 describe("substitute", () => {
@@ -155,6 +156,11 @@ describe("resolvePromptPath", () => {
 		vi.mocked(fs.existsSync).mockRestore();
 	});
 
+	it("PROMPT_BUILD_ALL resolves correctly", () => {
+		const result = resolvePromptPath("PROMPT_BUILD_ALL", tmpDir);
+		expect(result).toMatch(/prompts[/\\]PROMPT_BUILD_ALL\.md$/);
+	});
+
 	it("error message lists all checked paths", () => {
 		vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
@@ -166,6 +172,69 @@ describe("resolvePromptPath", () => {
 			expect(msg).toContain("PROMPT_PLAN.md");
 			expect(msg).toContain("prompts");
 		}
+
+		vi.mocked(fs.existsSync).mockRestore();
+	});
+});
+
+describe("loadPrompt", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("reads file and substitutes all vars", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(localDir, "PROMPT_PLAN.md"),
+			"Plan for {{SPEC_NAME}} iteration {{ITERATION}}",
+		);
+
+		const result = loadPrompt(
+			"PROMPT_PLAN",
+			{ SPEC_NAME: "01-auth", ITERATION: "3" },
+			tmpDir,
+		);
+		expect(result).toBe("Plan for 01-auth iteration 3");
+	});
+
+	it("substitutes SPEC_CONTENT when provided in vars", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(localDir, "PROMPT_BUILD.md"),
+			"Build spec:\n{{SPEC_CONTENT}}",
+		);
+
+		const result = loadPrompt(
+			"PROMPT_BUILD",
+			{ SPEC_CONTENT: "# Auth\n\nImplement login flow" },
+			tmpDir,
+		);
+		expect(result).toBe("Build spec:\n# Auth\n\nImplement login flow");
+	});
+
+	it("returns empty string for empty file", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(path.join(localDir, "PROMPT_PLAN.md"), "");
+
+		const result = loadPrompt("PROMPT_PLAN", { SPEC_NAME: "test" }, tmpDir);
+		expect(result).toBe("");
+	});
+
+	it("throws when prompt not found", () => {
+		vi.spyOn(fs, "existsSync").mockReturnValue(false);
+
+		expect(() => loadPrompt("PROMPT_PLAN", {}, tmpDir)).toThrow(
+			/Prompt "PROMPT_PLAN" not found/,
+		);
 
 		vi.mocked(fs.existsSync).mockRestore();
 	});
