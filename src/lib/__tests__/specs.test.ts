@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ConfigSchema } from "../types.js";
+import { ConfigSchema } from "../../types.js";
 import {
 	discoverSpecs,
 	filterByStatus,
@@ -10,8 +10,8 @@ import {
 	loadSpecContent,
 	parseSpecOrder,
 	sortSpecs,
-} from "./specs.js";
-import type { Spec } from "./specs.js";
+} from "../specs.js";
+import type { Spec } from "../specs.js";
 
 describe("parseSpecOrder", () => {
 	it("extracts numeric prefix from 01-auth.md", () => {
