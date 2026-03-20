@@ -16,10 +16,14 @@ export function resolvePrompt(
 
 /**
  * Substitute template variables into prompt content.
+ * Unknown {{VAR}} patterns are left as-is.
  */
 export function substitute(
-	_template: string,
-	_vars: TemplateVars,
+	template: string,
+	vars: Partial<TemplateVars>,
 ): string {
-	throw new Error("substitute: not implemented");
+	return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+		const value = vars[key as keyof TemplateVars];
+		return value !== undefined ? value : match;
+	});
 }
