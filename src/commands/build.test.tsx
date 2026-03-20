@@ -919,6 +919,7 @@ describe("executeBuildAll", () => {
 			"PROMPT_BUILD_ALL",
 			expect.anything(),
 			"/p",
+			expect.anything(),
 		);
 	});
 
