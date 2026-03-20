@@ -5,7 +5,7 @@ import Plan from "./commands/plan.js";
 import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
-import Config, { ConfigEditor } from "./commands/config.js";
+import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
 function Help({ version }: { version: string }) {
@@ -78,6 +78,7 @@ Config Subcommands
   config             Interactive config editor
   config get <key>   Show a config value (dot-notation)
   config set <key> <value>  Set a config value
+  config set <k>=<v> [<k>=<v>...]  Batch set config values
 `,
 	{
 		importMeta: import.meta,
@@ -152,8 +153,12 @@ const commands: Record<string, CommandEntry> = {
 	},
 	config: {
 		render: (_flags, input, version) => {
-			const [, subcommand, configKey, value] = input;
+			const [, subcommand, ...rest] = input;
 			if (!subcommand) return <ConfigEditor version={version} />;
+			if (subcommand === "set" && rest.some((arg) => arg.includes("="))) {
+				return <ConfigSetBatch pairs={rest} />;
+			}
+			const [configKey, value] = rest;
 			return (
 				<Config
 					subcommand={subcommand}
