@@ -504,6 +504,81 @@ export function ConfigEditor({ version }: { version: string }) {
 	);
 }
 
+export function ConfigSetBatch({ pairs }: { pairs: string[] }) {
+	// Parse all pairs first
+	const parsed: { key: string; value: unknown; raw: string }[] = [];
+	const errors: string[] = [];
+
+	for (const pair of pairs) {
+		const eqIndex = pair.indexOf("=");
+		if (eqIndex === -1) {
+			errors.push(`Invalid format: "${pair}" (expected key=value)`);
+			continue;
+		}
+
+		const key = pair.slice(0, eqIndex);
+		const raw = pair.slice(eqIndex + 1);
+
+		if (!(key in VALID_KEYS)) {
+			errors.push(`Unknown config key: ${key}`);
+			continue;
+		}
+
+		try {
+			const value = parseValue(raw, VALID_KEYS[key]);
+			parsed.push({ key, value, raw });
+		} catch (err) {
+			errors.push(`Invalid value for ${key}: ${(err as Error).message}`);
+		}
+	}
+
+	// Atomic: if any errors, write nothing
+	if (errors.length > 0) {
+		process.exitCode = 1;
+		return (
+			<Box flexDirection="column">
+				{errors.map((e, i) => (
+					<Text key={i} color="red">{e}</Text>
+				))}
+			</Box>
+		);
+	}
+
+	// Read existing config, merge all, write once
+	const cwd = process.cwd();
+	const configPath = path.join(getLocalDir(cwd), CONFIG_FILE);
+	let existing: Record<string, unknown> = {};
+	try {
+		const content = fs.readFileSync(configPath, "utf-8");
+		existing = JSON.parse(content);
+	} catch {
+		// File doesn't exist yet, start fresh
+	}
+
+	for (const { key, value } of parsed) {
+		setNestedValue(existing, key, value);
+	}
+
+	try {
+		writeConfig(existing as Partial<TobyConfig>, configPath);
+	} catch (err) {
+		process.exitCode = 1;
+		const code = (err as NodeJS.ErrnoException).code;
+		const msg = code === "EACCES"
+			? `Permission denied writing to ${configPath}`
+			: `Failed to write config: ${(err as Error).message}`;
+		return <Text color="red">{msg}</Text>;
+	}
+
+	return (
+		<Box flexDirection="column">
+			{parsed.map(({ key, value }) => (
+				<Text key={key} color="green">{`Set ${key} = ${String(value)}`}</Text>
+			))}
+		</Box>
+	);
+}
+
 function UnknownSubcommand({ subcommand }: { subcommand: string }) {
 	return (
 		<Text color="red">
