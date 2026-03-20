@@ -18,6 +18,7 @@ export interface LoopOptions {
 	continueSession?: boolean;
 	onEvent?: (event: CliEvent) => void;
 	onIterationComplete?: (result: IterationResult) => void;
+	abortSignal?: AbortSignal;
 }
 
 export interface IterationResult {
@@ -32,7 +33,7 @@ export interface IterationResult {
 
 export interface LoopResult {
 	iterations: IterationResult[];
-	stopReason: "sentinel" | "max_iterations" | "error";
+	stopReason: "sentinel" | "max_iterations" | "error" | "aborted";
 }
 
 /**
@@ -49,9 +50,14 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		continueSession = false,
 		onEvent,
 		onIterationComplete,
+		abortSignal,
 	} = options;
 
 	const results: IterationResult[] = [];
+
+	if (abortSignal?.aborted) {
+		return { iterations: results, stopReason: "aborted" };
+	}
 
 	if (maxIterations <= 0) {
 		return { iterations: results, stopReason: "max_iterations" };
@@ -76,6 +82,13 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
 		const proc = spawn(spawnOpts);
 
+		let aborted = false;
+		const onAbort = () => {
+			aborted = true;
+			proc.interrupt();
+		};
+		abortSignal?.addEventListener("abort", onAbort, { once: true });
+
 		let sentinelDetected = false;
 		for await (const event of proc.events) {
 			onEvent?.(event);
@@ -85,6 +98,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		}
 
 		const cliResult = await proc.done;
+		abortSignal?.removeEventListener("abort", onAbort);
 
 		const iterResult: IterationResult = {
 			iteration,
@@ -98,6 +112,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
 		results.push(iterResult);
 		onIterationComplete?.(iterResult);
+
+		if (aborted) {
+			return { iterations: results, stopReason: "aborted" };
+		}
 
 		if (sentinelDetected) {
 			return { iterations: results, stopReason: "sentinel" };

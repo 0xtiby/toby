@@ -297,6 +297,79 @@ describe("runLoop", () => {
 		});
 	});
 
+	describe("abort signal", () => {
+		it("returns immediately when abortSignal is already aborted", async () => {
+			const controller = new AbortController();
+			controller.abort();
+
+			const result = await runLoop(baseOptions({ maxIterations: 3, abortSignal: controller.signal }));
+
+			expect(result.stopReason).toBe("aborted");
+			expect(result.iterations).toHaveLength(0);
+			expect(mockSpawn).not.toHaveBeenCalled();
+		});
+
+		it("interrupts proc and stops loop when aborted mid-iteration", async () => {
+			let callCount = 0;
+			const controller = new AbortController();
+
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				if (callCount === 2) {
+					// Create a proc whose events trigger abort during consumption
+					const interruptFn = vi.fn();
+					return {
+						events: (async function* () {
+							yield { type: "text", content: "working...", raw: "working...", timestamp: Date.now() } as never;
+							controller.abort();
+						})(),
+						pid: 123,
+						interrupt: interruptFn,
+						done: Promise.resolve(makeCliResult()),
+					};
+				}
+				return makeMockProc([{ type: "text", content: "working...", raw: "working..." }]);
+			});
+
+			const result = await runLoop(baseOptions({ maxIterations: 5, abortSignal: controller.signal }));
+
+			expect(result.stopReason).toBe("aborted");
+			expect(result.iterations).toHaveLength(2);
+			expect(mockSpawn).toHaveBeenCalledTimes(2);
+		});
+
+		it("runs normally when abortSignal is undefined", async () => {
+			mockSpawn.mockImplementation(() =>
+				makeMockProc([{ type: "text", content: "working...", raw: "working..." }]),
+			);
+
+			const result = await runLoop(baseOptions({ maxIterations: 3 }));
+
+			expect(result.stopReason).toBe("max_iterations");
+			expect(result.iterations).toHaveLength(3);
+		});
+
+		it("calls proc.interrupt when aborted", async () => {
+			const controller = new AbortController();
+			const interruptFn = vi.fn();
+
+			mockSpawn.mockImplementation(() => ({
+				events: (async function* () {
+					yield { type: "text", content: "working...", raw: "working...", timestamp: Date.now() } as never;
+					// Abort during event consumption so listener is already attached
+					controller.abort();
+				})(),
+				pid: 123,
+				interrupt: interruptFn,
+				done: Promise.resolve(makeCliResult()),
+			}));
+
+			await runLoop(baseOptions({ maxIterations: 1, abortSignal: controller.signal }));
+
+			expect(interruptFn).toHaveBeenCalled();
+		});
+	});
+
 	describe("session continuity", () => {
 		it("passes sessionId from iteration 1 to iteration 2 when continueSession is true", async () => {
 			let callCount = 0;
