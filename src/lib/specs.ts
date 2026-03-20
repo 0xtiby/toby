@@ -1,4 +1,8 @@
-import type { SpecFile } from "../types.js";
+import fs from "node:fs";
+import path from "node:path";
+import type { SpecFile, TobyConfig } from "../types.js";
+import { StatusSchema } from "../types.js";
+import { getLocalDir, STATUS_FILE } from "./paths.js";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -43,18 +47,70 @@ export function sortSpecs<T extends { name: string; order: number | null }>(
 	});
 }
 
-// ── Filesystem (stubs) ──────────────────────────────────────────
+// ── Filesystem ──────────────────────────────────────────────────
 
 /**
- * Discover spec files in the given directory, sorted by numeric prefix.
+ * Read spec status map from .toby/status.json.
+ * Returns empty record if file is missing or malformed.
  */
-export function discoverSpecs(_specsDir: string): Promise<SpecFile[]> {
-	throw new Error("discoverSpecs: not implemented");
+function readStatusMap(cwd: string): Record<string, SpecStatus> {
+	const statusPath = path.join(getLocalDir(cwd), STATUS_FILE);
+	try {
+		const raw = JSON.parse(fs.readFileSync(statusPath, "utf-8"));
+		const parsed = StatusSchema.safeParse(raw);
+		if (!parsed.success) return {};
+		const result: Record<string, SpecStatus> = {};
+		for (const [name, entry] of Object.entries(parsed.data.specs)) {
+			result[name] = entry.status;
+		}
+		return result;
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * Discover spec files in the configured specs directory, sorted by numeric prefix.
+ * Reads .md files, applies excludeSpecs filter, looks up status from status.json.
+ * Returns empty array if specs directory is missing.
+ */
+export function discoverSpecs(cwd: string, config: TobyConfig): Spec[] {
+	const specsDir = path.resolve(cwd, config.specsDir);
+
+	let entries: string[];
+	try {
+		entries = fs.readdirSync(specsDir);
+	} catch {
+		return [];
+	}
+
+	const mdFiles = entries.filter((f) => {
+		if (!f.endsWith(".md")) return false;
+		// Exclude by filename match
+		return !config.excludeSpecs.includes(f);
+	});
+
+	if (mdFiles.length === 0) return [];
+
+	const statusMap = readStatusMap(cwd);
+
+	const specs: Spec[] = mdFiles.map((filename) => {
+		const name = filename.replace(/\.md$/, "");
+		return {
+			name,
+			path: path.join(specsDir, filename),
+			order: parseSpecOrder(filename),
+			status: statusMap[name] ?? "pending",
+		};
+	});
+
+	return sortSpecs(specs);
 }
 
 /**
  * Load the content of a spec file.
  */
-export function loadSpecContent(_spec: SpecFile): Promise<SpecFile> {
-	throw new Error("loadSpecContent: not implemented");
+export function loadSpecContent(spec: SpecFile): SpecFile {
+	const content = fs.readFileSync(spec.path, "utf-8");
+	return { ...spec, content };
 }

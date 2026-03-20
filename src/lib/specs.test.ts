@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { parseSpecOrder, sortSpecs } from "./specs.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ConfigSchema } from "../types.js";
+import { discoverSpecs, loadSpecContent, parseSpecOrder, sortSpecs } from "./specs.js";
 
 describe("parseSpecOrder", () => {
 	it("extracts numeric prefix from 01-auth.md", () => {
@@ -66,5 +70,130 @@ describe("sortSpecs", () => {
 		const original = [...specs];
 		sortSpecs(specs);
 		expect(specs).toEqual(original);
+	});
+});
+
+describe("discoverSpecs", () => {
+	let tmpDir: string;
+	const defaultConfig = ConfigSchema.parse({});
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-specs-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeSpecFile(filename: string, content = "# Spec") {
+		const specsDir = path.join(tmpDir, "specs");
+		fs.mkdirSync(specsDir, { recursive: true });
+		fs.writeFileSync(path.join(specsDir, filename), content);
+	}
+
+	function writeStatusJson(specs: Record<string, { status: string }>) {
+		const tobyDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(tobyDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(tobyDir, "status.json"),
+			JSON.stringify({
+				specs: Object.fromEntries(
+					Object.entries(specs).map(([name, entry]) => [
+						name,
+						{ status: entry.status, plannedAt: null, iterations: [] },
+					]),
+				),
+			}),
+		);
+	}
+
+	it("returns sorted specs from valid dir", () => {
+		writeSpecFile("02-payments.md");
+		writeSpecFile("01-auth.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs.map((s) => s.name)).toEqual(["01-auth", "02-payments"]);
+		expect(specs[0].order).toBe(1);
+		expect(specs[1].order).toBe(2);
+	});
+
+	it("excludes files matching excludeSpecs", () => {
+		writeSpecFile("01-auth.md");
+		writeSpecFile("README.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs.map((s) => s.name)).toEqual(["01-auth"]);
+	});
+
+	it("returns empty array for missing specs dir", () => {
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs).toEqual([]);
+	});
+
+	it("returns empty array when no .md files exist", () => {
+		const specsDir = path.join(tmpDir, "specs");
+		fs.mkdirSync(specsDir, { recursive: true });
+		fs.writeFileSync(path.join(specsDir, "notes.txt"), "not a spec");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs).toEqual([]);
+	});
+
+	it("uses custom specsDir from config", () => {
+		const customDir = path.join(tmpDir, "features");
+		fs.mkdirSync(customDir, { recursive: true });
+		fs.writeFileSync(path.join(customDir, "01-auth.md"), "# Auth");
+		const config = ConfigSchema.parse({ specsDir: "features" });
+		const specs = discoverSpecs(tmpDir, config);
+		expect(specs.map((s) => s.name)).toEqual(["01-auth"]);
+	});
+
+	it("looks up status from status.json", () => {
+		writeSpecFile("01-auth.md");
+		writeSpecFile("02-payments.md");
+		writeStatusJson({ "01-auth": { status: "planned" } });
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs[0].status).toBe("planned");
+		expect(specs[1].status).toBe("pending");
+	});
+
+	it("defaults to pending when spec not in status.json", () => {
+		writeSpecFile("01-auth.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs[0].status).toBe("pending");
+	});
+
+	it("does not traverse nested directories", () => {
+		writeSpecFile("01-auth.md");
+		const nestedDir = path.join(tmpDir, "specs", "nested");
+		fs.mkdirSync(nestedDir, { recursive: true });
+		fs.writeFileSync(path.join(nestedDir, "02-deep.md"), "# Deep");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs.map((s) => s.name)).toEqual(["01-auth"]);
+	});
+
+	it("sets correct path for each spec", () => {
+		writeSpecFile("01-auth.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs[0].path).toBe(path.join(tmpDir, "specs", "01-auth.md"));
+	});
+});
+
+describe("loadSpecContent", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-load-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("loads file content into spec", () => {
+		const filePath = path.join(tmpDir, "01-auth.md");
+		fs.writeFileSync(filePath, "# Auth Spec\nDetails here.");
+		const spec = { name: "01-auth", path: filePath };
+		const loaded = loadSpecContent(spec);
+		expect(loaded.content).toBe("# Auth Spec\nDetails here.");
+		expect(loaded.name).toBe("01-auth");
+		expect(loaded.path).toBe(filePath);
 	});
 });
