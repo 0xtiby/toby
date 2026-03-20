@@ -248,6 +248,87 @@ describe("executeBuild", () => {
 		).rejects.toThrow("No --spec flag provided");
 	});
 
+	it("completes gracefully when prd has 0 tasks", async () => {
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [],
+		});
+		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.taskCount).toBe(0);
+		expect(result.totalIterations).toBe(0);
+		expect(result.specDone).toBe(true);
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("completes with 'all done' when all tasks already complete", async () => {
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [
+				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
+				{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
+			],
+		});
+		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 2, blocked: 0 });
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.taskCount).toBe(2);
+		expect(result.totalIterations).toBe(0);
+		expect(result.specDone).toBe(true);
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("returns remaining task count when max iterations reached", async () => {
+		mockGetTaskSummary.mockReturnValue({ pending: 2, in_progress: 1, done: 1, blocked: 0 });
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.specDone).toBe(false);
+		expect(result.remainingTasks).toBe(3);
+	});
+
+	it("allows build on spec with building status", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: null,
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+				},
+			},
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.specName).toBe("01-auth");
+		expect(mockRunLoop).toHaveBeenCalled();
+	});
+
+	it("returns error summary on fatal error during iteration", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.specDone).toBe(false);
+		expect(result.error).toContain("Build failed after 1 iteration(s)");
+		expect(result.error).toContain("exit code: 1");
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
+	});
+
 	it("status is updated after each iteration completes", async () => {
 		await executeBuild(defaultFlags, {}, "/project");
 
@@ -320,8 +401,15 @@ describe("executeBuild", () => {
 		expect(result.specDone).toBe(true);
 	});
 
-	it("marks spec as done when all tasks are complete", async () => {
-		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 3, blocked: 0 });
+	it("marks spec as done when all tasks complete after build", async () => {
+		// Pre-build: 1 pending task (so build proceeds)
+		// Post-build: all done (so spec marked done)
+		let callCount = 0;
+		mockGetTaskSummary.mockImplementation(() => {
+			callCount++;
+			if (callCount === 1) return { pending: 1, in_progress: 0, done: 2, blocked: 0 };
+			return { pending: 0, in_progress: 0, done: 3, blocked: 0 };
+		});
 		mockReadPrd.mockReturnValue({
 			spec: "01-auth",
 			createdAt: "2026-03-20T00:00:00.000Z",
@@ -536,6 +624,79 @@ describe("Build component", () => {
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
 			expect(output).toContain("No plan found");
+		});
+	});
+
+	it("shows 'no tasks' message when prd has 0 tasks", async () => {
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [],
+		});
+		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("No tasks found");
+			expect(output).toContain("nothing to build");
+		});
+	});
+
+	it("shows 'all complete' message when all tasks already done", async () => {
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [
+				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
+			],
+		});
+		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 1, blocked: 0 });
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("All tasks already complete");
+		});
+	});
+
+	it("shows remaining tasks when max iterations reached", async () => {
+		mockGetTaskSummary.mockReturnValue({ pending: 2, in_progress: 0, done: 1, blocked: 0 });
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("remaining");
+			expect(output).toContain("max iterations");
+		});
+	});
+
+	it("shows error summary on fatal error", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Build failed");
 		});
 	});
 

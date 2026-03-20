@@ -40,6 +40,10 @@ export interface BuildResult {
 	totalIterations: number;
 	totalTokens: number;
 	specDone: boolean;
+	/** Set when build stopped early due to an error */
+	error?: string;
+	/** Number of incomplete tasks remaining */
+	remainingTasks?: number;
 }
 
 export class AbortError extends Error {
@@ -90,6 +94,21 @@ export async function executeBuild(
 
 	const specWithContent = loadSpecContent(found);
 	const prdPath = getPrdPath(found.name, cwd);
+
+	// Check task state before starting the loop
+	const preBuildPrd = readPrd(found.name, cwd);
+	if (preBuildPrd) {
+		const preSummary = getTaskSummary(preBuildPrd);
+		const totalTasks = Object.values(preSummary).reduce((a, b) => a + b, 0);
+
+		if (totalTasks === 0) {
+			return { specName: found.name, taskCount: 0, prdPath, totalIterations: 0, totalTokens: 0, specDone: true };
+		}
+
+		if (preSummary.done === totalTasks) {
+			return { specName: found.name, taskCount: totalTasks, prdPath, totalIterations: 0, totalTokens: 0, specDone: true };
+		}
+	}
 
 	let status = readStatus(cwd);
 	const specStatus = status.specs[found.name];
@@ -155,17 +174,28 @@ export async function executeBuild(
 	const prd = readPrd(found.name, cwd);
 	let taskCount = 0;
 	let allTasksDone = false;
+	let remainingTasks = 0;
 	if (prd) {
 		const taskSummary = getTaskSummary(prd);
 		taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
 		allTasksDone = taskSummary.done === taskCount && taskCount > 0;
+		remainingTasks = taskCount - taskSummary.done;
+	}
+
+	// Handle fatal error during iteration
+	if (loopResult.stopReason === "error") {
+		status = updateSpecStatus(status, found.name, "building");
+		writeStatus(status, cwd);
+		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
+		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
+		return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone: false, error: errorMsg, remainingTasks };
 	}
 
 	const specDone = loopResult.stopReason === "sentinel" || allTasksDone;
 	status = updateSpecStatus(status, found.name, specDone ? "done" : "building");
 	writeStatus(status, cwd);
 
-	return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone };
+	return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone, remainingTasks: specDone ? 0 : remainingTasks };
 }
 
 export interface BuildAllCallbacks {
@@ -473,10 +503,29 @@ export default function Build(flags: BuildFlags) {
 	}
 
 	if (phase === "done" && result) {
+		if (result.taskCount === 0 && result.totalIterations === 0) {
+			return <Text color="yellow">{`No tasks found in ${result.specName} — nothing to build`}</Text>;
+		}
+		if (result.specDone && result.totalIterations === 0) {
+			return <Text color="green">{`✓ All tasks already complete for ${result.specName}`}</Text>;
+		}
+		if (result.error) {
+			return (
+				<Box flexDirection="column">
+					<Text color="red">{`✗ ${result.error}`}</Text>
+					{(result.remainingTasks ?? 0) > 0 && (
+						<Text dimColor>{`  ${result.remainingTasks} task(s) remaining`}</Text>
+					)}
+				</Box>
+			);
+		}
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ Build ${result.specDone ? "complete" : "paused"} for ${result.specName}`}</Text>
 				<Text>{`  Tasks: ${result.taskCount}, Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
+				{!result.specDone && (result.remainingTasks ?? 0) > 0 && (
+					<Text dimColor>{`  ${result.remainingTasks} task(s) remaining (max iterations reached)`}</Text>
+				)}
 				<Text>{`  PRD: ${result.prdPath}`}</Text>
 			</Box>
 		);
