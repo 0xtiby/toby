@@ -75,10 +75,10 @@ describe("paths", () => {
 			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/proj/.toby/prd", {
 				recursive: true,
 			});
-			expect(fs.writeFileSync).toHaveBeenCalledWith(
-				"/tmp/proj/.toby/status.json",
-				"{}\n",
-			);
+			const written = vi.mocked(fs.writeFileSync).mock.calls[0];
+			expect(written[0]).toBe("/tmp/proj/.toby/status.json");
+			const parsed = JSON.parse(written[1] as string);
+			expect(parsed).toEqual({ specs: {} });
 		});
 
 		it("does not overwrite status.json when it already exists", () => {

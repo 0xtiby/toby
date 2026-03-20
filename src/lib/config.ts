@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ConfigSchema } from "../types.js";
+import { ConfigSchema, CLI_NAMES } from "../types.js";
 import type { TobyConfig, CommandConfig } from "../types.js";
 import { getGlobalDir, getLocalDir, CONFIG_FILE } from "./paths.js";
 
@@ -83,12 +83,23 @@ export interface CommandFlags {
 	iterations?: number;
 }
 
+/**
+ * Validate a CLI name against the known list.
+ * Throws a user-friendly error if the CLI name is invalid.
+ */
+export function validateCliName(cli: string | undefined): void {
+	if (cli && !(CLI_NAMES as readonly string[]).includes(cli)) {
+		throw new Error(`Unknown CLI: ${cli}. Must be one of: ${CLI_NAMES.join(", ")}`);
+	}
+}
+
 /** Resolve final command config by applying CLI flags over config values */
 export function resolveCommandConfig(
 	config: TobyConfig,
 	command: "plan" | "build",
 	flags: CommandFlags = {},
 ): CommandConfig {
+	validateCliName(flags.cli);
 	const base = config[command];
 
 	return {

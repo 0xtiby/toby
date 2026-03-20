@@ -265,4 +265,16 @@ describe("findSpec", () => {
 		// "auth" strips prefix, both match — first wins
 		expect(findSpec(dupes, "auth")?.name).toBe("01-auth");
 	});
+
+	it("matches by numeric prefix alone (e.g. '01' matches '01-auth')", () => {
+		expect(findSpec(specs, "01")?.name).toBe("01-auth");
+	});
+
+	it("matches by numeric prefix alone (e.g. '02' matches '02-payments')", () => {
+		expect(findSpec(specs, "02")?.name).toBe("02-payments");
+	});
+
+	it("does not match numeric prefix on unnumbered spec", () => {
+		expect(findSpec(specs, "con")).toBeUndefined();
+	});
 });
