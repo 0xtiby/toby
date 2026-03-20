@@ -805,6 +805,125 @@ describe("integration: full build flow with mocked spawner", () => {
 		setupDefaults();
 	});
 
+	it("sentinel detected after N iterations stops loop and marks spec done", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterations = [];
+			for (let i = 1; i <= 4; i++) {
+				const iterResult = {
+					iteration: i,
+					sessionId: `sess-${i}`,
+					exitCode: 0,
+					tokensUsed: 200,
+					model: "claude-sonnet-4-6",
+					durationMs: 1000,
+					sentinelDetected: i === 4,
+				};
+				options.onIterationComplete?.(iterResult);
+				iterations.push(iterResult);
+			}
+			return { iterations, stopReason: "sentinel" as const };
+		});
+
+		// Post-build: re-read prd shows all tasks done
+		let readCount = 0;
+		mockGetTaskSummary.mockImplementation(() => {
+			readCount++;
+			if (readCount === 1) return { pending: 1, in_progress: 0, done: 0, blocked: 0 };
+			return { pending: 0, in_progress: 0, done: 1, blocked: 0 };
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.totalIterations).toBe(4);
+		expect(result.totalTokens).toBe(800);
+		expect(result.specDone).toBe(true);
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "done");
+		expect(mockAddIteration).toHaveBeenCalledTimes(4);
+		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 4 iterations + 1 final
+	});
+
+	it("build --all processes specs in order with correct IS_LAST_SPEC and collects results", async () => {
+		const specs = [
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: 3, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		const specOrder: string[] = [];
+		const isLastValues: Record<string, string> = {};
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1); // triggers loadPrompt so we can capture IS_LAST_SPEC
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 500, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		mockLoadPrompt.mockImplementation((_template, vars) => {
+			isLastValues[vars.SPEC_NAME] = vars.IS_LAST_SPEC;
+			return `prompt for ${vars.SPEC_NAME}`;
+		});
+
+		const result = await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { specOrder.push(name); } },
+			"/p",
+		);
+
+		// Sorted order: 01-auth, 02-api, 03-ui
+		expect(specOrder).toEqual(["01-auth", "02-api", "03-ui"]);
+		expect(isLastValues["01-auth"]).toBe("false");
+		expect(isLastValues["02-api"]).toBe("false");
+		expect(isLastValues["03-ui"]).toBe("true");
+		expect(result.built).toHaveLength(3);
+		expect(result.built.map((r) => r.specName)).toEqual(["01-auth", "02-api", "03-ui"]);
+	});
+
+	it("error flow when prd.json missing halts before loop", async () => {
+		mockHasPrd.mockReturnValue(false);
+
+		await expect(
+			executeBuild(defaultFlags, {}, "/project"),
+		).rejects.toThrow("No plan found for 01-auth");
+
+		expect(mockRunLoop).not.toHaveBeenCalled();
+		expect(mockAddIteration).not.toHaveBeenCalled();
+		expect(mockWriteStatus).not.toHaveBeenCalled();
+	});
+
+	it("max iterations reached returns remaining task count and does not mark spec done", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterations = [];
+			for (let i = 1; i <= 2; i++) {
+				const iterResult = {
+					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 150,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				iterations.push(iterResult);
+			}
+			return { iterations, stopReason: "max_iterations" as const };
+		});
+
+		mockGetTaskSummary.mockReturnValue({ pending: 3, in_progress: 1, done: 1, blocked: 0 });
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.specDone).toBe(false);
+		expect(result.remainingTasks).toBe(4); // pending + in_progress
+		expect(result.totalIterations).toBe(2);
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
+		// Should NOT be marked done
+		expect(mockUpdateSpecStatus).not.toHaveBeenCalledWith(expect.anything(), "01-auth", "done");
+	});
+
 	it("completes full build lifecycle: discover → validate prd → build → update status → return result", async () => {
 		const spec = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
 		mockDiscoverSpecs.mockReturnValue([spec]);
