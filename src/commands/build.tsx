@@ -37,6 +37,9 @@ export interface BuildResult {
 	specName: string;
 	taskCount: number;
 	prdPath: string;
+	totalIterations: number;
+	totalTokens: number;
+	specDone: boolean;
 }
 
 export class AbortError extends Error {
@@ -146,17 +149,23 @@ export async function executeBuild(
 		throw new AbortError(found.name, loopResult.iterations.length);
 	}
 
-	status = updateSpecStatus(status, found.name, "building");
-	writeStatus(status, cwd);
+	const totalIterations = loopResult.iterations.length;
+	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
 
 	const prd = readPrd(found.name, cwd);
 	let taskCount = 0;
+	let allTasksDone = false;
 	if (prd) {
 		const taskSummary = getTaskSummary(prd);
 		taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
+		allTasksDone = taskSummary.done === taskCount && taskCount > 0;
 	}
 
-	return { specName: found.name, taskCount, prdPath };
+	const specDone = loopResult.stopReason === "sentinel" || allTasksDone;
+	status = updateSpecStatus(status, found.name, specDone ? "done" : "building");
+	writeStatus(status, cwd);
+
+	return { specName: found.name, taskCount, prdPath, totalIterations, totalTokens, specDone };
 }
 
 export interface BuildAllCallbacks {
@@ -272,17 +281,23 @@ export async function executeBuildAll(
 			throw new AbortError(spec.name, loopResult.iterations.length);
 		}
 
-		status = updateSpecStatus(status, spec.name, "building");
-		writeStatus(status, cwd);
+		const totalIterations = loopResult.iterations.length;
+		const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
 
 		const prd = readPrd(spec.name, cwd);
 		let taskCount = 0;
+		let allTasksDone = false;
 		if (prd) {
 			const taskSummary = getTaskSummary(prd);
 			taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
+			allTasksDone = taskSummary.done === taskCount && taskCount > 0;
 		}
 
-		const result: BuildResult = { specName: spec.name, taskCount, prdPath };
+		const specDone = loopResult.stopReason === "sentinel" || allTasksDone;
+		status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
+		writeStatus(status, cwd);
+
+		const result: BuildResult = { specName: spec.name, taskCount, prdPath, totalIterations, totalTokens, specDone };
 		built.push(result);
 		callbacks.onSpecComplete?.(result);
 	}
@@ -441,12 +456,15 @@ export default function Build(flags: BuildFlags) {
 	}
 
 	if (phase === "done" && allResult) {
+		const totalIter = allResult.built.reduce((s, r) => s + r.totalIterations, 0);
+		const totalTok = allResult.built.reduce((s, r) => s + r.totalTokens, 0);
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ All specs built (${allResult.built.length} built, ${allResult.skipped.length} skipped)`}</Text>
 				{allResult.built.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks`}</Text>
+					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks, ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
 				))}
+				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
 				{allResult.skipped.length > 0 && (
 					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
 				)}
@@ -457,8 +475,8 @@ export default function Build(flags: BuildFlags) {
 	if (phase === "done" && result) {
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ Build complete for ${result.specName}`}</Text>
-				<Text>{`  Tasks: ${result.taskCount}`}</Text>
+				<Text color="green">{`✓ Build ${result.specDone ? "complete" : "paused"} for ${result.specName}`}</Text>
+				<Text>{`  Tasks: ${result.taskCount}, Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
 				<Text>{`  PRD: ${result.prdPath}`}</Text>
 			</Box>
 		);

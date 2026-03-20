@@ -300,6 +300,68 @@ describe("executeBuild", () => {
 		);
 	});
 
+	it("marks spec as done when sentinel detected", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
+			expect.anything(),
+			"01-auth",
+			"done",
+		);
+		expect(result.specDone).toBe(true);
+	});
+
+	it("marks spec as done when all tasks are complete", async () => {
+		mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 3, blocked: 0 });
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [
+				{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 1 },
+				{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
+				{ id: "t3", title: "Task 3", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 3 },
+			],
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
+			expect.anything(),
+			"01-auth",
+			"done",
+		);
+		expect(result.specDone).toBe(true);
+	});
+
+	it("result includes totalIterations and totalTokens", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterations = [];
+			for (let i = 1; i <= 3; i++) {
+				const iterResult = {
+					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 100 * i,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				iterations.push(iterResult);
+			}
+			return { iterations, stopReason: "max_iterations" as const };
+		});
+
+		const result = await executeBuild(defaultFlags, {}, "/project");
+
+		expect(result.totalIterations).toBe(3);
+		expect(result.totalTokens).toBe(600); // 100 + 200 + 300
+	});
+
 	it("throws AbortError when abortSignal is triggered", async () => {
 		const controller = new AbortController();
 
@@ -427,6 +489,27 @@ describe("Build component", () => {
 			expect(output).toContain("03-ui");
 			expect(output).not.toContain("01-auth");
 			expect(output).not.toContain("04-done");
+		});
+	});
+
+	it("completion summary shows iterations and tokens", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Iterations: 1");
+			expect(output).toContain("Tokens: 500");
 		});
 	});
 
