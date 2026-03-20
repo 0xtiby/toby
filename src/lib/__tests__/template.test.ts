@@ -252,6 +252,13 @@ describe("parseFrontmatter", () => {
 		expect(content).toBe("content");
 	});
 
+	it("handles frontmatter with only optional_vars", () => {
+		const raw = "---\noptional_vars:\n  - DEBUG\n---\ncontent";
+		const { frontmatter, content } = parseFrontmatter(raw);
+		expect(frontmatter).toEqual({ optional_vars: ["DEBUG"] });
+		expect(content).toBe("content");
+	});
+
 	it("handles empty frontmatter block", () => {
 		const raw = "---\n\n---\ncontent after";
 		const { frontmatter, content } = parseFrontmatter(raw);
