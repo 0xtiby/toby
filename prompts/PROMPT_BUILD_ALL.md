@@ -1,3 +1,12 @@
+---
+required_vars:
+  - SPEC_NAME
+  - ITERATION
+  - SPEC_CONTENT
+optional_vars:
+  - EPIC_NAME
+  - IS_LAST_SPEC
+---
 # Build Mode (All Specs)
 
 You are in BUILD mode for a multi-spec session. Implement one task from the PRD, validate, and commit.
