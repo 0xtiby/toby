@@ -43,7 +43,7 @@ import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
-import { getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
+import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
 import { executePlan } from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 
@@ -58,6 +58,7 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockHasPrd = vi.mocked(hasPrd);
 const mockGetPrdPath = vi.mocked(getPrdPath);
 const mockReadPrd = vi.mocked(readPrd);
 const mockGetTaskSummary = vi.mocked(getTaskSummary);
@@ -95,6 +96,7 @@ function setupDefaults() {
 	mockDiscoverSpecs.mockReturnValue([spec]);
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
+	mockHasPrd.mockReturnValue(false);
 	mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
 	mockLoadPrompt.mockReturnValue("Plan prompt for 01-auth");
 	mockReadStatus.mockReturnValue({ specs: {} });
@@ -239,5 +241,76 @@ describe("executePlan", () => {
 		).rejects.toThrow("No specs found in specs/");
 
 		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	describe("refinement mode", () => {
+		it("detects refinement when prd.json exists for spec", async () => {
+			mockHasPrd.mockReturnValue(true);
+			mockReadPrd.mockReturnValue({
+				spec: "01-auth",
+				createdAt: "2026-03-19T00:00:00.000Z",
+				tasks: [
+					{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
+					{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
+				],
+			});
+			mockGetTaskSummary.mockReturnValue({ pending: 1, in_progress: 0, done: 1, blocked: 0 });
+
+			const onRefinement = vi.fn();
+			await executePlan(defaultFlags, { onRefinement }, "/project");
+
+			expect(onRefinement).toHaveBeenCalledWith("01-auth", 2);
+		});
+
+		it("iteration numbering continues from last recorded iteration", async () => {
+			mockHasPrd.mockReturnValue(true);
+			mockReadPrd.mockReturnValue({
+				spec: "01-auth",
+				createdAt: "2026-03-19T00:00:00.000Z",
+				tasks: [],
+			});
+			mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
+			mockReadStatus.mockReturnValue({
+				specs: {
+					"01-auth": {
+						status: "planned",
+						plannedAt: null,
+						iterations: [
+							{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+							{ type: "plan", iteration: 2, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						],
+					},
+				},
+			});
+
+			await executePlan(defaultFlags, {}, "/project");
+
+			const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+			getPrompt(1);
+
+			expect(mockLoadPrompt).toHaveBeenCalledWith(
+				"PROMPT_PLAN",
+				expect.objectContaining({ ITERATION: "3" }),
+				"/project",
+			);
+		});
+
+		it("normal mode when no prd.json exists", async () => {
+			mockHasPrd.mockReturnValue(false);
+
+			const onRefinement = vi.fn();
+			await executePlan(defaultFlags, { onRefinement }, "/project");
+
+			expect(onRefinement).not.toHaveBeenCalled();
+
+			const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+			getPrompt(1);
+
+			expect(mockLoadPrompt).toHaveBeenCalledWith(
+				"PROMPT_PLAN",
+				expect.objectContaining({ ITERATION: "1" }),
+				"/project",
+			);
+		});
 	});
 });

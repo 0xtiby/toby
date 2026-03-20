@@ -13,7 +13,7 @@ import {
 	addIteration,
 	updateSpecStatus,
 } from "../lib/status.js";
-import { getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
+import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
 import SpecSelector from "../components/SpecSelector.js";
@@ -30,6 +30,7 @@ export interface PlanCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
+	onRefinement?: (specName: string, taskCount: number) => void;
 }
 
 export interface PlanResult {
@@ -71,10 +72,22 @@ export async function executePlan(
 	const specWithContent = loadSpecContent(found);
 	const prdPath = getPrdPath(found.name, cwd);
 
+	// Detect refinement mode: existing prd.json means we're refining
+	let status = readStatus(cwd);
+	const specStatus = status.specs[found.name];
+	const existingIterations = specStatus?.iterations.length ?? 0;
+	const isRefinement = hasPrd(found.name, cwd);
+
+	if (isRefinement) {
+		const existingPrd = readPrd(found.name, cwd);
+		const taskCount = existingPrd
+			? Object.values(getTaskSummary(existingPrd)).reduce((a, b) => a + b, 0)
+			: 0;
+		callbacks.onRefinement?.(found.name, taskCount);
+	}
+
 	callbacks.onPhase?.("planning");
 	callbacks.onIteration?.(1, commandConfig.iterations);
-
-	let status = readStatus(cwd);
 
 	await runLoop({
 		maxIterations: commandConfig.iterations,
@@ -83,7 +96,7 @@ export async function executePlan(
 				"PROMPT_PLAN",
 				{
 					SPEC_NAME: found.name,
-					ITERATION: String(iteration),
+					ITERATION: String(iteration + existingIterations),
 					SPEC_CONTENT: specWithContent.content ?? "",
 					PRD_PATH: prdPath,
 					BRANCH: "",
@@ -146,6 +159,7 @@ export default function Plan(flags: PlanFlags) {
 	const [result, setResult] = useState<PlanResult | null>(null);
 	const [specs, setSpecs] = useState<Spec[]>([]);
 	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
+	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
 
 	// Discover specs for the selector when no --spec flag
 	useEffect(() => {
@@ -166,6 +180,7 @@ export default function Plan(flags: PlanFlags) {
 		if (phase !== "init") return;
 		executePlan(activeFlags, {
 			onPhase: (p) => { if (p === "planning") setPhase("planning"); },
+			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
 			onIteration: (current, max) => {
 				setCurrentIteration(current);
 				setMaxIterations(max);
@@ -215,6 +230,12 @@ export default function Plan(flags: PlanFlags) {
 
 	return (
 		<Box flexDirection="column">
+			{refinementInfo && (
+				<>
+					<Text color="yellow">{`Existing plan found for ${refinementInfo.specName} (${refinementInfo.taskCount} tasks)`}</Text>
+					<Text color="yellow">Running in refinement mode...</Text>
+				</>
+			)}
 			<Text dimColor>
 				{`Planning: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
 			</Text>
