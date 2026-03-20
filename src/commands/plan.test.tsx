@@ -77,6 +77,7 @@ function setupDefaults() {
 		cli: "claude",
 		model: "default",
 		iterations: 2,
+		templateVars: {},
 	});
 
 	const spec = {
@@ -179,13 +180,13 @@ describe("executePlan", () => {
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				PRD_PATH: "",
 				BRANCH: "",
 				WORKTREE: "",
 				EPIC_NAME: "",
 				IS_LAST_SPEC: "",
 			},
 			"/project",
+			{},
 		);
 	});
 
@@ -279,6 +280,7 @@ describe("executePlan", () => {
 				"PROMPT_PLAN",
 				expect.objectContaining({ ITERATION: "3" }),
 				"/project",
+				{},
 			);
 		});
 
@@ -297,6 +299,7 @@ describe("executePlan", () => {
 				"PROMPT_PLAN",
 				expect.objectContaining({ ITERATION: "1" }),
 				"/project",
+				{},
 			);
 		});
 	});
@@ -453,6 +456,7 @@ describe("error handling edge cases", () => {
 			"PROMPT_PLAN",
 			expect.objectContaining({ SPEC_CONTENT: "" }),
 			"/project",
+			{},
 		);
 		expect(result.specName).toBe("01-auth");
 	});
