@@ -10,3 +10,4 @@ coverage
 .agents/
 opencode.json
 .beads/
+.worktrees/
