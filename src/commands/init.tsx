@@ -174,7 +174,104 @@ function modelItems(cli: CliName) {
 	];
 }
 
-export default function Init({ version }: InitFlags) {
+const VALID_CLI_NAMES: CliName[] = ["claude", "codex", "opencode"];
+
+/** Returns true when all 5 optional init flags are present (non-interactive mode). */
+export function hasAllInitFlags(flags: InitFlags): boolean {
+	return !!(
+		flags.planCli &&
+		flags.planModel &&
+		flags.buildCli &&
+		flags.buildModel &&
+		flags.specsDir
+	);
+}
+
+function NonInteractiveInit({ flags }: { flags: InitFlags }) {
+	const { exit } = useApp();
+	const [status, setStatus] = useState<
+		| { type: "detecting" }
+		| { type: "error"; message: string }
+		| { type: "success"; result: InitResult; selections: InitSelections }
+	>({ type: "detecting" });
+
+	useEffect(() => {
+		const planCli = flags.planCli!;
+		const buildCli = flags.buildCli!;
+
+		// Validate CLI names
+		for (const cli of [planCli, buildCli]) {
+			if (!VALID_CLI_NAMES.includes(cli as CliName)) {
+				setStatus({
+					type: "error",
+					message: `Unknown CLI: ${cli}. Must be one of: claude, codex, opencode`,
+				});
+				process.exitCode = 1;
+				exit();
+				return;
+			}
+		}
+
+		// Check CLIs are installed
+		detectAll().then((detectResult: DetectAllResult) => {
+			for (const cli of [planCli, buildCli]) {
+				if (!detectResult[cli as CliName]?.installed) {
+					setStatus({
+						type: "error",
+						message: `CLI not installed: ${cli}`,
+					});
+					process.exitCode = 1;
+					exit();
+					return;
+				}
+			}
+
+			const selections: InitSelections = {
+				planCli: planCli as CliName,
+				planModel: flags.planModel!,
+				buildCli: buildCli as CliName,
+				buildModel: flags.buildModel!,
+				specsDir: flags.specsDir!,
+			};
+
+			try {
+				const result = createProject(selections);
+				setStatus({ type: "success", result, selections });
+			} catch (err) {
+				setStatus({ type: "error", message: (err as Error).message });
+				process.exitCode = 1;
+			}
+			exit();
+		});
+	}, []);
+
+	if (status.type === "detecting") {
+		return <Text>Detecting installed CLIs...</Text>;
+	}
+
+	if (status.type === "error") {
+		return <Text color="red">{`✗ ${status.message}`}</Text>;
+	}
+
+	const { result, selections } = status;
+	return (
+		<Box flexDirection="column">
+			<Text color="green" bold>✓ Project initialized!</Text>
+			<Text dimColor>{"  created "}{path.relative(process.cwd(), result.configPath)}</Text>
+			{result.statusCreated && <Text dimColor>{"  created .toby/status.json"}</Text>}
+			{result.specsDirCreated && <Text dimColor>{"  created "}{selections.specsDir}/</Text>}
+		</Box>
+	);
+}
+
+export default function Init(flags: InitFlags) {
+	if (hasAllInitFlags(flags)) {
+		return <NonInteractiveInit flags={flags} />;
+	}
+	return <InteractiveInit version={flags.version} />;
+}
+
+function InteractiveInit({ version }: { version: string }) {
 	const { exit } = useApp();
 	const [phase, setPhase] = useState<Phase>("detecting");
 	const [clis, setClis] = useState<DetectAllResult | null>(null);
