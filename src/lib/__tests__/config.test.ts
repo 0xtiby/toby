@@ -17,6 +17,7 @@ import {
 	loadLocalConfig,
 	mergeConfigs,
 	loadConfig,
+	resolveCommandConfig,
 } from "../config.js";
 
 const globalConfigPath = path.join(os.homedir(), ".toby", "config.json");
@@ -183,6 +184,66 @@ describe("config", () => {
 			expect(config.plan.cli).toBe("claude");
 			expect(config.plan.model).toBe("gpt-4");
 			expect(config.plan.iterations).toBe(2);
+		});
+	});
+
+	describe("resolveCommandConfig", () => {
+		it("returns config values when no flags provided", () => {
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "plan");
+			expect(result).toEqual({
+				cli: "claude",
+				model: "default",
+				iterations: 2,
+			});
+		});
+
+		it("--cli flag overrides config cli", () => {
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "plan", { cli: "codex" });
+			expect(result.cli).toBe("codex");
+		});
+
+		it("--model flag overrides config model", () => {
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "build", {
+				model: "o3",
+			});
+			expect(result.model).toBe("o3");
+		});
+
+		it("--iterations flag overrides config iterations", () => {
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "build", {
+				iterations: 5,
+			});
+			expect(result.iterations).toBe(5);
+		});
+
+		it("empty string model treated as default", () => {
+			mockConfigFile(globalConfigPath, { plan: { model: "" } });
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "plan");
+			expect(result.model).toBe("default");
+		});
+
+		it("partial flags only override provided values", () => {
+			mockConfigFile(globalConfigPath, {
+				plan: { cli: "codex", model: "gpt-4", iterations: 5 },
+			});
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "plan", { cli: "claude" });
+			expect(result).toEqual({
+				cli: "claude",
+				model: "gpt-4",
+				iterations: 5,
+			});
+		});
+
+		it("uses build config for build command", () => {
+			const config = loadConfig("/tmp/proj");
+			const result = resolveCommandConfig(config, "build");
+			expect(result.iterations).toBe(10);
 		});
 	});
 });

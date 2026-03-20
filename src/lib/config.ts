@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ConfigSchema } from "../types.js";
-import type { TobyConfig } from "../types.js";
+import type { TobyConfig, CommandConfig } from "../types.js";
 import { getGlobalDir, getLocalDir, CONFIG_FILE } from "./paths.js";
 
 /**
@@ -60,4 +60,26 @@ export function loadConfig(cwd?: string): TobyConfig {
 	const local = loadLocalConfig(cwd);
 	const merged = mergeConfigs(global, local);
 	return ConfigSchema.parse(merged);
+}
+
+/** CLI flag overrides for command config */
+export interface CommandFlags {
+	cli?: "claude" | "codex" | "opencode";
+	model?: string;
+	iterations?: number;
+}
+
+/** Resolve final command config by applying CLI flags over config values */
+export function resolveCommandConfig(
+	config: TobyConfig,
+	command: "plan" | "build",
+	flags: CommandFlags = {},
+): CommandConfig {
+	const base = config[command];
+
+	return {
+		cli: flags.cli ?? base.cli,
+		model: flags.model || base.model || "default",
+		iterations: flags.iterations ?? base.iterations,
+	};
 }
