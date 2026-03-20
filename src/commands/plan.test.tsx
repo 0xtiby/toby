@@ -1,4 +1,6 @@
+import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render } from "ink-testing-library";
 
 vi.mock("../lib/config.js", () => ({
 	loadConfig: vi.fn(),
@@ -46,6 +48,7 @@ import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
 import { executePlan, executePlanAll, AbortError } from "./plan.js";
+import Plan from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -602,5 +605,159 @@ describe("error handling edge cases", () => {
 		expect(mockRunLoop).toHaveBeenCalledWith(
 			expect.objectContaining({ abortSignal: controller.signal }),
 		);
+	});
+});
+
+describe("Plan component", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("renders spec selector when no --spec flag provided", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const },
+			{ name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		const { lastFrame } = render(
+			<Plan all={false} verbose={false} />,
+		);
+
+		// Wait for useEffect to discover specs and re-render with SpecSelector
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Select a spec to plan");
+			expect(output).toContain("01-auth");
+			expect(output).toContain("02-api");
+		});
+	});
+
+	it("skips selector and starts planning with --spec flag", async () => {
+		// With --spec provided, phase starts at "init" and executePlan runs immediately
+		// The component should NOT show the selector
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1,
+				sessionId: "sess-1",
+				exitCode: 0,
+				tokensUsed: 150,
+				model: "claude-sonnet-4-6",
+				durationMs: 1000,
+				sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+		mockReadPrd.mockReturnValue(null);
+
+		const { lastFrame } = render(
+			<Plan spec="auth" all={false} verbose={false} />,
+		);
+
+		// Should NOT show selector
+		const output = lastFrame()!;
+		expect(output).not.toContain("Select a spec to plan");
+	});
+
+	it("shows error when spec not found", async () => {
+		mockFindSpec.mockReturnValue(undefined);
+
+		const { lastFrame } = render(
+			<Plan spec="nonexistent" all={false} verbose={false} />,
+		);
+
+		// Wait for async effect to resolve
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("not found");
+		});
+	});
+});
+
+describe("integration: full plan flow with mocked spawner", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("completes full plan lifecycle: discover → load → plan → update status → return result", async () => {
+		const spec = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec]);
+		mockFindSpec.mockReturnValue(spec);
+		mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth\nFull spec content" });
+		mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
+		mockHasPrd.mockReturnValue(false);
+		mockReadStatus.mockReturnValue({ specs: {} });
+
+		const updatedStatus = { specs: { "01-auth": { status: "planned", plannedAt: null, iterations: [] } } };
+		mockAddIteration.mockReturnValue(updatedStatus);
+		mockUpdateSpecStatus.mockReturnValue(updatedStatus);
+
+		// Simulate spawner running 2 iterations
+		let iterationCount = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterations = [];
+			for (let i = 1; i <= 2; i++) {
+				iterationCount++;
+				const iterResult = {
+					iteration: i,
+					sessionId: `sess-${i}`,
+					exitCode: 0,
+					tokensUsed: 100 + i * 50,
+					model: "claude-sonnet-4-6",
+					durationMs: 1000 * i,
+					sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				iterations.push(iterResult);
+			}
+			return { iterations, stopReason: "max_iterations" as const };
+		});
+
+		// Simulate prd.json created by the AI after planning
+		mockReadPrd.mockReturnValue({
+			spec: "01-auth",
+			createdAt: "2026-03-20T00:00:00.000Z",
+			tasks: [
+				{ id: "t1", title: "Setup auth middleware", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
+				{ id: "t2", title: "Add login endpoint", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 2 },
+				{ id: "t3", title: "Add session management", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 3 },
+			],
+		});
+		mockGetTaskSummary.mockReturnValue({ pending: 3, in_progress: 0, done: 0, blocked: 0 });
+
+		const callbacks = {
+			onPhase: vi.fn(),
+			onIteration: vi.fn(),
+			onEvent: vi.fn(),
+		};
+
+		const result = await executePlan(
+			{ spec: "auth", all: false, verbose: false },
+			callbacks,
+			"/project",
+		);
+
+		// Verify full lifecycle
+		expect(mockLoadConfig).toHaveBeenCalledWith("/project");
+		expect(mockDiscoverSpecs).toHaveBeenCalledWith("/project", expect.anything());
+		expect(mockFindSpec).toHaveBeenCalledWith(expect.anything(), "auth");
+		expect(mockLoadSpecContent).toHaveBeenCalledWith(spec);
+		expect(mockRunLoop).toHaveBeenCalledOnce();
+		expect(iterationCount).toBe(2);
+		expect(mockAddIteration).toHaveBeenCalledTimes(2);
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "planned");
+		expect(mockWriteStatus).toHaveBeenCalledTimes(3); // 2 iterations + 1 final
+
+		// Verify result
+		expect(result.specName).toBe("01-auth");
+		expect(result.taskCount).toBe(3);
+		expect(result.prdPath).toBe("/project/.toby/prd/01-auth.json");
+
+		// Verify callbacks fired
+		expect(callbacks.onPhase).toHaveBeenCalledWith("planning");
+		expect(callbacks.onIteration).toHaveBeenCalledTimes(3); // initial + 2 iteration completions
 	});
 });
