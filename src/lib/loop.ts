@@ -32,7 +32,7 @@ export interface IterationResult {
 
 export interface LoopResult {
 	iterations: IterationResult[];
-	stopReason: "sentinel" | "max_iterations";
+	stopReason: "sentinel" | "max_iterations" | "error";
 }
 
 /**
@@ -58,9 +58,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 	}
 
 	let lastSessionId: string | undefined = options.sessionId ?? undefined;
+	let iteration = 1;
 
-	for (let i = 1; i <= maxIterations; i++) {
-		const prompt = getPrompt(i);
+	while (iteration <= maxIterations) {
+		const prompt = getPrompt(iteration);
 
 		const effectiveSessionId = continueSession ? lastSessionId : options.sessionId;
 
@@ -86,7 +87,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		const cliResult = await proc.done;
 
 		const iterResult: IterationResult = {
-			iteration: i,
+			iteration,
 			sessionId: cliResult.sessionId,
 			exitCode: cliResult.exitCode,
 			tokensUsed: cliResult.usage?.totalTokens ?? null,
@@ -102,9 +103,20 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 			return { iterations: results, stopReason: "sentinel" };
 		}
 
+		if (cliResult.exitCode !== 0) {
+			if (cliResult.error?.retryable) {
+				const delay = cliResult.error.retryAfterMs ?? 60_000;
+				await new Promise((r) => setTimeout(r, delay));
+				continue; // retry same iteration
+			}
+			return { iterations: results, stopReason: "error" };
+		}
+
 		if (continueSession) {
 			lastSessionId = cliResult.sessionId ?? lastSessionId;
 		}
+
+		iteration++;
 	}
 
 	return { iterations: results, stopReason: "max_iterations" };

@@ -195,6 +195,108 @@ describe("runLoop", () => {
 		expect(mockSpawn.mock.calls[0][0].autoApprove).toBe(true);
 	});
 
+	describe("error handling", () => {
+		it("retries on retryable error then succeeds", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					return makeMockProc(
+						[{ type: "text", content: "working...", raw: "working..." }],
+						makeCliResult({
+							exitCode: 1,
+							error: { code: "rate_limit", retryable: true, retryAfterMs: 10, matchedLine: "" },
+						}),
+					);
+				}
+				return makeMockProc([{ type: "text", content: "done", raw: "done" }]);
+			});
+
+			const result = await runLoop(baseOptions({ maxIterations: 3 }));
+
+			expect(result.stopReason).toBe("max_iterations");
+			// 4 calls: iter 1 fails, iter 1 retries, iter 2, iter 3
+			expect(mockSpawn).toHaveBeenCalledTimes(4);
+			// First result has exitCode 1, retry result has exitCode 0, both are iteration 1
+			expect(result.iterations[0].exitCode).toBe(1);
+			expect(result.iterations[0].iteration).toBe(1);
+			expect(result.iterations[1].exitCode).toBe(0);
+			expect(result.iterations[1].iteration).toBe(1);
+		});
+
+		it("stops with error on fatal (non-retryable) error", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				if (callCount === 2) {
+					return makeMockProc(
+						[],
+						makeCliResult({
+							exitCode: 1,
+							error: { code: "auth", retryable: false, retryAfterMs: null, matchedLine: "" },
+						}),
+					);
+				}
+				return makeMockProc([{ type: "text", content: "ok", raw: "ok" }]);
+			});
+
+			const result = await runLoop(baseOptions({ maxIterations: 5 }));
+
+			expect(result.stopReason).toBe("error");
+			expect(result.iterations).toHaveLength(2);
+			expect(result.iterations[0].exitCode).toBe(0);
+			expect(result.iterations[1].exitCode).toBe(1);
+		});
+
+		it("stops with error on crash (non-zero exit, no error object)", async () => {
+			mockSpawn.mockImplementation(() =>
+				makeMockProc([], makeCliResult({ exitCode: 1, error: null })),
+			);
+
+			const result = await runLoop(baseOptions({ maxIterations: 3 }));
+
+			expect(result.stopReason).toBe("error");
+			expect(result.iterations).toHaveLength(1);
+		});
+
+		it("propagates getPrompt errors", async () => {
+			const getPrompt = () => {
+				throw new Error("prompt failed");
+			};
+
+			await expect(runLoop(baseOptions({ maxIterations: 1, getPrompt }))).rejects.toThrow("prompt failed");
+		});
+
+		it("uses default 60s delay when retryAfterMs is null", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					return makeMockProc(
+						[],
+						makeCliResult({
+							exitCode: 1,
+							error: { code: "rate_limit", retryable: true, retryAfterMs: null, matchedLine: "" },
+						}),
+					);
+				}
+				return makeMockProc([{ type: "text", content: SENTINEL, raw: SENTINEL }]);
+			});
+
+			vi.useFakeTimers();
+			const promise = runLoop(baseOptions({ maxIterations: 3 }));
+
+			// Advance past the 60s default delay
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			const result = await promise;
+			vi.useRealTimers();
+
+			expect(result.stopReason).toBe("sentinel");
+			expect(mockSpawn).toHaveBeenCalledTimes(2);
+		});
+	});
+
 	describe("session continuity", () => {
 		it("passes sessionId from iteration 1 to iteration 2 when continueSession is true", async () => {
 			let callCount = 0;
