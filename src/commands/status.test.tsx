@@ -286,6 +286,36 @@ describe("Status", () => {
 			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
 			expect(lastFrame()).toContain("Tokens used: 1500");
 		});
+
+		it("shows '—' for null tokensUsed, completedAt, and exitCode in iteration rows", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+				statusSpecs: {
+					"01-auth": {
+						status: "building",
+						iterations: [
+							{
+								type: "build",
+								iteration: 1,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:00:00Z",
+								completedAt: null,
+								exitCode: null,
+								taskCompleted: null,
+								tokensUsed: null,
+							},
+						],
+					},
+				},
+			});
+			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
+			const output = lastFrame()!;
+			// The iteration row should contain '—' three times: tokens, duration, exitCode
+			const dashCount = (output.match(/—/g) || []).length;
+			expect(dashCount).toBeGreaterThanOrEqual(3);
+		});
 	});
 });
 
