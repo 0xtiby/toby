@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
 	PromptTemplate,
+	PromptFrontmatter,
 	PromptName,
 	TemplateVars,
 } from "../types.js";
@@ -68,6 +69,75 @@ export function loadPrompt(
 	const promptPath = resolvePromptPath(name, cwd);
 	const content = fs.readFileSync(promptPath, "utf-8");
 	return substitute(content, vars);
+}
+
+/**
+ * Parse YAML frontmatter from a prompt string.
+ * Frontmatter must start with `---\n` and end with `---\n`.
+ * Extracts `required_vars` and `optional_vars` as string arrays.
+ * Returns null frontmatter and original content if no valid frontmatter found.
+ */
+export function parseFrontmatter(raw: string): {
+	frontmatter: PromptFrontmatter | null;
+	content: string;
+} {
+	if (!raw.startsWith("---\n")) {
+		return { frontmatter: null, content: raw };
+	}
+
+	const closingIndex = raw.indexOf("\n---\n", 4);
+	if (closingIndex === -1) {
+		return { frontmatter: null, content: raw };
+	}
+
+	const yamlBlock = raw.slice(4, closingIndex);
+	const content = raw.slice(closingIndex + 5);
+
+	const frontmatter: PromptFrontmatter = {};
+
+	let currentKey: "required_vars" | "optional_vars" | null = null;
+	for (const line of yamlBlock.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "") continue;
+
+		if (trimmed === "required_vars:" || trimmed.startsWith("required_vars:")) {
+			currentKey = "required_vars";
+			frontmatter.required_vars = [];
+		} else if (trimmed === "optional_vars:" || trimmed.startsWith("optional_vars:")) {
+			currentKey = "optional_vars";
+			frontmatter.optional_vars = [];
+		} else if (currentKey && trimmed.startsWith("- ")) {
+			const value = trimmed.slice(2).trim();
+			if (value) {
+				frontmatter[currentKey]!.push(value);
+			}
+		} else {
+			currentKey = null;
+		}
+	}
+
+	return { frontmatter, content };
+}
+
+/**
+ * Validate that all required vars from frontmatter are present.
+ * Logs a warning for each missing var. Returns array of missing var names.
+ */
+export function validateRequiredVars(
+	frontmatter: PromptFrontmatter | null,
+	vars: TemplateVars,
+	promptName: string,
+): string[] {
+	if (!frontmatter?.required_vars?.length) return [];
+
+	const missing: string[] = [];
+	for (const varName of frontmatter.required_vars) {
+		if (vars[varName] === undefined) {
+			missing.push(varName);
+			console.warn(`Warning: prompt "${promptName}" requires variable ${varName}`);
+		}
+	}
+	return missing;
 }
 
 /**
