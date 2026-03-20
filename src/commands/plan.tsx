@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Text, Box, useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
@@ -146,10 +146,75 @@ export async function executePlan(
 	return { specName: found.name, taskCount, prdPath };
 }
 
+export interface PlanAllCallbacks {
+	onSpecStart?: (specName: string, index: number, total: number) => void;
+	onSpecComplete?: (result: PlanResult) => void;
+	onPhase?: (phase: string) => void;
+	onIteration?: (current: number, max: number) => void;
+	onEvent?: (event: CliEvent) => void;
+	onRefinement?: (specName: string, taskCount: number) => void;
+}
+
+export interface PlanAllResult {
+	planned: PlanResult[];
+	skipped: string[];
+}
+
+/**
+ * Plan all pending specs in NN- order.
+ * Specs with status 'planned' or later are skipped.
+ * Stops on first failure.
+ */
+export async function executePlanAll(
+	flags: PlanFlags,
+	callbacks: PlanAllCallbacks = {},
+	cwd: string = process.cwd(),
+): Promise<PlanAllResult> {
+	ensureLocalDir(cwd);
+
+	const config = loadConfig(cwd);
+	const specs = discoverSpecs(cwd, config);
+
+	if (specs.length === 0) {
+		throw new Error("No specs found in specs/");
+	}
+
+	const pending = filterByStatus(specs, "pending");
+	const skipped = specs.filter((s) => s.status !== "pending").map((s) => s.name);
+	const planned: PlanResult[] = [];
+
+	for (let i = 0; i < pending.length; i++) {
+		const spec = pending[i];
+		callbacks.onSpecStart?.(spec.name, i, pending.length);
+
+		const result = await executePlan(
+			{ ...flags, spec: spec.name, all: false },
+			{
+				onPhase: callbacks.onPhase,
+				onIteration: callbacks.onIteration,
+				onEvent: callbacks.onEvent,
+				onRefinement: callbacks.onRefinement,
+			},
+			cwd,
+		);
+
+		planned.push(result);
+		callbacks.onSpecComplete?.(result);
+	}
+
+	return { planned, skipped };
+}
+
+function getInitialPhase(flags: PlanFlags): "init" | "all" | "selecting" {
+	if (flags.all) return "all";
+	if (flags.spec) return "init";
+	return "selecting";
+}
+
 export default function Plan(flags: PlanFlags) {
 	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "selecting" | "planning" | "done" | "error">(
-		flags.spec ? "init" : "selecting",
+	const [phase, setPhase] = useState<"init" | "all" | "selecting" | "planning" | "done" | "error">(
+		getInitialPhase(flags),
 	);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
@@ -157,9 +222,11 @@ export default function Plan(flags: PlanFlags) {
 	const [lastLine, setLastLine] = useState("");
 	const [errorMessage, setErrorMessage] = useState("");
 	const [result, setResult] = useState<PlanResult | null>(null);
+	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
 	const [specs, setSpecs] = useState<Spec[]>([]);
 	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
+	const [allProgress, setAllProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
 	// Discover specs for the selector when no --spec flag
 	useEffect(() => {
@@ -175,7 +242,40 @@ export default function Plan(flags: PlanFlags) {
 		}
 	}, [phase]);
 
-	// Run planning when we have a spec
+	// Run --all mode
+	useEffect(() => {
+		if (phase !== "all") return;
+		executePlanAll(flags, {
+			onSpecStart: (name, index, total) => {
+				setSpecName(name);
+				setAllProgress({ current: index + 1, total });
+			},
+			onSpecComplete: () => {},
+			onPhase: (p) => { if (p === "planning") setPhase("planning"); },
+			onRefinement: (name, count) => { setRefinementInfo({ specName: name, taskCount: count }); },
+			onIteration: (current, max) => {
+				setCurrentIteration(current);
+				setMaxIterations(max);
+			},
+			onEvent: (event) => {
+				if (event.type === "text" && event.content) {
+					setLastLine(event.content);
+				}
+			},
+		})
+			.then((r) => {
+				setAllResult(r);
+				setPhase("done");
+				exit();
+			})
+			.catch((err) => {
+				setErrorMessage((err as Error).message);
+				setPhase("error");
+				exit(new Error((err as Error).message));
+			});
+	}, [phase]);
+
+	// Run planning when we have a spec (single mode)
 	useEffect(() => {
 		if (phase !== "init") return;
 		executePlan(activeFlags, {
@@ -218,6 +318,20 @@ export default function Plan(flags: PlanFlags) {
 		return <SpecSelector specs={specs} onSelect={handleSpecSelect} />;
 	}
 
+	if (phase === "done" && allResult) {
+		return (
+			<Box flexDirection="column">
+				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned, ${allResult.skipped.length} skipped)`}</Text>
+				{allResult.planned.map((r) => (
+					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks`}</Text>
+				))}
+				{allResult.skipped.length > 0 && (
+					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
+				)}
+			</Box>
+		);
+	}
+
 	if (phase === "done" && result) {
 		return (
 			<Box flexDirection="column">
@@ -235,6 +349,9 @@ export default function Plan(flags: PlanFlags) {
 					<Text color="yellow">{`Existing plan found for ${refinementInfo.specName} (${refinementInfo.taskCount} tasks)`}</Text>
 					<Text color="yellow">Running in refinement mode...</Text>
 				</>
+			)}
+			{allProgress.total > 0 && (
+				<Text dimColor>{`[${allProgress.current}/${allProgress.total}]`}</Text>
 			)}
 			<Text dimColor>
 				{`Planning: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}

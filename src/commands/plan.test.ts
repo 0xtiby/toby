@@ -7,6 +7,7 @@ vi.mock("../lib/config.js", () => ({
 
 vi.mock("../lib/specs.js", () => ({
 	discoverSpecs: vi.fn(),
+	filterByStatus: vi.fn(),
 	findSpec: vi.fn(),
 	loadSpecContent: vi.fn(),
 }));
@@ -38,18 +39,19 @@ vi.mock("../lib/paths.js", () => ({
 }));
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
-import { executePlan } from "./plan.js";
+import { executePlan, executePlanAll } from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
 const mockDiscoverSpecs = vi.mocked(discoverSpecs);
+const mockFilterByStatus = vi.mocked(filterByStatus);
 const mockFindSpec = vi.mocked(findSpec);
 const mockLoadSpecContent = vi.mocked(loadSpecContent);
 const mockLoadPrompt = vi.mocked(loadPrompt);
@@ -94,6 +96,9 @@ function setupDefaults() {
 	};
 
 	mockDiscoverSpecs.mockReturnValue([spec]);
+	mockFilterByStatus.mockImplementation((specs, status) =>
+		specs.filter((s) => s.status === status),
+	);
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
 	mockHasPrd.mockReturnValue(false);
@@ -312,5 +317,99 @@ describe("executePlan", () => {
 				"/project",
 			);
 		});
+	});
+});
+
+describe("executePlanAll", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("processes pending specs in NN- order", async () => {
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
+
+		const onSpecStart = vi.fn();
+		const result = await executePlanAll(
+			{ all: true, verbose: false },
+			{ onSpecStart },
+			"/project",
+		);
+
+		expect(result.planned).toHaveLength(2);
+		expect(result.planned[0].specName).toBe("01-auth");
+		expect(result.planned[1].specName).toBe("02-api");
+		expect(result.skipped).toHaveLength(0);
+		expect(onSpecStart).toHaveBeenCalledTimes(2);
+		expect(onSpecStart).toHaveBeenCalledWith("01-auth", 0, 2);
+		expect(onSpecStart).toHaveBeenCalledWith("02-api", 1, 2);
+	});
+
+	it("skips already-planned specs", async () => {
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
+
+		const result = await executePlanAll(
+			{ all: true, verbose: false },
+			{},
+			"/project",
+		);
+
+		expect(result.planned).toHaveLength(1);
+		expect(result.planned[0].specName).toBe("02-api");
+		expect(result.skipped).toEqual(["01-auth"]);
+	});
+
+	it("stops on first failure", async () => {
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => {
+			const found = specs.find((s) => s.name === query);
+			if (query === "01-auth") return found;
+			return undefined; // Simulate not-found for second spec
+		});
+		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
+
+		await expect(
+			executePlanAll({ all: true, verbose: false }, {}, "/project"),
+		).rejects.toThrow("Spec '02-api' not found");
+
+		// Only first spec should have been attempted via runLoop
+		expect(mockRunLoop).toHaveBeenCalledTimes(1);
+	});
+
+	it("returns empty planned array when all specs are already planned", async () => {
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "done" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+
+		const result = await executePlanAll(
+			{ all: true, verbose: false },
+			{},
+			"/project",
+		);
+
+		expect(result.planned).toHaveLength(0);
+		expect(result.skipped).toEqual(["01-auth", "02-api"]);
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("throws when no specs found", async () => {
+		mockDiscoverSpecs.mockReturnValue([]);
+
+		await expect(
+			executePlanAll({ all: true, verbose: false }, {}, "/project"),
+		).rejects.toThrow("No specs found in specs/");
 	});
 });
