@@ -11,7 +11,6 @@ import {
 	CONFIG_FILE,
 	STATUS_FILE,
 	DEFAULT_SPECS_DIR,
-	PRD_DIR,
 } from "../lib/paths.js";
 import { CLI_NAMES } from "../types.js";
 import type { TobyConfig, CliName } from "../types.js";
@@ -66,13 +65,11 @@ export function createProject(
 	const localDir = getLocalDir(cwd);
 	const configPath = path.join(localDir, CONFIG_FILE);
 	const statusPath = path.join(localDir, STATUS_FILE);
-	const prdPath = path.join(localDir, PRD_DIR);
 	const specsPath = path.join(cwd, selections.specsDir);
 
 	try {
-		// Create .toby/ and prd/ directories
+		// Create .toby/ directory
 		fs.mkdirSync(localDir, { recursive: true });
-		fs.mkdirSync(prdPath, { recursive: true });
 	} catch (err) {
 		const msg = (err as NodeJS.ErrnoException).code === "EACCES"
 			? `Permission denied creating ${localDir}`
