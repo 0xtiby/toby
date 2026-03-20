@@ -4,7 +4,7 @@ import { render } from "ink-testing-library";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import Status from "./status.js";
+import Status, { formatDuration } from "./status.js";
 
 let tmpDir: string;
 
@@ -122,25 +122,64 @@ describe("Status", () => {
 		// Table headers
 		expect(output).toContain("Spec");
 		expect(output).toContain("Status");
-		expect(output).toContain("Tasks");
+		expect(output).toContain("Tokens");
 		expect(output).toContain("Iter");
 
-		// 01-auth row: planned, tasks always —, 1 iteration
+		// 01-auth row: planned, 1 iteration, 0 tokens (tokensUsed is null)
 		expect(output).toContain("01-auth");
 		expect(output).toContain("planned");
-		expect(output).toContain("—");
 
 		// 02-api row: pending, 0 iterations
 		expect(output).toContain("02-api");
 		expect(output).toContain("pending");
 	});
 
-	it("shows — in Tasks column for all specs", () => {
+	it("shows tokens summed from iterations", () => {
+		setup({
+			specs: [{ name: "01-auth" }],
+			statusSpecs: {
+				"01-auth": {
+					status: "building",
+					iterations: [
+						{
+							type: "build",
+							iteration: 1,
+							sessionId: null,
+							cli: "claude",
+							model: "default",
+							startedAt: "2026-01-01T00:00:00Z",
+							completedAt: "2026-01-01T00:01:00Z",
+							exitCode: 0,
+							taskCompleted: null,
+							tokensUsed: 5000,
+						},
+						{
+							type: "build",
+							iteration: 2,
+							sessionId: null,
+							cli: "claude",
+							model: "default",
+							startedAt: "2026-01-01T00:02:00Z",
+							completedAt: "2026-01-01T00:03:00Z",
+							exitCode: 0,
+							taskCompleted: null,
+							tokensUsed: 3500,
+						},
+					],
+				},
+			},
+		});
+		const { lastFrame } = render(<Status version="0.1.0" />);
+		expect(lastFrame()).toContain("8500");
+	});
+
+	it("shows 0 tokens for specs with no iterations", () => {
 		setup({
 			specs: [{ name: "01-auth" }],
 		});
 		const { lastFrame } = render(<Status version="0.1.0" />);
-		expect(lastFrame()).toContain("—");
+		// Tokens column should show 0
+		expect(lastFrame()).toContain("0");
 	});
 
 	describe("--spec detailed view", () => {
@@ -243,5 +282,19 @@ describe("Status", () => {
 			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
 			expect(lastFrame()).toContain("Tokens used: 1500");
 		});
+	});
+});
+
+describe("formatDuration", () => {
+	it("returns '—' when completedAt is null", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", null)).toBe("—");
+	});
+
+	it("returns '1m 0s' for 60-second duration", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z")).toBe("1m 0s");
+	});
+
+	it("returns '0m 0s' for zero duration", () => {
+		expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")).toBe("0m 0s");
 	});
 });
