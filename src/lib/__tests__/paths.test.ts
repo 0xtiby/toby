@@ -23,6 +23,7 @@ import {
 	getLocalDir,
 	getPromptPath,
 	ensureGlobalDir,
+	ensureLocalDir,
 } from "../paths.js";
 
 describe("paths", () => {
@@ -113,6 +114,42 @@ describe("paths", () => {
 			);
 
 			expect(getPromptPath("PROMPT_BUILD.md", cwd)).toBe(localPath);
+		});
+	});
+
+	describe("ensureLocalDir", () => {
+		it("creates .toby/ with status.json and prd/ when missing", () => {
+			vi.mocked(fs.existsSync).mockReturnValue(false);
+
+			const result = ensureLocalDir("/tmp/proj");
+
+			expect(result).toBe("/tmp/proj/.toby");
+			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/proj/.toby", {
+				recursive: true,
+			});
+			expect(fs.mkdirSync).toHaveBeenCalledWith("/tmp/proj/.toby/prd", {
+				recursive: true,
+			});
+			expect(fs.writeFileSync).toHaveBeenCalledWith(
+				"/tmp/proj/.toby/status.json",
+				"{}\n",
+			);
+		});
+
+		it("does not overwrite status.json when it already exists", () => {
+			vi.mocked(fs.existsSync).mockImplementation(
+				(p) => p === "/tmp/proj/.toby/status.json",
+			);
+
+			ensureLocalDir("/tmp/proj");
+
+			expect(fs.mkdirSync).toHaveBeenCalled();
+			expect(fs.writeFileSync).not.toHaveBeenCalled();
+		});
+
+		it("returns correct path", () => {
+			vi.mocked(fs.existsSync).mockReturnValue(false);
+			expect(ensureLocalDir("/my/project")).toBe("/my/project/.toby");
 		});
 	});
 
