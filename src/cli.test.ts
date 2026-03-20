@@ -31,6 +31,12 @@ describe("package.json", () => {
 });
 
 describe("cli", () => {
+	it("renders without crashing (no args shows help)", () => {
+		const output = run();
+		expect(output).toContain("toby");
+		expect(output).toContain("Usage");
+	});
+
 	it("shows help with all 5 commands", () => {
 		const output = run("--help");
 		expect(output).toContain("plan");
