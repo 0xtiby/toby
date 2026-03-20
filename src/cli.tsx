@@ -119,7 +119,8 @@ if (!command) {
 	const app = render(<Build {...flags} />);
 	await app.waitUntilExit();
 } else if (command === "init") {
-	render(<Init version={version} />).unmount();
+	const app = render(<Init version={version} />);
+	await app.waitUntilExit();
 } else if (command === "status") {
 	const flags: StatusFlags = {
 		spec: cli.flags.spec,
