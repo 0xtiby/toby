@@ -15,6 +15,7 @@ export interface LoopOptions {
 	cwd: string;
 	autoApprove?: boolean;
 	sessionId?: string;
+	continueSession?: boolean;
 	onEvent?: (event: CliEvent) => void;
 	onIterationComplete?: (result: IterationResult) => void;
 }
@@ -45,6 +46,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		model,
 		cwd,
 		autoApprove = true,
+		continueSession = false,
 		onEvent,
 		onIterationComplete,
 	} = options;
@@ -55,10 +57,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		return { iterations: results, stopReason: "max_iterations" };
 	}
 
-	let sessionId = options.sessionId ?? undefined;
+	let lastSessionId: string | undefined = options.sessionId ?? undefined;
 
 	for (let i = 1; i <= maxIterations; i++) {
 		const prompt = getPrompt(i);
+
+		const effectiveSessionId = continueSession ? lastSessionId : options.sessionId;
 
 		const spawnOpts: SpawnOptions = {
 			cli,
@@ -66,7 +70,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 			cwd,
 			autoApprove,
 			...(model && model !== "default" ? { model } : {}),
-			...(sessionId ? { sessionId, continueSession: true } : {}),
+			...(effectiveSessionId ? { sessionId: effectiveSessionId, continueSession: true } : {}),
 		};
 
 		const proc = spawn(spawnOpts);
@@ -98,7 +102,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 			return { iterations: results, stopReason: "sentinel" };
 		}
 
-		sessionId = cliResult.sessionId ?? sessionId;
+		if (continueSession) {
+			lastSessionId = cliResult.sessionId ?? lastSessionId;
+		}
 	}
 
 	return { iterations: results, stopReason: "max_iterations" };

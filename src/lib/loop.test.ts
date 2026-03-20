@@ -194,4 +194,84 @@ describe("runLoop", () => {
 
 		expect(mockSpawn.mock.calls[0][0].autoApprove).toBe(true);
 	});
+
+	describe("session continuity", () => {
+		it("passes sessionId from iteration 1 to iteration 2 when continueSession is true", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				return makeMockProc([], makeCliResult({ sessionId: callCount === 1 ? "abc" : "def" }));
+			});
+
+			await runLoop(baseOptions({ maxIterations: 2, continueSession: true }));
+
+			// Iteration 1: no sessionId (fresh)
+			expect(mockSpawn.mock.calls[0][0]).not.toHaveProperty("sessionId");
+			// Iteration 2: sessionId from iter 1
+			expect(mockSpawn.mock.calls[1][0].sessionId).toBe("abc");
+			expect(mockSpawn.mock.calls[1][0].continueSession).toBe(true);
+		});
+
+		it("does not pass sessionId between iterations when continueSession is false", async () => {
+			mockSpawn.mockImplementation(() =>
+				makeMockProc([], makeCliResult({ sessionId: "abc" })),
+			);
+
+			await runLoop(baseOptions({ maxIterations: 2, continueSession: false }));
+
+			// Neither call should have sessionId
+			expect(mockSpawn.mock.calls[0][0]).not.toHaveProperty("sessionId");
+			expect(mockSpawn.mock.calls[1][0]).not.toHaveProperty("sessionId");
+		});
+
+		it("defaults continueSession to false (no propagation)", async () => {
+			mockSpawn.mockImplementation(() =>
+				makeMockProc([], makeCliResult({ sessionId: "abc" })),
+			);
+
+			await runLoop(baseOptions({ maxIterations: 2 }));
+
+			expect(mockSpawn.mock.calls[1][0]).not.toHaveProperty("sessionId");
+		});
+
+		it("spawns without sessionId when previous result has null sessionId", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				return makeMockProc([], makeCliResult({ sessionId: callCount === 1 ? null : "xyz" }));
+			});
+
+			await runLoop(baseOptions({ maxIterations: 2, continueSession: true }));
+
+			// Iteration 2: no sessionId since iter 1 returned null
+			expect(mockSpawn.mock.calls[1][0]).not.toHaveProperty("sessionId");
+		});
+
+		it("uses initial sessionId and continues from returned sessionId", async () => {
+			let callCount = 0;
+			mockSpawn.mockImplementation(() => {
+				callCount++;
+				return makeMockProc([], makeCliResult({ sessionId: callCount === 1 ? "new-session" : "newer" }));
+			});
+
+			await runLoop(baseOptions({ maxIterations: 2, continueSession: true, sessionId: "initial" }));
+
+			// Iteration 1: uses provided initial sessionId
+			expect(mockSpawn.mock.calls[0][0].sessionId).toBe("initial");
+			// Iteration 2: uses sessionId from iter 1
+			expect(mockSpawn.mock.calls[1][0].sessionId).toBe("new-session");
+		});
+
+		it("always uses initial sessionId when continueSession is false", async () => {
+			mockSpawn.mockImplementation(() =>
+				makeMockProc([], makeCliResult({ sessionId: "new-session" })),
+			);
+
+			await runLoop(baseOptions({ maxIterations: 2, continueSession: false, sessionId: "initial" }));
+
+			// Both calls use the initial sessionId (not propagated)
+			expect(mockSpawn.mock.calls[0][0].sessionId).toBe("initial");
+			expect(mockSpawn.mock.calls[1][0].sessionId).toBe("initial");
+		});
+	});
 });
