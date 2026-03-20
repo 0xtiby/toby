@@ -58,17 +58,22 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Load a prompt by name: resolve its path, read the file, and substitute variables.
- * Returns the final prompt string with all provided variables replaced.
+ * Load a prompt by name: resolve its path, read the file, parse frontmatter,
+ * merge configVars with built-in vars, validate required vars, and substitute.
+ * Returns the final prompt string with frontmatter stripped and all variables replaced.
  */
 export function loadPrompt(
 	name: PromptName,
-	vars: Partial<TemplateVars>,
+	vars: TemplateVars,
 	cwd?: string,
+	configVars?: TemplateVars,
 ): string {
 	const promptPath = resolvePromptPath(name, cwd);
-	const content = fs.readFileSync(promptPath, "utf-8");
-	return substitute(content, vars);
+	const raw = fs.readFileSync(promptPath, "utf-8");
+	const { frontmatter, content } = parseFrontmatter(raw);
+	const merged: TemplateVars = { ...(configVars ?? {}), ...vars };
+	validateRequiredVars(frontmatter, merged, name);
+	return substitute(content, merged);
 }
 
 /**
@@ -146,10 +151,10 @@ export function validateRequiredVars(
  */
 export function substitute(
 	template: string,
-	vars: Partial<TemplateVars>,
+	vars: TemplateVars,
 ): string {
 	return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-		const value = vars[key as keyof TemplateVars];
+		const value = vars[key];
 		return value !== undefined ? value : match;
 	});
 }
