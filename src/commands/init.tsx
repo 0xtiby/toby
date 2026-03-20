@@ -65,33 +65,52 @@ export function createProject(
 	const prdPath = path.join(localDir, PRD_DIR);
 	const specsPath = path.join(cwd, selections.specsDir);
 
-	// Create .toby/ and prd/ directories
-	fs.mkdirSync(localDir, { recursive: true });
-	fs.mkdirSync(prdPath, { recursive: true });
+	try {
+		// Create .toby/ and prd/ directories
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.mkdirSync(prdPath, { recursive: true });
+	} catch (err) {
+		const msg = (err as NodeJS.ErrnoException).code === "EACCES"
+			? `Permission denied creating ${localDir}`
+			: `Failed to create project directory: ${(err as Error).message}`;
+		throw new Error(msg);
+	}
 
-	// Write config.json (always overwrite)
-	const config: Partial<TobyConfig> = {
-		plan: {
-			cli: selections.planCli,
-			model: selections.planModel,
-			iterations: 2,
-		},
-		build: {
-			cli: selections.buildCli,
-			model: selections.buildModel,
-			iterations: 10,
-		},
-		specsDir: selections.specsDir,
-	};
-	writeConfig(config, configPath);
+	try {
+		// Write config.json (always overwrite)
+		const config: Partial<TobyConfig> = {
+			plan: {
+				cli: selections.planCli,
+				model: selections.planModel,
+				iterations: 2,
+			},
+			build: {
+				cli: selections.buildCli,
+				model: selections.buildModel,
+				iterations: 10,
+			},
+			specsDir: selections.specsDir,
+		};
+		writeConfig(config, configPath);
+	} catch (err) {
+		throw new Error(
+			`Failed to write config: ${(err as Error).message}`,
+		);
+	}
 
 	// Write status.json only if missing (preserve existing)
 	const statusCreated = !fs.existsSync(statusPath);
 	if (statusCreated) {
-		fs.writeFileSync(
-			statusPath,
-			JSON.stringify({ specs: {} }, null, 2) + "\n",
-		);
+		try {
+			fs.writeFileSync(
+				statusPath,
+				JSON.stringify({ specs: {} }, null, 2) + "\n",
+			);
+		} catch (err) {
+			throw new Error(
+				`Failed to write status file: ${(err as Error).message}`,
+			);
+		}
 	}
 
 	// Create specs directory if missing
@@ -164,6 +183,7 @@ export default function Init({ version }: InitFlags) {
 	});
 	const [specsDirInput, setSpecsDirInput] = useState(DEFAULT_SPECS_DIR);
 	const [result, setResult] = useState<InitResult | null>(null);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (phase !== "detecting") return;
@@ -212,9 +232,14 @@ export default function Init({ version }: InitFlags) {
 		const dir = value.trim() || DEFAULT_SPECS_DIR;
 		const final = { ...selections, specsDir: dir };
 		setSelections(final);
-		const res = createProject(final);
-		setResult(res);
-		setPhase("done");
+		try {
+			const res = createProject(final);
+			setResult(res);
+			setPhase("done");
+		} catch (err) {
+			setError((err as Error).message);
+			setPhase("done");
+		}
 		exit();
 	}
 
@@ -297,6 +322,15 @@ export default function Init({ version }: InitFlags) {
 							onSubmit={handleSpecsDirSubmit}
 						/>
 					</Box>
+				</Box>
+			)}
+
+			{phase === "done" && error && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color="red" bold>
+						✗ Initialization failed
+					</Text>
+					<Text color="red">{`  ${error}`}</Text>
 				</Box>
 			)}
 

@@ -78,6 +78,17 @@ function ConfigGet({ configKey }: { configKey: string }) {
 		return <Text color="red">{`Unknown config key: ${configKey}\nValid keys: ${Object.keys(VALID_KEYS).join(", ")}`}</Text>;
 	}
 
+	const cwd = process.cwd();
+	const localDir = getLocalDir(cwd);
+	if (!fs.existsSync(localDir)) {
+		return (
+			<Box flexDirection="column">
+				<Text color="red" bold>No config found</Text>
+				<Text>{"Run "}<Text color="cyan">toby init</Text>{" to set up your project."}</Text>
+			</Box>
+		);
+	}
+
 	const config = loadConfig();
 	const value = getNestedValue(config as unknown as Record<string, unknown>, configKey);
 	return <Text>{String(value)}</Text>;
@@ -120,7 +131,16 @@ function ConfigSet({ configKey, value }: { configKey: string; value: string }) {
 	}
 
 	setNestedValue(existing, configKey, parsed);
-	writeConfig(existing as Partial<TobyConfig>, configPath);
+
+	try {
+		writeConfig(existing as Partial<TobyConfig>, configPath);
+	} catch (err) {
+		const code = (err as NodeJS.ErrnoException).code;
+		const msg = code === "EACCES"
+			? `Permission denied writing to ${configPath}`
+			: `Failed to write config: ${(err as Error).message}`;
+		return <Text color="red">{msg}</Text>;
+	}
 
 	return <Text color="green">{`Set ${configKey} = ${String(parsed)}`}</Text>;
 }
@@ -214,6 +234,7 @@ export function ConfigEditor({ version }: { version: string }) {
 	});
 	const [iterInput, setIterInput] = useState("");
 	const [specsDirInput, setSpecsDirInput] = useState("");
+	const [saveError, setSaveError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (phase !== "loading") return;
@@ -254,7 +275,15 @@ export function ConfigEditor({ version }: { version: string }) {
 		const cwd = process.cwd();
 		const configPath = path.join(getLocalDir(cwd), CONFIG_FILE);
 		const partial = editorValuesToConfig(values);
-		writeConfig(partial, configPath);
+		try {
+			writeConfig(partial, configPath);
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			const msg = code === "EACCES"
+				? `Permission denied writing to ${configPath}`
+				: `Failed to save config: ${(err as Error).message}`;
+			setSaveError(msg);
+		}
 		setPhase("done");
 		exit();
 	}
@@ -446,7 +475,11 @@ export function ConfigEditor({ version }: { version: string }) {
 				<>
 					<CompletedField label="verbose" value={String(values.verbose)} />
 					<Text>{""}</Text>
-					<Text color="green" bold>✓ Config saved</Text>
+					{saveError ? (
+						<Text color="red" bold>✗ {saveError}</Text>
+					) : (
+						<Text color="green" bold>✓ Config saved</Text>
+					)}
 				</>
 			)}
 		</Box>

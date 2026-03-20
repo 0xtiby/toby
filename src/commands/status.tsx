@@ -20,18 +20,30 @@ interface SpecRow {
 	iterations: number;
 }
 
-function buildRows(cwd: string): SpecRow[] {
+function buildRows(cwd: string): { rows: SpecRow[]; warnings: string[] } {
 	const config = loadConfig(cwd);
 	const specs = discoverSpecs(cwd, config);
-	const statusData = readStatus(cwd);
+	const warnings: string[] = [];
 
-	return specs.map((spec) => {
+	let statusData;
+	try {
+		statusData = readStatus(cwd);
+	} catch {
+		warnings.push("Corrupt status.json — showing defaults. Run toby init to re-create.");
+		statusData = { specs: {} } as import("../types.js").StatusData;
+	}
+
+	const rows = specs.map((spec) => {
 		const entry = getSpecStatus(statusData, spec.name);
-		const prd = readPrd(spec.name, cwd);
 		let tasks = "—";
-		if (prd) {
-			const summary = getTaskSummary(prd);
-			tasks = `${summary.done}/${prd.tasks.length}`;
+		try {
+			const prd = readPrd(spec.name, cwd);
+			if (prd) {
+				const summary = getTaskSummary(prd);
+				tasks = `${summary.done}/${prd.tasks.length}`;
+			}
+		} catch {
+			// Corrupt prd.json — show dash instead of crashing
 		}
 		return {
 			name: spec.name,
@@ -40,6 +52,8 @@ function buildRows(cwd: string): SpecRow[] {
 			iterations: entry.iterations.length,
 		};
 	});
+
+	return { rows, warnings };
 }
 
 function pad(str: string, len: number): string {
@@ -121,9 +135,23 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 		return <Text color="red">Spec not found: {specName}</Text>;
 	}
 
-	const statusData = readStatus(cwd);
+	let statusData;
+	let statusWarning: string | null = null;
+	try {
+		statusData = readStatus(cwd);
+	} catch {
+		statusWarning = "Corrupt status.json — showing defaults.";
+		statusData = { specs: {} } as import("../types.js").StatusData;
+	}
 	const entry = getSpecStatus(statusData, spec.name);
-	const prd = readPrd(spec.name, cwd);
+
+	let prd: import("../types.js").PRDData | null = null;
+	let prdWarning: string | null = null;
+	try {
+		prd = readPrd(spec.name, cwd);
+	} catch {
+		prdWarning = "Corrupt prd.json — task data unavailable.";
+	}
 
 	const taskRows: TaskRow[] = prd
 		? prd.tasks.map((t: Task) => ({
@@ -140,6 +168,8 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 
 	return (
 		<Box flexDirection="column">
+			{statusWarning && <Text color="yellow">{statusWarning}</Text>}
+			{prdWarning && <Text color="yellow">{prdWarning}</Text>}
 			<Text bold>{spec.name}</Text>
 			<Text>Status: {entry.status}</Text>
 			<Text>{""}</Text>
@@ -178,12 +208,15 @@ export default function Status({ spec, version }: StatusFlags) {
 		return <DetailedView specName={spec} cwd={cwd} />;
 	}
 
-	const rows = buildRows(cwd);
+	const { rows, warnings } = buildRows(cwd);
 
 	if (rows.length === 0) {
 		return (
 			<Box flexDirection="column">
 				<Text>{`toby v${version}`}</Text>
+				{warnings.map((w) => (
+					<Text key={w} color="yellow">{w}</Text>
+				))}
 				<Text dimColor>No specs found. Add .md files to your specs directory.</Text>
 			</Box>
 		);
@@ -192,6 +225,9 @@ export default function Status({ spec, version }: StatusFlags) {
 	return (
 		<Box flexDirection="column">
 			<Text>{`toby v${version}`}</Text>
+			{warnings.map((w) => (
+				<Text key={w} color="yellow">{w}</Text>
+			))}
 			<Text>{""}</Text>
 			<StatusTable rows={rows} />
 		</Box>
