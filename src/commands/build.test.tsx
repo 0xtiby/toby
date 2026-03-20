@@ -197,17 +197,13 @@ describe("executeBuild", () => {
 
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_BUILD",
-			{
+			expect.objectContaining({
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				BRANCH: "",
-				WORKTREE: "",
-				EPIC_NAME: "",
 				IS_LAST_SPEC: "false",
-			},
-			"/project",
-			{},
+			}),
+			{ cwd: "/project", configVars: {} },
 		);
 	});
 
@@ -321,9 +317,8 @@ describe("executeBuild", () => {
 
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_BUILD",
-			expect.objectContaining({ ITERATION: "3" }),
-			"/project",
-			{},
+			expect.objectContaining({ ITERATION: "3", SPEC_NAME: "01-auth" }),
+			{ cwd: "/project", configVars: {} },
 		);
 	});
 
@@ -917,9 +912,8 @@ describe("executeBuildAll", () => {
 
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_BUILD_ALL",
-			expect.anything(),
-			"/p",
-			expect.anything(),
+			expect.objectContaining({ SPEC_NAME: "01-auth", IS_LAST_SPEC: "true" }),
+			{ cwd: "/p", configVars: {} },
 		);
 	});
 

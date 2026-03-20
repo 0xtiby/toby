@@ -6,6 +6,7 @@ import type {
 	PromptFrontmatter,
 	PromptName,
 	TemplateVars,
+	LoadPromptOptions,
 } from "../types.js";
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
@@ -65,9 +66,9 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 export function loadPrompt(
 	name: PromptName,
 	vars: TemplateVars,
-	cwd?: string,
-	configVars?: TemplateVars,
+	options: LoadPromptOptions = {},
 ): string {
+	const { cwd, configVars } = options;
 	const promptPath = resolvePromptPath(name, cwd);
 	const raw = fs.readFileSync(promptPath, "utf-8");
 	const { frontmatter, content } = parseFrontmatter(raw);
@@ -77,9 +78,12 @@ export function loadPrompt(
 }
 
 /**
- * Parse YAML frontmatter from a prompt string.
+ * Parse frontmatter directives from a prompt string.
  * Frontmatter must start with `---\n` and end with `---\n`.
- * Extracts `required_vars` and `optional_vars` as string arrays.
+ * Supports two directive formats:
+ *   - List style:  `required_vars:\n  - A\n  - B`
+ *   - Inline style: `required_vars: [A, B, C]`
+ * Unrecognized keys are ignored.
  * Returns null frontmatter and original content if no valid frontmatter found.
  */
 export function parseFrontmatter(raw: string): {
@@ -103,14 +107,23 @@ export function parseFrontmatter(raw: string): {
 	let currentKey: "required_vars" | "optional_vars" | null = null;
 	for (const line of yamlBlock.split("\n")) {
 		const trimmed = line.trim();
-		if (trimmed === "") continue;
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
 
-		if (trimmed === "required_vars:" || trimmed.startsWith("required_vars:")) {
-			currentKey = "required_vars";
-			frontmatter.required_vars = [];
-		} else if (trimmed === "optional_vars:" || trimmed.startsWith("optional_vars:")) {
-			currentKey = "optional_vars";
-			frontmatter.optional_vars = [];
+		const keyMatch = trimmed.match(/^(required_vars|optional_vars):\s*(.*)$/);
+		if (keyMatch) {
+			const key = keyMatch[1] as "required_vars" | "optional_vars";
+			const rest = keyMatch[2].trim();
+
+			// Inline array: required_vars: [A, B, C]
+			const inlineMatch = rest.match(/^\[(.+)\]$/);
+			if (inlineMatch) {
+				frontmatter[key] = inlineMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
+				currentKey = null;
+			} else {
+				// Block list follows
+				frontmatter[key] = [];
+				currentKey = key;
+			}
 		} else if (currentKey && trimmed.startsWith("- ")) {
 			const value = trimmed.slice(2).trim();
 			if (value) {
@@ -126,23 +139,27 @@ export function parseFrontmatter(raw: string): {
 
 /**
  * Validate that all required vars from frontmatter are present.
- * Logs a warning for each missing var. Returns array of missing var names.
+ * Throws when required variables are missing.
  */
 export function validateRequiredVars(
 	frontmatter: PromptFrontmatter | null,
 	vars: TemplateVars,
 	promptName: string,
-): string[] {
-	if (!frontmatter?.required_vars?.length) return [];
+): void {
+	if (!frontmatter?.required_vars?.length) return;
 
 	const missing: string[] = [];
 	for (const varName of frontmatter.required_vars) {
 		if (vars[varName] === undefined) {
 			missing.push(varName);
-			console.warn(`Warning: prompt "${promptName}" requires variable ${varName}`);
 		}
 	}
-	return missing;
+
+	if (missing.length > 0) {
+		throw new Error(
+			`Prompt "${promptName}" is missing required variable(s): ${missing.join(", ")}`,
+		);
+	}
 }
 
 /**

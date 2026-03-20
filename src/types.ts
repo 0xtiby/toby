@@ -84,15 +84,10 @@ export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD" | "PROMPT_BUILD_ALL";
 
 export type TemplateVars = Record<string, string>;
 
-export const BUILTIN_VARS = [
-	"SPEC_NAME",
-	"ITERATION",
-	"SPEC_CONTENT",
-	"BRANCH",
-	"WORKTREE",
-	"EPIC_NAME",
-	"IS_LAST_SPEC",
-] as const;
+export interface LoadPromptOptions {
+	cwd?: string;
+	configVars?: TemplateVars;
+}
 
 export interface PromptFrontmatter {
 	required_vars?: string[];

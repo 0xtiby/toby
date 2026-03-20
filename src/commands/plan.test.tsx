@@ -167,7 +167,7 @@ describe("executePlan", () => {
 		expect(mockRunLoop.mock.calls[0][0].cli).toBe("codex");
 	});
 
-	it("prompt template receives correct substitution variables including empty build-specific vars", async () => {
+	it("prompt template receives correct substitution variables", async () => {
 		await executePlan(defaultFlags, {}, "/project");
 
 		// getPrompt is called inside runLoop; we capture it via the mock
@@ -180,13 +180,8 @@ describe("executePlan", () => {
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				BRANCH: "",
-				WORKTREE: "",
-				EPIC_NAME: "",
-				IS_LAST_SPEC: "",
 			},
-			"/project",
-			{},
+			{ cwd: "/project", configVars: {} },
 		);
 	});
 
@@ -278,9 +273,8 @@ describe("executePlan", () => {
 
 			expect(mockLoadPrompt).toHaveBeenCalledWith(
 				"PROMPT_PLAN",
-				expect.objectContaining({ ITERATION: "3" }),
-				"/project",
-				{},
+				expect.objectContaining({ ITERATION: "3", SPEC_NAME: "01-auth" }),
+				{ cwd: "/project", configVars: {} },
 			);
 		});
 
@@ -297,9 +291,8 @@ describe("executePlan", () => {
 
 			expect(mockLoadPrompt).toHaveBeenCalledWith(
 				"PROMPT_PLAN",
-				expect.objectContaining({ ITERATION: "1" }),
-				"/project",
-				{},
+				expect.objectContaining({ ITERATION: "1", SPEC_NAME: "01-auth" }),
+				{ cwd: "/project", configVars: {} },
 			);
 		});
 	});
@@ -454,9 +447,8 @@ describe("error handling edge cases", () => {
 		getPrompt(1);
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_PLAN",
-			expect.objectContaining({ SPEC_CONTENT: "" }),
-			"/project",
-			{},
+			expect.objectContaining({ SPEC_CONTENT: "", SPEC_NAME: "01-auth" }),
+			{ cwd: "/project", configVars: {} },
 		);
 		expect(result.specName).toBe("01-auth");
 	});

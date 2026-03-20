@@ -13,7 +13,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration } from "../types.js";
+import type { Iteration, TemplateVars, PromptName, CommandConfig, StatusData, SpecFile } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
@@ -34,6 +34,91 @@ export interface BuildResult {
 	totalTokens: number;
 	specDone: boolean;
 	error?: string;
+}
+
+interface RunSpecBuildOptions {
+	spec: SpecFile;
+	promptName: PromptName;
+	extraVars?: TemplateVars;
+	existingIterations: number;
+	commandConfig: CommandConfig;
+	cwd: string;
+	abortSignal?: AbortSignal;
+	callbacks: BuildCallbacks;
+}
+
+async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
+	const { spec, promptName, extraVars, existingIterations, commandConfig, cwd, abortSignal, callbacks } = options;
+	let status = readStatus(cwd);
+	let iterationStartTime = new Date().toISOString();
+
+	callbacks.onPhase?.("building");
+	callbacks.onIteration?.(1, commandConfig.iterations);
+
+	const loopResult = await runLoop({
+		maxIterations: commandConfig.iterations,
+		getPrompt: (iteration) =>
+			loadPrompt(
+				promptName,
+				{
+					SPEC_NAME: spec.name,
+					ITERATION: String(iteration + existingIterations),
+					SPEC_CONTENT: spec.content ?? "",
+					...extraVars,
+				},
+				{ cwd, configVars: commandConfig.templateVars },
+			),
+		cli: commandConfig.cli,
+		model: commandConfig.model,
+		cwd,
+		continueSession: true,
+		abortSignal,
+		onEvent: (event) => {
+			callbacks.onEvent?.(event);
+		},
+		onIterationComplete: (iterResult: IterationResult) => {
+			const completedAt = new Date().toISOString();
+			const iteration: Iteration = {
+				type: "build",
+				iteration: iterResult.iteration,
+				sessionId: iterResult.sessionId,
+				cli: commandConfig.cli,
+				model: iterResult.model ?? commandConfig.model,
+				startedAt: iterationStartTime,
+				completedAt,
+				exitCode: iterResult.exitCode,
+				taskCompleted: null,
+				tokensUsed: iterResult.tokensUsed,
+			};
+			iterationStartTime = new Date().toISOString();
+			status = addIteration(status, spec.name, iteration);
+			writeStatus(status, cwd);
+			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+		},
+	});
+
+	if (loopResult.stopReason === "aborted") {
+		status = updateSpecStatus(status, spec.name, "building");
+		writeStatus(status, cwd);
+		throw new AbortError(spec.name, loopResult.iterations.length);
+	}
+
+	const totalIterations = loopResult.iterations.length;
+	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+
+	if (loopResult.stopReason === "error") {
+		status = updateSpecStatus(status, spec.name, "building");
+		writeStatus(status, cwd);
+		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
+		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
+		return { result: { specName: spec.name, totalIterations, totalTokens, specDone: false, error: errorMsg }, status };
+	}
+
+	const specDone = loopResult.stopReason === "sentinel";
+	status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
+	writeStatus(status, cwd);
+
+	return { result: { specName: spec.name, totalIterations, totalTokens, specDone }, status };
 }
 
 /**
@@ -67,89 +152,27 @@ export async function executeBuild(
 		throw new Error(`Spec '${flags.spec}' not found`);
 	}
 
-	let status = readStatus(cwd);
+	const status = readStatus(cwd);
 	const specEntry = status.specs[found.name];
 	if (!specEntry || (specEntry.status !== "planned" && specEntry.status !== "building")) {
 		throw new Error(`No plan found for ${found.name}. Run 'toby plan --spec=${flags.spec}' first.`);
 	}
 
 	const specWithContent = loadSpecContent(found);
-	const specStatus = specEntry;
-	const existingIterations = specStatus?.iterations.length ?? 0;
+	const existingIterations = specEntry.iterations.length;
 
-	let iterationStartTime = new Date().toISOString();
-	callbacks.onPhase?.("building");
-	callbacks.onIteration?.(1, commandConfig.iterations);
-
-	const loopResult = await runLoop({
-		maxIterations: commandConfig.iterations,
-		getPrompt: (iteration) =>
-			loadPrompt(
-				"PROMPT_BUILD",
-				{
-					SPEC_NAME: found.name,
-					ITERATION: String(iteration + existingIterations),
-					SPEC_CONTENT: specWithContent.content ?? "",
-					BRANCH: "",
-					WORKTREE: "",
-					EPIC_NAME: "",
-					IS_LAST_SPEC: "false",
-				},
-				cwd,
-				commandConfig.templateVars,
-			),
-		cli: commandConfig.cli,
-		model: commandConfig.model,
+	const { result } = await runSpecBuild({
+		spec: specWithContent,
+		promptName: "PROMPT_BUILD",
+		extraVars: { IS_LAST_SPEC: "false" },
+		existingIterations,
+		commandConfig,
 		cwd,
-		continueSession: true,
 		abortSignal,
-		onEvent: (event) => {
-			callbacks.onEvent?.(event);
-		},
-		onIterationComplete: (iterResult: IterationResult) => {
-			const completedAt = new Date().toISOString();
-			const iteration: Iteration = {
-				type: "build",
-				iteration: iterResult.iteration,
-				sessionId: iterResult.sessionId,
-				cli: commandConfig.cli,
-				model: iterResult.model ?? commandConfig.model,
-				startedAt: iterationStartTime,
-				completedAt,
-				exitCode: iterResult.exitCode,
-				taskCompleted: null,
-				tokensUsed: iterResult.tokensUsed,
-			};
-			iterationStartTime = new Date().toISOString();
-			status = addIteration(status, found.name, iteration);
-			writeStatus(status, cwd);
-			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
-		},
+		callbacks,
 	});
 
-	if (loopResult.stopReason === "aborted") {
-		status = updateSpecStatus(status, found.name, "building");
-		writeStatus(status, cwd);
-		throw new AbortError(found.name, loopResult.iterations.length);
-	}
-
-	const totalIterations = loopResult.iterations.length;
-	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
-
-	// Handle fatal error during iteration
-	if (loopResult.stopReason === "error") {
-		status = updateSpecStatus(status, found.name, "building");
-		writeStatus(status, cwd);
-		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
-		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
-		return { specName: found.name, totalIterations, totalTokens, specDone: false, error: errorMsg };
-	}
-
-	const specDone = loopResult.stopReason === "sentinel";
-	status = updateSpecStatus(status, found.name, specDone ? "done" : "building");
-	writeStatus(status, cwd);
-
-	return { specName: found.name, totalIterations, totalTokens, specDone };
+	return result;
 }
 
 export interface BuildAllCallbacks {
@@ -204,72 +227,21 @@ export async function executeBuildAll(
 			iterations: flags.iterations,
 		});
 
-		let status = readStatus(cwd);
-
-		let iterationStartTime = new Date().toISOString();
-		callbacks.onPhase?.("building");
-		callbacks.onIteration?.(1, commandConfig.iterations);
-
-		const loopResult = await runLoop({
-			maxIterations: commandConfig.iterations,
-			getPrompt: (iteration) =>
-				loadPrompt(
-					"PROMPT_BUILD_ALL",
-					{
-						SPEC_NAME: spec.name,
-						ITERATION: String(iteration),
-						SPEC_CONTENT: specWithContent.content ?? "",
-						BRANCH: "",
-						WORKTREE: "",
-						EPIC_NAME: "",
-						IS_LAST_SPEC: isLastSpec ? "true" : "false",
-					},
-					cwd,
-					commandConfig.templateVars,
-				),
-			cli: commandConfig.cli,
-			model: commandConfig.model,
+		const { result } = await runSpecBuild({
+			spec: specWithContent,
+			promptName: "PROMPT_BUILD_ALL",
+			extraVars: { IS_LAST_SPEC: isLastSpec ? "true" : "false" },
+			existingIterations: 0,
+			commandConfig,
 			cwd,
-			continueSession: true,
 			abortSignal,
-			onEvent: (event) => {
-				callbacks.onEvent?.(event);
-			},
-			onIterationComplete: (iterResult: IterationResult) => {
-				const completedAt = new Date().toISOString();
-				const iteration: Iteration = {
-					type: "build",
-					iteration: iterResult.iteration,
-					sessionId: iterResult.sessionId,
-					cli: commandConfig.cli,
-					model: iterResult.model ?? commandConfig.model,
-					startedAt: iterationStartTime,
-					completedAt,
-					exitCode: iterResult.exitCode,
-					taskCompleted: null,
-					tokensUsed: iterResult.tokensUsed,
-				};
-				iterationStartTime = new Date().toISOString();
-				status = addIteration(status, spec.name, iteration);
-				writeStatus(status, cwd);
-				callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+			callbacks: {
+				onPhase: callbacks.onPhase,
+				onIteration: callbacks.onIteration,
+				onEvent: callbacks.onEvent,
 			},
 		});
 
-		if (loopResult.stopReason === "aborted") {
-			status = updateSpecStatus(status, spec.name, "building");
-			writeStatus(status, cwd);
-			throw new AbortError(spec.name, loopResult.iterations.length);
-		}
-
-		const totalIterations = loopResult.iterations.length;
-		const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
-
-		const specDone = loopResult.stopReason === "sentinel";
-		status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
-		writeStatus(status, cwd);
-
-		const result: BuildResult = { specName: spec.name, totalIterations, totalTokens, specDone };
 		built.push(result);
 		callbacks.onSpecComplete?.(result);
 	}
