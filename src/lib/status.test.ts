@@ -1,9 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import {
 	IterationSchema,
 	SpecStatusEntrySchema,
 	StatusSchema,
 } from "../types.js";
+import {
+	readStatus,
+	writeStatus,
+	getSpecStatus,
+	addIteration,
+	updateSpecStatus,
+} from "./status.js";
 
 const validIteration = {
 	type: "build" as const,
@@ -124,5 +134,158 @@ describe("StatusSchema", () => {
 		expect(() =>
 			StatusSchema.parse({ specs: { "01-auth": { status: "bad" } } }),
 		).toThrow();
+	});
+});
+
+// ── Status utility function tests ───────────────────────────────
+
+describe("readStatus", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-status-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("returns default for missing file", () => {
+		const result = readStatus(tmpDir);
+		expect(result).toEqual({ specs: {} });
+	});
+
+	it("returns parsed Status for valid file", () => {
+		const statusDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(statusDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(statusDir, "status.json"),
+			JSON.stringify(validStatus, null, 2),
+		);
+
+		const result = readStatus(tmpDir);
+		expect(result.specs["01-auth"].status).toBe("building");
+		expect(result.specs["01-auth"].iterations).toHaveLength(1);
+	});
+
+	it("throws for corrupted file with file path in error message", () => {
+		const statusDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(statusDir, { recursive: true });
+		const filePath = path.join(statusDir, "status.json");
+		fs.writeFileSync(filePath, "not json {{{");
+
+		expect(() => readStatus(tmpDir)).toThrow(filePath);
+	});
+
+	it("throws for invalid schema with file path in error message", () => {
+		const statusDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(statusDir, { recursive: true });
+		const filePath = path.join(statusDir, "status.json");
+		fs.writeFileSync(filePath, JSON.stringify({ wrong: true }));
+
+		expect(() => readStatus(tmpDir)).toThrow(filePath);
+	});
+});
+
+describe("writeStatus", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-status-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("creates .toby directory if it doesn't exist", () => {
+		writeStatus({ specs: {} }, tmpDir);
+		expect(fs.existsSync(path.join(tmpDir, ".toby", "status.json"))).toBe(
+			true,
+		);
+	});
+
+	it("round-trips with readStatus", () => {
+		writeStatus(validStatus, tmpDir);
+		const result = readStatus(tmpDir);
+		expect(result.specs["01-auth"].status).toBe("building");
+		expect(result.specs["01-auth"].iterations[0].type).toBe("build");
+	});
+
+	it("writes pretty-printed JSON", () => {
+		writeStatus(validStatus, tmpDir);
+		const raw = fs.readFileSync(
+			path.join(tmpDir, ".toby", "status.json"),
+			"utf-8",
+		);
+		expect(raw).toContain("\n");
+		expect(raw.endsWith("\n")).toBe(true);
+	});
+});
+
+describe("getSpecStatus", () => {
+	it("returns existing entry for known spec", () => {
+		const entry = getSpecStatus(validStatus, "01-auth");
+		expect(entry.status).toBe("building");
+		expect(entry.iterations).toHaveLength(1);
+	});
+
+	it("returns default for unknown spec", () => {
+		const entry = getSpecStatus(validStatus, "unknown-spec");
+		expect(entry.status).toBe("pending");
+		expect(entry.plannedAt).toBeNull();
+		expect(entry.iterations).toEqual([]);
+	});
+});
+
+describe("addIteration", () => {
+	it("appends to existing iterations array", () => {
+		const newIteration = {
+			...validIteration,
+			iteration: 2,
+			startedAt: "2026-01-15T11:00:00Z",
+			completedAt: "2026-01-15T11:05:00Z",
+		};
+
+		const result = addIteration(validStatus, "01-auth", newIteration);
+		expect(result.specs["01-auth"].iterations).toHaveLength(2);
+		expect(result.specs["01-auth"].iterations[1].iteration).toBe(2);
+	});
+
+	it("creates entry for new spec", () => {
+		const result = addIteration(validStatus, "new-spec", validIteration);
+		expect(result.specs["new-spec"].iterations).toHaveLength(1);
+		expect(result.specs["new-spec"].status).toBe("pending");
+	});
+
+	it("does not mutate original status", () => {
+		const original = structuredClone(validStatus);
+		addIteration(validStatus, "01-auth", validIteration);
+		expect(validStatus).toEqual(original);
+	});
+});
+
+describe("updateSpecStatus", () => {
+	it("changes status field", () => {
+		const result = updateSpecStatus(validStatus, "01-auth", "done");
+		expect(result.specs["01-auth"].status).toBe("done");
+	});
+
+	it("preserves other fields", () => {
+		const result = updateSpecStatus(validStatus, "01-auth", "done");
+		expect(result.specs["01-auth"].iterations).toHaveLength(1);
+		expect(result.specs["01-auth"].plannedAt).toBe("2026-01-15T09:00:00Z");
+	});
+
+	it("creates entry for new spec with given status", () => {
+		const result = updateSpecStatus(validStatus, "new-spec", "planned");
+		expect(result.specs["new-spec"].status).toBe("planned");
+		expect(result.specs["new-spec"].iterations).toEqual([]);
+	});
+
+	it("does not mutate original status", () => {
+		const original = structuredClone(validStatus);
+		updateSpecStatus(validStatus, "01-auth", "done");
+		expect(validStatus).toEqual(original);
 	});
 });
