@@ -3,6 +3,7 @@ import { Text, Box, useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec, loadSpecContent } from "../lib/specs.js";
+import type { Spec } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
@@ -15,6 +16,7 @@ import {
 import { getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
+import SpecSelector from "../components/SpecSelector.js";
 
 export interface PlanFlags {
 	spec?: string;
@@ -133,17 +135,37 @@ export async function executePlan(
 
 export default function Plan(flags: PlanFlags) {
 	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "planning" | "done" | "error">("init");
+	const [phase, setPhase] = useState<"init" | "selecting" | "planning" | "done" | "error">(
+		flags.spec ? "init" : "selecting",
+	);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
 	const [specName, setSpecName] = useState("");
 	const [lastLine, setLastLine] = useState("");
 	const [errorMessage, setErrorMessage] = useState("");
 	const [result, setResult] = useState<PlanResult | null>(null);
+	const [specs, setSpecs] = useState<Spec[]>([]);
+	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
 
+	// Discover specs for the selector when no --spec flag
 	useEffect(() => {
-		executePlan(flags, {
-			onPhase: setPhase as (phase: string) => void,
+		if (phase !== "selecting") return;
+		try {
+			const config = loadConfig();
+			const discovered = discoverSpecs(process.cwd(), config);
+			setSpecs(discovered);
+		} catch (err) {
+			setErrorMessage((err as Error).message);
+			setPhase("error");
+			exit(new Error((err as Error).message));
+		}
+	}, [phase]);
+
+	// Run planning when we have a spec
+	useEffect(() => {
+		if (phase !== "init") return;
+		executePlan(activeFlags, {
+			onPhase: (p) => { if (p === "planning") setPhase("planning"); },
 			onIteration: (current, max) => {
 				setCurrentIteration(current);
 				setMaxIterations(max);
@@ -165,14 +187,20 @@ export default function Plan(flags: PlanFlags) {
 				setPhase("error");
 				exit(new Error((err as Error).message));
 			});
-	}, []);
+	}, [activeFlags, phase]);
+
+	function handleSpecSelect(spec: Spec) {
+		const newFlags = { ...flags, spec: spec.name };
+		setActiveFlags(newFlags);
+		setPhase("init");
+	}
 
 	if (phase === "error") {
 		return <Text color="red">{errorMessage}</Text>;
 	}
 
-	if (phase === "init") {
-		return <Text dimColor>Loading configuration...</Text>;
+	if (phase === "selecting") {
+		return <SpecSelector specs={specs} onSelect={handleSpecSelect} />;
 	}
 
 	if (phase === "done" && result) {
@@ -188,7 +216,7 @@ export default function Plan(flags: PlanFlags) {
 	return (
 		<Box flexDirection="column">
 			<Text dimColor>
-				{`Planning: ${specName || flags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
+				{`Planning: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
 			</Text>
 			<Text dimColor>{"─".repeat(40)}</Text>
 			{lastLine && <Text>{lastLine}</Text>}

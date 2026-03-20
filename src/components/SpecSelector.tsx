@@ -1,18 +1,39 @@
 import React from "react";
-import { Text } from "ink";
-import type { SpecFile } from "../types.js";
+import { Box, Text } from "ink";
+import SelectInput from "ink-select-input";
+import type { Spec } from "../lib/specs.js";
 
 interface SpecSelectorProps {
-	specs: SpecFile[];
-	onSelect: (spec: SpecFile) => void;
+	specs: Spec[];
+	onSelect: (spec: Spec) => void;
 }
 
-export default function SpecSelector({ specs, onSelect: _onSelect }: SpecSelectorProps) {
+const STATUS_COLORS: Record<string, string> = {
+	pending: "yellow",
+	planned: "cyan",
+	building: "blue",
+	done: "green",
+};
+
+export default function SpecSelector({ specs, onSelect }: SpecSelectorProps) {
+	if (specs.length === 0) {
+		return <Text color="red">No specs found.</Text>;
+	}
+
+	const items = specs.map((spec) => ({
+		label: `${spec.name}  [${spec.status}]`,
+		value: spec.name,
+	}));
+
+	function handleSelect(item: { label: string; value: string }) {
+		const spec = specs.find((s) => s.name === item.value);
+		if (spec) onSelect(spec);
+	}
+
 	return (
-		<Text>
-			{specs.length === 0
-				? "No specs found."
-				: `${specs.length} spec(s) available`}
-		</Text>
+		<Box flexDirection="column">
+			<Text bold>Select a spec to plan:</Text>
+			<SelectInput items={items} onSelect={handleSelect} />
+		</Box>
 	);
 }

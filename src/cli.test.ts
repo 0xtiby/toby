@@ -56,9 +56,10 @@ describe("cli", () => {
 		expect(output).toContain("Unknown command: foobar");
 	});
 
-	it("plan without --spec shows error", () => {
+	it("plan without --spec shows spec selector or no-specs message", () => {
 		const output = run("plan");
-		expect(output).toContain("No --spec flag provided");
+		// In non-TTY/CI, shows either "No specs found" or "Select a spec"
+		expect(output).toMatch(/No specs found|Select a spec/);
 	});
 
 	it("plan with --spec for nonexistent spec shows error", () => {
