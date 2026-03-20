@@ -2,6 +2,7 @@ import meow from "meow";
 import React from "react";
 import { render, Text } from "ink";
 import Plan from "./commands/plan.js";
+import type { PlanFlags } from "./commands/plan.js";
 import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
@@ -41,14 +42,6 @@ function UnknownCommand({ command }: { command: string }) {
 	);
 }
 
-const commandComponents: Record<Command, React.ComponentType> = {
-	plan: Plan,
-	build: Build,
-	init: Init,
-	status: Status,
-	config: Config,
-};
-
 const cli = meow(
 	`
 Usage
@@ -60,10 +53,23 @@ Commands
   init     Initialize toby in current project
   status   Show project status
   config   Manage configuration
+
+Plan Options
+  --spec=<name>      Plan a specific spec
+  --all              Plan all pending specs
+  --iterations=<n>   Override iteration count
+  --verbose          Show full CLI output
+  --cli=<name>       Override AI CLI (claude, codex, opencode)
 `,
 	{
 		importMeta: import.meta,
-		flags: {},
+		flags: {
+			spec: { type: "string" },
+			all: { type: "boolean", default: false },
+			iterations: { type: "number" },
+			verbose: { type: "boolean", default: false },
+			cli: { type: "string" },
+		},
 	},
 );
 
@@ -73,8 +79,23 @@ const [command] = cli.input;
 
 if (!command) {
 	render(<Help version={cli.pkg.version ?? "0.0.0"} />).unmount();
+} else if (command === "plan") {
+	const flags: PlanFlags = {
+		spec: cli.flags.spec,
+		all: cli.flags.all,
+		iterations: cli.flags.iterations,
+		verbose: cli.flags.verbose,
+		cli: cli.flags.cli,
+	};
+	render(<Plan {...flags} />).unmount();
 } else if (COMMANDS.includes(command as Command)) {
-	const CommandComponent = commandComponents[command as Command];
+	const stubs: Record<string, React.ComponentType> = {
+		build: Build,
+		init: Init,
+		status: Status,
+		config: Config,
+	};
+	const CommandComponent = stubs[command];
 	render(<CommandComponent />).unmount();
 } else {
 	render(<UnknownCommand command={command} />).unmount();
