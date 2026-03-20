@@ -29,13 +29,6 @@ vi.mock("../lib/status.js", () => ({
 	updateSpecStatus: vi.fn(),
 }));
 
-vi.mock("../lib/prd.js", () => ({
-	hasPrd: vi.fn(),
-	getPrdPath: vi.fn(),
-	readPrd: vi.fn(),
-	getTaskSummary: vi.fn(),
-}));
-
 vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
@@ -46,7 +39,6 @@ import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
-import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
 import { executePlan, executePlanAll } from "./plan.js";
 import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
@@ -64,11 +56,6 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
-const mockHasPrd = vi.mocked(hasPrd);
-const mockGetPrdPath = vi.mocked(getPrdPath);
-const mockReadPrd = vi.mocked(readPrd);
-const mockGetTaskSummary = vi.mocked(getTaskSummary);
-
 const defaultFlags: PlanFlags = {
 	spec: "auth",
 	all: false,
@@ -105,13 +92,10 @@ function setupDefaults() {
 	);
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
-	mockHasPrd.mockReturnValue(false);
-	mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
 	mockLoadPrompt.mockReturnValue("Plan prompt for 01-auth");
 	mockReadStatus.mockReturnValue({ specs: {} });
 	mockAddIteration.mockImplementation((status) => status);
 	mockUpdateSpecStatus.mockImplementation((status) => status);
-	mockReadPrd.mockReturnValue(null);
 
 	mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 		const iterResult = {
@@ -195,7 +179,7 @@ describe("executePlan", () => {
 				SPEC_NAME: "01-auth",
 				ITERATION: "1",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
-				PRD_PATH: "/project/.toby/prd/01-auth.json",
+				PRD_PATH: "",
 				BRANCH: "",
 				WORKTREE: "",
 				EPIC_NAME: "",
@@ -253,32 +237,26 @@ describe("executePlan", () => {
 	});
 
 	describe("refinement mode", () => {
-		it("detects refinement when prd.json exists for spec", async () => {
-			mockHasPrd.mockReturnValue(true);
-			mockReadPrd.mockReturnValue({
-				spec: "01-auth",
-				createdAt: "2026-03-19T00:00:00.000Z",
-				tasks: [
-					{ id: "t1", title: "Task 1", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
-					{ id: "t2", title: "Task 2", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "done", priority: 2 },
-				],
+		it("detects refinement when status is planned", async () => {
+			mockReadStatus.mockReturnValue({
+				specs: {
+					"01-auth": {
+						status: "planned",
+						plannedAt: null,
+						iterations: [
+							{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						],
+					},
+				},
 			});
-			mockGetTaskSummary.mockReturnValue({ pending: 1, in_progress: 0, done: 1, blocked: 0 });
 
 			const onRefinement = vi.fn();
 			await executePlan(defaultFlags, { onRefinement }, "/project");
 
-			expect(onRefinement).toHaveBeenCalledWith("01-auth", 2);
+			expect(onRefinement).toHaveBeenCalledWith("01-auth");
 		});
 
 		it("iteration numbering continues from last recorded iteration", async () => {
-			mockHasPrd.mockReturnValue(true);
-			mockReadPrd.mockReturnValue({
-				spec: "01-auth",
-				createdAt: "2026-03-19T00:00:00.000Z",
-				tasks: [],
-			});
-			mockGetTaskSummary.mockReturnValue({ pending: 0, in_progress: 0, done: 0, blocked: 0 });
 			mockReadStatus.mockReturnValue({
 				specs: {
 					"01-auth": {
@@ -304,8 +282,8 @@ describe("executePlan", () => {
 			);
 		});
 
-		it("normal mode when no prd.json exists", async () => {
-			mockHasPrd.mockReturnValue(false);
+		it("normal mode when status is not planned", async () => {
+			mockReadStatus.mockReturnValue({ specs: {} });
 
 			const onRefinement = vi.fn();
 			await executePlan(defaultFlags, { onRefinement }, "/project");
@@ -374,7 +352,6 @@ describe("executePlanAll", () => {
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
 		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
 
 		const onSpecStart = vi.fn();
 		const result = await executePlanAll(
@@ -398,7 +375,6 @@ describe("executePlanAll", () => {
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
 		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
 
 		const result = await executePlanAll(
 			{ all: true, verbose: false },
@@ -421,7 +397,6 @@ describe("executePlanAll", () => {
 			return undefined; // Simulate not-found for second spec
 		});
 		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
-		mockGetPrdPath.mockImplementation((name) => `/project/.toby/prd/${name}.json`);
 
 		await expect(
 			executePlanAll({ all: true, verbose: false }, {}, "/project"),
@@ -482,12 +457,12 @@ describe("error handling edge cases", () => {
 		expect(result.specName).toBe("01-auth");
 	});
 
-	it("succeeds with taskCount 0 when AI does not create prd.json", async () => {
-		mockReadPrd.mockReturnValue(null);
-
+	it("returns simplified PlanResult with only specName", async () => {
 		const result = await executePlan(defaultFlags, {}, "/project");
 
-		expect(result.taskCount).toBe(0);
+		expect(result.specName).toBe("01-auth");
+		expect(result).not.toHaveProperty("taskCount");
+		expect(result).not.toHaveProperty("prdPath");
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
 			expect.anything(),
 			"01-auth",
@@ -594,7 +569,6 @@ describe("error handling edge cases", () => {
 		mockDiscoverSpecs.mockReturnValue([spec1]);
 		mockFindSpec.mockReturnValue(spec1);
 		mockLoadSpecContent.mockReturnValue({ ...spec1, content: "# Auth" });
-		mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
 
 		await executePlanAll(
 			{ all: true, verbose: false },
@@ -651,8 +625,6 @@ describe("Plan component", () => {
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
-		mockReadPrd.mockReturnValue(null);
-
 		const { lastFrame } = render(
 			<Plan spec="auth" all={false} verbose={false} />,
 		);
@@ -688,8 +660,6 @@ describe("integration: full plan flow with mocked spawner", () => {
 		mockDiscoverSpecs.mockReturnValue([spec]);
 		mockFindSpec.mockReturnValue(spec);
 		mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth\nFull spec content" });
-		mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
-		mockHasPrd.mockReturnValue(false);
 		mockReadStatus.mockReturnValue({ specs: {} });
 
 		const updatedStatus = { specs: { "01-auth": { status: "planned", plannedAt: null, iterations: [] } } };
@@ -717,18 +687,6 @@ describe("integration: full plan flow with mocked spawner", () => {
 			return { iterations, stopReason: "max_iterations" as const };
 		});
 
-		// Simulate prd.json created by the AI after planning
-		mockReadPrd.mockReturnValue({
-			spec: "01-auth",
-			createdAt: "2026-03-20T00:00:00.000Z",
-			tasks: [
-				{ id: "t1", title: "Setup auth middleware", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 1 },
-				{ id: "t2", title: "Add login endpoint", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 2 },
-				{ id: "t3", title: "Add session management", description: "", acceptanceCriteria: [], files: [], dependencies: [], status: "pending", priority: 3 },
-			],
-		});
-		mockGetTaskSummary.mockReturnValue({ pending: 3, in_progress: 0, done: 0, blocked: 0 });
-
 		const callbacks = {
 			onPhase: vi.fn(),
 			onIteration: vi.fn(),
@@ -752,10 +710,10 @@ describe("integration: full plan flow with mocked spawner", () => {
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "planned");
 		expect(mockWriteStatus).toHaveBeenCalledTimes(3); // 2 iterations + 1 final
 
-		// Verify result
+		// Verify result — simplified PlanResult
 		expect(result.specName).toBe("01-auth");
-		expect(result.taskCount).toBe(3);
-		expect(result.prdPath).toBe("/project/.toby/prd/01-auth.json");
+		expect(result).not.toHaveProperty("taskCount");
+		expect(result).not.toHaveProperty("prdPath");
 
 		// Verify callbacks fired
 		expect(callbacks.onPhase).toHaveBeenCalledWith("planning");
