@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Text, Box, useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
@@ -159,10 +159,147 @@ export async function executeBuild(
 	return { specName: found.name, taskCount, prdPath };
 }
 
+export interface BuildAllCallbacks {
+	onSpecStart?: (specName: string, index: number, total: number) => void;
+	onSpecComplete?: (result: BuildResult) => void;
+	onPhase?: (phase: string) => void;
+	onIteration?: (current: number, max: number) => void;
+	onEvent?: (event: CliEvent) => void;
+}
+
+export interface BuildAllResult {
+	built: BuildResult[];
+	skipped: string[];
+}
+
+/**
+ * Build all planned specs in NN- order.
+ * Each spec gets its own iteration counter (resets to 1).
+ * Uses PROMPT_BUILD_ALL template. IS_LAST_SPEC is 'true' only for the final spec.
+ */
+export async function executeBuildAll(
+	flags: BuildFlags,
+	callbacks: BuildAllCallbacks = {},
+	cwd: string = process.cwd(),
+	abortSignal?: AbortSignal,
+): Promise<BuildAllResult> {
+	ensureLocalDir(cwd);
+
+	const config = loadConfig(cwd);
+	const specs = discoverSpecs(cwd, config);
+
+	if (specs.length === 0) {
+		throw new Error("No specs found in specs/");
+	}
+
+	const planned = sortSpecs([...filterByStatus(specs, "planned"), ...filterByStatus(specs, "building")]);
+	if (planned.length === 0) {
+		throw new Error("No planned specs found. Run 'toby plan' first.");
+	}
+
+	const skipped = specs.filter((s) => s.status !== "planned" && s.status !== "building").map((s) => s.name);
+	const built: BuildResult[] = [];
+
+	for (let i = 0; i < planned.length; i++) {
+		const spec = planned[i];
+		const isLastSpec = i === planned.length - 1;
+		callbacks.onSpecStart?.(spec.name, i, planned.length);
+
+		if (!hasPrd(spec.name, cwd)) {
+			throw new Error(`No plan found for ${spec.name}. Run 'toby plan --spec=${spec.name}' first.`);
+		}
+
+		const specWithContent = loadSpecContent(spec);
+		const prdPath = getPrdPath(spec.name, cwd);
+		const commandConfig = resolveCommandConfig(config, "build", {
+			cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
+			iterations: flags.iterations,
+		});
+
+		let status = readStatus(cwd);
+
+		callbacks.onPhase?.("building");
+		callbacks.onIteration?.(1, commandConfig.iterations);
+
+		const loopResult = await runLoop({
+			maxIterations: commandConfig.iterations,
+			getPrompt: (iteration) =>
+				loadPrompt(
+					"PROMPT_BUILD_ALL",
+					{
+						SPEC_NAME: spec.name,
+						ITERATION: String(iteration),
+						SPEC_CONTENT: specWithContent.content ?? "",
+						PRD_PATH: prdPath,
+						BRANCH: "",
+						WORKTREE: "",
+						EPIC_NAME: "",
+						IS_LAST_SPEC: isLastSpec ? "true" : "false",
+					},
+					cwd,
+				),
+			cli: commandConfig.cli,
+			model: commandConfig.model,
+			cwd,
+			continueSession: true,
+			abortSignal,
+			onEvent: (event) => {
+				callbacks.onEvent?.(event);
+			},
+			onIterationComplete: (iterResult: IterationResult) => {
+				const now = new Date().toISOString();
+				const iteration: Iteration = {
+					type: "build",
+					iteration: iterResult.iteration,
+					sessionId: iterResult.sessionId,
+					cli: commandConfig.cli,
+					model: iterResult.model ?? commandConfig.model,
+					startedAt: now,
+					completedAt: now,
+					exitCode: iterResult.exitCode,
+					taskCompleted: null,
+					tokensUsed: iterResult.tokensUsed,
+				};
+				status = addIteration(status, spec.name, iteration);
+				writeStatus(status, cwd);
+				callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+			},
+		});
+
+		if (loopResult.stopReason === "aborted") {
+			status = updateSpecStatus(status, spec.name, "building");
+			writeStatus(status, cwd);
+			throw new AbortError(spec.name, loopResult.iterations.length);
+		}
+
+		status = updateSpecStatus(status, spec.name, "building");
+		writeStatus(status, cwd);
+
+		const prd = readPrd(spec.name, cwd);
+		let taskCount = 0;
+		if (prd) {
+			const taskSummary = getTaskSummary(prd);
+			taskCount = Object.values(taskSummary).reduce((a, b) => a + b, 0);
+		}
+
+		const result: BuildResult = { specName: spec.name, taskCount, prdPath };
+		built.push(result);
+		callbacks.onSpecComplete?.(result);
+	}
+
+	return { built, skipped };
+}
+
+function getInitialPhase(flags: BuildFlags): "init" | "all" | "selecting" {
+	if (flags.all) return "all";
+	if (flags.spec) return "init";
+	return "selecting";
+}
+
 export default function Build(flags: BuildFlags) {
 	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "selecting" | "building" | "done" | "interrupted" | "error">(
-		flags.spec ? "init" : "selecting",
+	const [phase, setPhase] = useState<"init" | "all" | "selecting" | "building" | "done" | "interrupted" | "error">(
+		getInitialPhase(flags),
 	);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
@@ -170,8 +307,10 @@ export default function Build(flags: BuildFlags) {
 	const [events, setEvents] = useState<CliEvent[]>([]);
 	const [errorMessage, setErrorMessage] = useState("");
 	const [result, setResult] = useState<BuildResult | null>(null);
+	const [allResult, setAllResult] = useState<BuildAllResult | null>(null);
 	const [specs, setSpecs] = useState<Spec[]>([]);
 	const [activeFlags, setActiveFlags] = useState<BuildFlags>(flags);
+	const [allProgress, setAllProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 	const [interruptInfo, setInterruptInfo] = useState<{ specName: string; iterations: number } | null>(null);
 	const abortControllerRef = useRef(new AbortController());
 
@@ -200,6 +339,42 @@ export default function Build(flags: BuildFlags) {
 			setPhase("error");
 			exit(new Error((err as Error).message));
 		}
+	}, [phase]);
+
+	// Run --all mode
+	useEffect(() => {
+		if (phase !== "all") return;
+		executeBuildAll(flags, {
+			onSpecStart: (name, index, total) => {
+				setSpecName(name);
+				setAllProgress({ current: index + 1, total });
+			},
+			onSpecComplete: () => {},
+			onPhase: (p) => { if (p === "building") setPhase("building"); },
+			onIteration: (current, max) => {
+				setCurrentIteration(current);
+				setMaxIterations(max);
+			},
+			onEvent: (event) => {
+				setEvents((prev) => [...prev, event]);
+			},
+		}, undefined, abortControllerRef.current.signal)
+			.then((r) => {
+				setAllResult(r);
+				setPhase("done");
+				exit();
+			})
+			.catch((err) => {
+				if (err instanceof AbortError) {
+					setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
+					setPhase("interrupted");
+					exit();
+					return;
+				}
+				setErrorMessage((err as Error).message);
+				setPhase("error");
+				exit(new Error((err as Error).message));
+			});
 	}, [phase]);
 
 	// Resolve verbose: --verbose flag overrides config.verbose
@@ -265,6 +440,20 @@ export default function Build(flags: BuildFlags) {
 		return <SpecSelector specs={specs} onSelect={handleSpecSelect} title="Select a spec to build:" />;
 	}
 
+	if (phase === "done" && allResult) {
+		return (
+			<Box flexDirection="column">
+				<Text color="green">{`✓ All specs built (${allResult.built.length} built, ${allResult.skipped.length} skipped)`}</Text>
+				{allResult.built.map((r) => (
+					<Text key={r.specName}>{`  ${r.specName}: ${r.taskCount} tasks`}</Text>
+				))}
+				{allResult.skipped.length > 0 && (
+					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
+				)}
+			</Box>
+		);
+	}
+
 	if (phase === "done" && result) {
 		return (
 			<Box flexDirection="column">
@@ -277,6 +466,9 @@ export default function Build(flags: BuildFlags) {
 
 	return (
 		<Box flexDirection="column">
+			{allProgress.total > 0 && (
+				<Text dimColor>{`[${allProgress.current}/${allProgress.total}]`}</Text>
+			)}
 			<Text dimColor>
 				{`Building: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
 			</Text>

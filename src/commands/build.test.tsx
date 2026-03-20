@@ -12,6 +12,7 @@ vi.mock("../lib/specs.js", () => ({
 	filterByStatus: vi.fn(),
 	findSpec: vi.fn(),
 	loadSpecContent: vi.fn(),
+	sortSpecs: vi.fn(),
 }));
 
 vi.mock("../lib/template.js", () => ({
@@ -41,13 +42,13 @@ vi.mock("../lib/paths.js", () => ({
 }));
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
-import { executeBuild, AbortError } from "./build.js";
+import { executeBuild, executeBuildAll, AbortError } from "./build.js";
 import Build from "./build.js";
 import type { BuildFlags } from "./build.js";
 
@@ -55,6 +56,7 @@ const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
 const mockDiscoverSpecs = vi.mocked(discoverSpecs);
 const mockFilterByStatus = vi.mocked(filterByStatus);
+const mockSortSpecs = vi.mocked(sortSpecs);
 const mockFindSpec = vi.mocked(findSpec);
 const mockLoadSpecContent = vi.mocked(loadSpecContent);
 const mockLoadPrompt = vi.mocked(loadPrompt);
@@ -100,6 +102,7 @@ function setupDefaults() {
 
 	mockDiscoverSpecs.mockReturnValue([spec]);
 	mockFilterByStatus.mockImplementation((specs, status) => specs.filter((s) => s.status === status));
+	mockSortSpecs.mockImplementation((specs) => [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
 	mockHasPrd.mockReturnValue(true);
@@ -531,5 +534,151 @@ describe("integration: full build flow with mocked spawner", () => {
 
 		expect(callbacks.onPhase).toHaveBeenCalledWith("building");
 		expect(callbacks.onIteration).toHaveBeenCalledTimes(4); // initial + 3 iteration completions
+	});
+});
+
+describe("executeBuildAll", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("processes specs in NN- order", async () => {
+		const specs = [
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		const specOrder: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{
+				onSpecStart: (name) => { specOrder.push(name); },
+			},
+			"/p",
+		);
+
+		expect(specOrder).toEqual(["01-auth", "02-api"]);
+	});
+
+	it("resets iteration counter to 1 for each spec", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		const calls = mockLoadPrompt.mock.calls;
+		const authCall = calls.find((c) => c[1].SPEC_NAME === "01-auth");
+		const apiCall = calls.find((c) => c[1].SPEC_NAME === "02-api");
+		expect(authCall?.[1].ITERATION).toBe("1");
+		expect(apiCall?.[1].ITERATION).toBe("1");
+	});
+
+	it("uses PROMPT_BUILD_ALL template", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		expect(mockLoadPrompt).toHaveBeenCalledWith(
+			"PROMPT_BUILD_ALL",
+			expect.anything(),
+			"/p",
+		);
+	});
+
+	it("IS_LAST_SPEC is true only for the last spec", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: 3, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		const calls = mockLoadPrompt.mock.calls;
+		const authCall = calls.find((c) => c[1].SPEC_NAME === "01-auth");
+		const apiCall = calls.find((c) => c[1].SPEC_NAME === "02-api");
+		const uiCall = calls.find((c) => c[1].SPEC_NAME === "03-ui");
+		expect(authCall?.[1].IS_LAST_SPEC).toBe("false");
+		expect(apiCall?.[1].IS_LAST_SPEC).toBe("false");
+		expect(uiCall?.[1].IS_LAST_SPEC).toBe("true");
+	});
+
+	it("errors when no planned specs found", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "pending" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		await expect(
+			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
+		).rejects.toThrow("No planned specs found. Run 'toby plan' first.");
+	});
+
+	it("returns per-spec results and skipped list", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "pending" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockHasPrd.mockReturnValue(true);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockGetPrdPath.mockImplementation((name) => `/p/.toby/prd/${name}.json`);
+
+		const result = await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		expect(result.built).toHaveLength(1);
+		expect(result.built[0].specName).toBe("01-auth");
+		expect(result.skipped).toEqual(["02-api"]);
 	});
 });
