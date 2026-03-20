@@ -47,6 +47,28 @@ export function sortSpecs<T extends { name: string; order: number | null }>(
 	});
 }
 
+/**
+ * Filter specs by their status.
+ */
+export function filterByStatus(specs: Spec[], status: SpecStatus): Spec[] {
+	return specs.filter((s) => s.status === status);
+}
+
+/**
+ * Find a spec by flexible name matching.
+ * Matches against: exact name, filename with extension, or name with prefix stripped.
+ * First match wins.
+ */
+export function findSpec(specs: Spec[], query: string): Spec | undefined {
+	return specs.find((s) => {
+		if (s.name === query) return true;
+		if (`${s.name}.md` === query) return true;
+		const withoutPrefix = s.name.replace(/^\d+-/, "");
+		if (withoutPrefix === query) return true;
+		return false;
+	});
+}
+
 // ── Filesystem ──────────────────────────────────────────────────
 
 /**

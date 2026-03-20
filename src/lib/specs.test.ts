@@ -3,7 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConfigSchema } from "../types.js";
-import { discoverSpecs, loadSpecContent, parseSpecOrder, sortSpecs } from "./specs.js";
+import {
+	discoverSpecs,
+	filterByStatus,
+	findSpec,
+	loadSpecContent,
+	parseSpecOrder,
+	sortSpecs,
+} from "./specs.js";
+import type { Spec } from "./specs.js";
 
 describe("parseSpecOrder", () => {
 	it("extracts numeric prefix from 01-auth.md", () => {
@@ -195,5 +203,66 @@ describe("loadSpecContent", () => {
 		expect(loaded.content).toBe("# Auth Spec\nDetails here.");
 		expect(loaded.name).toBe("01-auth");
 		expect(loaded.path).toBe(filePath);
+	});
+});
+
+describe("filterByStatus", () => {
+	const spec = (name: string, status: Spec["status"]): Spec => ({
+		name,
+		path: `/specs/${name}.md`,
+		order: parseSpecOrder(`${name}.md`),
+		status,
+	});
+
+	it("returns only specs with matching status", () => {
+		const specs = [spec("01-auth", "pending"), spec("02-payments", "planned"), spec("03-config", "pending")];
+		const result = filterByStatus(specs, "pending");
+		expect(result.map((s) => s.name)).toEqual(["01-auth", "03-config"]);
+	});
+
+	it("returns empty array when no specs match", () => {
+		const specs = [spec("01-auth", "done"), spec("02-payments", "done")];
+		expect(filterByStatus(specs, "pending")).toEqual([]);
+	});
+
+	it("returns empty array for empty input", () => {
+		expect(filterByStatus([], "pending")).toEqual([]);
+	});
+});
+
+describe("findSpec", () => {
+	const spec = (name: string): Spec => ({
+		name,
+		path: `/specs/${name}.md`,
+		order: parseSpecOrder(`${name}.md`),
+		status: "pending",
+	});
+
+	const specs = [spec("01-auth"), spec("02-payments"), spec("config")];
+
+	it("matches by name without prefix (e.g. 'auth' matches '01-auth')", () => {
+		expect(findSpec(specs, "auth")?.name).toBe("01-auth");
+	});
+
+	it("matches by exact name (e.g. '01-auth')", () => {
+		expect(findSpec(specs, "01-auth")?.name).toBe("01-auth");
+	});
+
+	it("matches by filename with extension (e.g. '01-auth.md')", () => {
+		expect(findSpec(specs, "01-auth.md")?.name).toBe("01-auth");
+	});
+
+	it("matches unnumbered spec by exact name", () => {
+		expect(findSpec(specs, "config")?.name).toBe("config");
+	});
+
+	it("returns undefined when no spec matches", () => {
+		expect(findSpec(specs, "nonexistent")).toBeUndefined();
+	});
+
+	it("first match wins when multiple could match", () => {
+		const dupes = [spec("01-auth"), spec("02-auth")];
+		// "auth" strips prefix, both match — first wins
+		expect(findSpec(dupes, "auth")?.name).toBe("01-auth");
 	});
 });
