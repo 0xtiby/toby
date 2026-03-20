@@ -1,5 +1,11 @@
 import type { TobyConfig } from "../types.js";
 
+export const SENTINEL = ":::TOBY_DONE:::";
+
+export function containsSentinel(text: string): boolean {
+	return text.includes(SENTINEL);
+}
+
 export interface LoopOptions {
 	config: TobyConfig;
 	specName: string;
