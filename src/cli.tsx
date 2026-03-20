@@ -67,6 +67,13 @@ Build Options
 Status Options
   --spec=<name>      Show detailed status for a specific spec
 
+Init Options
+  --plan-cli=<name>    Set plan CLI (claude, codex, opencode)
+  --plan-model=<id>    Set plan model
+  --build-cli=<name>   Set build CLI (claude, codex, opencode)
+  --build-model=<id>   Set build model
+  --specs-dir=<path>   Set specs directory
+
 Config Subcommands
   config             Interactive config editor
   config get <key>   Show a config value (dot-notation)
@@ -80,6 +87,11 @@ Config Subcommands
 			iterations: { type: "number" },
 			verbose: { type: "boolean", default: false },
 			cli: { type: "string" },
+			planCli: { type: "string" },
+			planModel: { type: "string" },
+			buildCli: { type: "string" },
+			buildModel: { type: "string" },
+			specsDir: { type: "string" },
 		},
 	},
 );
@@ -121,7 +133,16 @@ const commands: Record<string, CommandEntry> = {
 		waitForExit: true,
 	},
 	init: {
-		render: (_flags, _input, version) => <Init version={version} />,
+		render: (flags, _input, version) => (
+			<Init
+				version={version}
+				planCli={flags.planCli}
+				planModel={flags.planModel}
+				buildCli={flags.buildCli}
+				buildModel={flags.buildModel}
+				specsDir={flags.specsDir}
+			/>
+		),
 		waitForExit: true,
 	},
 	status: {

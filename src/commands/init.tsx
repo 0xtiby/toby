@@ -17,6 +17,11 @@ import type { TobyConfig } from "../types.js";
 
 export interface InitFlags {
 	version: string;
+	planCli?: string;
+	planModel?: string;
+	buildCli?: string;
+	buildModel?: string;
+	specsDir?: string;
 }
 
 type CliName = "claude" | "codex" | "opencode";
