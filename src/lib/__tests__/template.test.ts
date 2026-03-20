@@ -293,4 +293,8 @@ describe("validateRequiredVars", () => {
 	it("returns empty array when frontmatter has no required_vars", () => {
 		expect(validateRequiredVars({ optional_vars: ["X"] }, {}, "test")).toEqual([]);
 	});
+
+	it("returns empty array when required_vars is empty array", () => {
+		expect(validateRequiredVars({ required_vars: [] }, {}, "test")).toEqual([]);
+	});
 });
