@@ -176,6 +176,24 @@ describe("PRD read utilities", () => {
 			});
 		});
 
+		it("counts all-pending tasks correctly", () => {
+			const prd = PrdSchema.parse({
+				spec: "test",
+				createdAt: "2026-01-15T10:00:00Z",
+				tasks: [
+					{ ...validTask, id: "t1" },
+					{ ...validTask, id: "t2", priority: 2 },
+				],
+			});
+			const summary = getTaskSummary(prd);
+			expect(summary).toEqual({
+				pending: 2,
+				in_progress: 0,
+				done: 0,
+				blocked: 0,
+			});
+		});
+
 		it("returns all zeros for empty tasks", () => {
 			const prd = PrdSchema.parse({
 				spec: "empty",
