@@ -7,6 +7,7 @@ import {
 	SpecStatusEntrySchema,
 	StatusSchema,
 } from "../types.js";
+import type { StatusData } from "../types.js";
 import {
 	readStatus,
 	writeStatus,
@@ -287,5 +288,35 @@ describe("updateSpecStatus", () => {
 		const original = structuredClone(validStatus);
 		updateSpecStatus(validStatus, "01-auth", "done");
 		expect(validStatus).toEqual(original);
+	});
+
+	it("transitions pending → planned → building → done", () => {
+		let status = { specs: {} } as StatusData;
+		status = updateSpecStatus(status, "my-spec", "planned");
+		expect(status.specs["my-spec"].status).toBe("planned");
+		status = updateSpecStatus(status, "my-spec", "building");
+		expect(status.specs["my-spec"].status).toBe("building");
+		status = updateSpecStatus(status, "my-spec", "done");
+		expect(status.specs["my-spec"].status).toBe("done");
+	});
+});
+
+describe("integration: spec with multiple iterations", () => {
+	it("accumulates 3 build iterations with correct session IDs", () => {
+		let status = { specs: {} } as StatusData;
+		const sessions = ["sess-001", "sess-002", "sess-003"];
+
+		for (let i = 0; i < 3; i++) {
+			status = addIteration(status, "feature-spec", {
+				...validIteration,
+				iteration: i + 1,
+				sessionId: sessions[i],
+			});
+		}
+
+		const iters = status.specs["feature-spec"].iterations;
+		expect(iters).toHaveLength(3);
+		expect(iters.map((it) => it.sessionId)).toEqual(sessions);
+		expect(iters.map((it) => it.iteration)).toEqual([1, 2, 3]);
 	});
 });
