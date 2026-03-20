@@ -5,7 +5,7 @@ import Plan from "./commands/plan.js";
 import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
-import Config, { ConfigEditor } from "./commands/config.js";
+import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
 function Help({ version }: { version: string }) {
@@ -67,10 +67,18 @@ Build Options
 Status Options
   --spec=<name>      Show detailed status for a specific spec
 
+Init Options
+  --plan-cli=<name>    Set plan CLI (claude, codex, opencode)
+  --plan-model=<id>    Set plan model
+  --build-cli=<name>   Set build CLI (claude, codex, opencode)
+  --build-model=<id>   Set build model
+  --specs-dir=<path>   Set specs directory
+
 Config Subcommands
   config             Interactive config editor
   config get <key>   Show a config value (dot-notation)
   config set <key> <value>  Set a config value
+  config set <k>=<v> [<k>=<v>...]  Batch set config values
 `,
 	{
 		importMeta: import.meta,
@@ -80,6 +88,11 @@ Config Subcommands
 			iterations: { type: "number" },
 			verbose: { type: "boolean", default: false },
 			cli: { type: "string" },
+			planCli: { type: "string" },
+			planModel: { type: "string" },
+			buildCli: { type: "string" },
+			buildModel: { type: "string" },
+			specsDir: { type: "string" },
 		},
 	},
 );
@@ -121,7 +134,16 @@ const commands: Record<string, CommandEntry> = {
 		waitForExit: true,
 	},
 	init: {
-		render: (_flags, _input, version) => <Init version={version} />,
+		render: (flags, _input, version) => (
+			<Init
+				version={version}
+				planCli={flags.planCli}
+				planModel={flags.planModel}
+				buildCli={flags.buildCli}
+				buildModel={flags.buildModel}
+				specsDir={flags.specsDir}
+			/>
+		),
 		waitForExit: true,
 	},
 	status: {
@@ -131,8 +153,12 @@ const commands: Record<string, CommandEntry> = {
 	},
 	config: {
 		render: (_flags, input, version) => {
-			const [, subcommand, configKey, value] = input;
+			const [, subcommand, ...rest] = input;
 			if (!subcommand) return <ConfigEditor version={version} />;
+			if (subcommand === "set" && rest.some((arg) => arg.includes("="))) {
+				return <ConfigSetBatch pairs={rest.filter((arg) => arg.includes("="))} />;
+			}
+			const [configKey, value] = rest;
 			return (
 				<Config
 					subcommand={subcommand}

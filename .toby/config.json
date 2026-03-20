@@ -1,0 +1,13 @@
+{
+  "plan": {
+    "cli": "claude",
+    "model": "default",
+    "iterations": 2
+  },
+  "build": {
+    "cli": "claude",
+    "model": "default",
+    "iterations": 10
+  },
+  "specsDir": "specs"
+}

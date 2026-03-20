@@ -13,13 +13,17 @@ import {
 	DEFAULT_SPECS_DIR,
 	PRD_DIR,
 } from "../lib/paths.js";
-import type { TobyConfig } from "../types.js";
+import { CLI_NAMES } from "../types.js";
+import type { TobyConfig, CliName } from "../types.js";
 
 export interface InitFlags {
 	version: string;
+	planCli?: string;
+	planModel?: string;
+	buildCli?: string;
+	buildModel?: string;
+	specsDir?: string;
 }
-
-type CliName = "claude" | "codex" | "opencode";
 
 interface CliDetection {
 	installed: boolean;
@@ -169,7 +173,106 @@ function modelItems(cli: CliName) {
 	];
 }
 
-export default function Init({ version }: InitFlags) {
+/** Returns true when all 5 optional init flags are present (non-interactive mode). */
+export function hasAllInitFlags(flags: InitFlags): boolean {
+	return (
+		flags.planCli !== undefined &&
+		flags.planModel !== undefined &&
+		flags.buildCli !== undefined &&
+		flags.buildModel !== undefined &&
+		flags.specsDir !== undefined
+	);
+}
+
+function NonInteractiveInit({ flags }: { flags: InitFlags }) {
+	const { exit } = useApp();
+
+	const planCli = flags.planCli!;
+	const buildCli = flags.buildCli!;
+
+	// Validate CLI names synchronously
+	const invalidCli = [planCli, buildCli].find(
+		(cli) => !(CLI_NAMES as readonly string[]).includes(cli),
+	);
+
+	const [status, setStatus] = useState<
+		| { type: "detecting" }
+		| { type: "invalid_cli"; cli: string }
+		| { type: "error"; message: string }
+		| { type: "success"; result: InitResult; selections: InitSelections }
+	>(invalidCli ? { type: "invalid_cli", cli: invalidCli } : { type: "detecting" });
+
+	useEffect(() => {
+		if (invalidCli) {
+			process.exitCode = 1;
+			exit();
+			return;
+		}
+
+		// Check CLIs are installed
+		detectAll().then((detectResult: DetectAllResult) => {
+			for (const cli of [planCli, buildCli]) {
+				if (!detectResult[cli as CliName]?.installed) {
+					setStatus({
+						type: "error",
+						message: `CLI not installed: ${cli}`,
+					});
+					process.exitCode = 1;
+					exit();
+					return;
+				}
+			}
+
+			const selections: InitSelections = {
+				planCli: planCli as CliName,
+				planModel: flags.planModel!,
+				buildCli: buildCli as CliName,
+				buildModel: flags.buildModel!,
+				specsDir: flags.specsDir!,
+			};
+
+			try {
+				const result = createProject(selections);
+				setStatus({ type: "success", result, selections });
+			} catch (err) {
+				setStatus({ type: "error", message: (err as Error).message });
+				process.exitCode = 1;
+			}
+			exit();
+		});
+	}, []);
+
+	if (status.type === "invalid_cli") {
+		return <Text color="red">{`✗ Unknown CLI: ${status.cli}. Must be one of: ${CLI_NAMES.join(", ")}`}</Text>;
+	}
+
+	if (status.type === "detecting") {
+		return <Text>Detecting installed CLIs...</Text>;
+	}
+
+	if (status.type === "error") {
+		return <Text color="red">{`✗ ${status.message}`}</Text>;
+	}
+
+	const { result, selections } = status;
+	return (
+		<Box flexDirection="column">
+			<Text color="green" bold>✓ Project initialized!</Text>
+			<Text dimColor>{"  created "}{path.relative(process.cwd(), result.configPath)}</Text>
+			{result.statusCreated && <Text dimColor>{"  created .toby/status.json"}</Text>}
+			{result.specsDirCreated && <Text dimColor>{"  created "}{selections.specsDir}/</Text>}
+		</Box>
+	);
+}
+
+export default function Init(flags: InitFlags) {
+	if (hasAllInitFlags(flags)) {
+		return <NonInteractiveInit flags={flags} />;
+	}
+	return <InteractiveInit version={flags.version} />;
+}
+
+function InteractiveInit({ version }: { version: string }) {
 	const { exit } = useApp();
 	const [phase, setPhase] = useState<Phase>("detecting");
 	const [clis, setClis] = useState<DetectAllResult | null>(null);
