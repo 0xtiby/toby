@@ -6,6 +6,7 @@ import type { Spec } from "../lib/specs.js";
 interface SpecSelectorProps {
 	specs: Spec[];
 	onSelect: (spec: Spec) => void;
+	title?: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -15,7 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
 	done: "green",
 };
 
-export default function SpecSelector({ specs, onSelect }: SpecSelectorProps) {
+export default function SpecSelector({ specs, onSelect, title = "Select a spec to plan:" }: SpecSelectorProps) {
 	if (specs.length === 0) {
 		return <Text color="red">No specs found.</Text>;
 	}
@@ -32,7 +33,7 @@ export default function SpecSelector({ specs, onSelect }: SpecSelectorProps) {
 
 	return (
 		<Box flexDirection="column">
-			<Text bold>Select a spec to plan:</Text>
+			<Text bold>{title}</Text>
 			<SelectInput items={items} onSelect={handleSelect} />
 		</Box>
 	);

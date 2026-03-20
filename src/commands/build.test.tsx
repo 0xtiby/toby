@@ -9,6 +9,7 @@ vi.mock("../lib/config.js", () => ({
 
 vi.mock("../lib/specs.js", () => ({
 	discoverSpecs: vi.fn(),
+	filterByStatus: vi.fn(),
 	findSpec: vi.fn(),
 	loadSpecContent: vi.fn(),
 }));
@@ -40,7 +41,7 @@ vi.mock("../lib/paths.js", () => ({
 }));
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
@@ -53,6 +54,7 @@ import type { BuildFlags } from "./build.js";
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
 const mockDiscoverSpecs = vi.mocked(discoverSpecs);
+const mockFilterByStatus = vi.mocked(filterByStatus);
 const mockFindSpec = vi.mocked(findSpec);
 const mockLoadSpecContent = vi.mocked(loadSpecContent);
 const mockLoadPrompt = vi.mocked(loadPrompt);
@@ -97,6 +99,7 @@ function setupDefaults() {
 	};
 
 	mockDiscoverSpecs.mockReturnValue([spec]);
+	mockFilterByStatus.mockImplementation((specs, status) => specs.filter((s) => s.status === status));
 	mockFindSpec.mockReturnValue(spec);
 	mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth Spec\nContent here" });
 	mockHasPrd.mockReturnValue(true);
@@ -372,13 +375,55 @@ describe("Build component", () => {
 		setupDefaults();
 	});
 
-	it("shows error when no --spec flag provided", async () => {
+	it("renders spec selector when no --spec flag provided", async () => {
+		const plannedSpec = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
+		mockDiscoverSpecs.mockReturnValue([plannedSpec]);
+
 		const { lastFrame } = render(
 			<Build all={false} verbose={false} />,
 		);
 
-		const output = lastFrame()!;
-		expect(output).toContain("No --spec flag provided");
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Select a spec to build");
+			expect(output).toContain("01-auth");
+		});
+	});
+
+	it("shows error when no planned specs exist", async () => {
+		const pendingSpec = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([pendingSpec]);
+
+		const { lastFrame } = render(
+			<Build all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("No planned specs found");
+		});
+	});
+
+	it("only shows planned and building specs in selector", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: 1, status: "pending" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: 2, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: 3, status: "building" as const },
+			{ name: "04-done", path: "/p/specs/04-done.md", order: 4, status: "done" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		const { lastFrame } = render(
+			<Build all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("02-api");
+			expect(output).toContain("03-ui");
+			expect(output).not.toContain("01-auth");
+			expect(output).not.toContain("04-done");
+		});
 	});
 
 	it("shows error when spec not found", async () => {

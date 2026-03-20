@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Text, Box, useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
+import type { Spec } from "../lib/specs.js";
 import { loadPrompt } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
@@ -15,6 +16,7 @@ import {
 import { getPrdPath, hasPrd, readPrd, getTaskSummary } from "../lib/prd.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
+import SpecSelector from "../components/SpecSelector.js";
 import StreamOutput from "../components/StreamOutput.js";
 
 export interface BuildFlags {
@@ -159,15 +161,17 @@ export async function executeBuild(
 
 export default function Build(flags: BuildFlags) {
 	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "building" | "done" | "interrupted" | "error">(
-		flags.spec ? "init" : "error",
+	const [phase, setPhase] = useState<"init" | "selecting" | "building" | "done" | "interrupted" | "error">(
+		flags.spec ? "init" : "selecting",
 	);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
 	const [specName, setSpecName] = useState("");
 	const [events, setEvents] = useState<CliEvent[]>([]);
-	const [errorMessage, setErrorMessage] = useState(flags.spec ? "" : "No --spec flag provided. Usage: toby build --spec=<name>");
+	const [errorMessage, setErrorMessage] = useState("");
 	const [result, setResult] = useState<BuildResult | null>(null);
+	const [specs, setSpecs] = useState<Spec[]>([]);
+	const [activeFlags, setActiveFlags] = useState<BuildFlags>(flags);
 	const [interruptInfo, setInterruptInfo] = useState<{ specName: string; iterations: number } | null>(null);
 	const abortControllerRef = useRef(new AbortController());
 
@@ -178,6 +182,26 @@ export default function Build(flags: BuildFlags) {
 		return () => { process.off("SIGINT", handler); };
 	}, []);
 
+	// Discover specs for the selector when no --spec flag
+	useEffect(() => {
+		if (phase !== "selecting") return;
+		try {
+			const config = loadConfig();
+			const discovered = discoverSpecs(process.cwd(), config);
+			const buildable = [...filterByStatus(discovered, "planned"), ...filterByStatus(discovered, "building")];
+			if (buildable.length === 0) {
+				setErrorMessage("No planned specs found. Run 'toby plan' first.");
+				setPhase("error");
+				return;
+			}
+			setSpecs(buildable);
+		} catch (err) {
+			setErrorMessage((err as Error).message);
+			setPhase("error");
+			exit(new Error((err as Error).message));
+		}
+	}, [phase]);
+
 	// Resolve verbose: --verbose flag overrides config.verbose
 	const resolvedVerbose = flags.verbose || (() => {
 		try { return loadConfig().verbose; } catch { return false; }
@@ -186,7 +210,7 @@ export default function Build(flags: BuildFlags) {
 	// Run build when we have a spec
 	useEffect(() => {
 		if (phase !== "init") return;
-		executeBuild(flags, {
+		executeBuild(activeFlags, {
 			onPhase: (p) => { if (p === "building") setPhase("building"); },
 			onIteration: (current, max) => {
 				setCurrentIteration(current);
@@ -213,7 +237,13 @@ export default function Build(flags: BuildFlags) {
 				setPhase("error");
 				exit(new Error((err as Error).message));
 			});
-	}, [phase]);
+	}, [activeFlags, phase]);
+
+	function handleSpecSelect(spec: Spec) {
+		const newFlags = { ...flags, spec: spec.name };
+		setActiveFlags(newFlags);
+		setPhase("init");
+	}
 
 	if (phase === "interrupted" && interruptInfo) {
 		return (
@@ -226,6 +256,13 @@ export default function Build(flags: BuildFlags) {
 
 	if (phase === "error") {
 		return <Text color="red">{errorMessage}</Text>;
+	}
+
+	if (phase === "selecting") {
+		if (specs.length === 0) {
+			return <Text dimColor>Loading specs...</Text>;
+		}
+		return <SpecSelector specs={specs} onSelect={handleSpecSelect} title="Select a spec to build:" />;
 	}
 
 	if (phase === "done" && result) {
@@ -241,7 +278,7 @@ export default function Build(flags: BuildFlags) {
 	return (
 		<Box flexDirection="column">
 			<Text dimColor>
-				{`Building: ${specName || flags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
+				{`Building: ${specName || activeFlags.spec} (iteration ${Math.min(currentIteration, maxIterations)}/${maxIterations})`}
 			</Text>
 			<Text dimColor>{"─".repeat(40)}</Text>
 			<StreamOutput events={events} verbose={resolvedVerbose} />
