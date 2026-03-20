@@ -180,4 +180,124 @@ describe("Status", () => {
 		const { lastFrame } = render(<Status version="0.1.0" />);
 		expect(lastFrame()).toContain("—");
 	});
+
+	describe("--spec detailed view", () => {
+		it("renders task list with status icons", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+				statusSpecs: {
+					"01-auth": {
+						status: "building",
+						iterations: [
+							{
+								type: "build",
+								iteration: 1,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:00:00Z",
+								completedAt: "2026-01-01T00:01:00Z",
+								exitCode: 0,
+								taskCompleted: "task-0",
+								tokensUsed: 5000,
+							},
+							{
+								type: "build",
+								iteration: 2,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:02:00Z",
+								completedAt: "2026-01-01T00:03:00Z",
+								exitCode: 0,
+								taskCompleted: "task-1",
+								tokensUsed: 3000,
+							},
+						],
+					},
+				},
+				prds: {
+					"01-auth": {
+						tasks: [
+							{ status: "done" },
+							{ status: "in_progress" },
+							{ status: "pending" },
+							{ status: "blocked" },
+						],
+					},
+				},
+			});
+			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
+			const output = lastFrame()!;
+
+			expect(output).toContain("01-auth");
+			expect(output).toContain("building");
+			expect(output).toContain("✓ done");
+			expect(output).toContain("● in_progress");
+			expect(output).toContain("○ pending");
+			expect(output).toContain("○ blocked");
+			expect(output).toContain("Iterations: 2");
+			expect(output).toContain("Tokens used: 8000");
+		});
+
+		it("shows error for non-existent spec", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+			});
+			const { lastFrame } = render(<Status spec="nonexistent" version="0.1.0" />);
+			expect(lastFrame()).toContain("Spec not found: nonexistent");
+		});
+
+		it("shows no-tasks message when no prd exists", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+			});
+			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
+			expect(lastFrame()).toContain("No tasks");
+		});
+
+		it("sums token usage across all iterations", () => {
+			setup({
+				specs: [{ name: "01-auth" }],
+				statusSpecs: {
+					"01-auth": {
+						status: "building",
+						iterations: [
+							{
+								type: "plan",
+								iteration: 1,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:00:00Z",
+								completedAt: "2026-01-01T00:01:00Z",
+								exitCode: 0,
+								taskCompleted: null,
+								tokensUsed: 1500,
+							},
+							{
+								type: "build",
+								iteration: 1,
+								sessionId: null,
+								cli: "claude",
+								model: "default",
+								startedAt: "2026-01-01T00:02:00Z",
+								completedAt: null,
+								exitCode: null,
+								taskCompleted: null,
+								tokensUsed: null,
+							},
+						],
+					},
+				},
+				prds: {
+					"01-auth": {
+						tasks: [{ status: "pending" }],
+					},
+				},
+			});
+			const { lastFrame } = render(<Status spec="01-auth" version="0.1.0" />);
+			expect(lastFrame()).toContain("Tokens used: 1500");
+		});
+	});
 });
