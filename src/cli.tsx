@@ -4,6 +4,7 @@ import { render, Text } from "ink";
 import Plan from "./commands/plan.js";
 import type { PlanFlags } from "./commands/plan.js";
 import Build from "./commands/build.js";
+import type { BuildFlags } from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import Config from "./commands/config.js";
@@ -60,6 +61,13 @@ Plan Options
   --iterations=<n>   Override iteration count
   --verbose          Show full CLI output
   --cli=<name>       Override AI CLI (claude, codex, opencode)
+
+Build Options
+  --spec=<name>      Build a specific planned spec
+  --all              Build all planned specs in order
+  --iterations=<n>   Override max iteration count
+  --verbose          Show full CLI output
+  --cli=<name>       Override AI CLI (claude, codex, opencode)
 `,
 	{
 		importMeta: import.meta,
@@ -89,9 +97,18 @@ if (!command) {
 	};
 	const app = render(<Plan {...flags} />);
 	await app.waitUntilExit();
+} else if (command === "build") {
+	const flags: BuildFlags = {
+		spec: cli.flags.spec,
+		all: cli.flags.all,
+		iterations: cli.flags.iterations,
+		verbose: cli.flags.verbose,
+		cli: cli.flags.cli,
+	};
+	const app = render(<Build {...flags} />);
+	await app.waitUntilExit();
 } else if (COMMANDS.includes(command as Command)) {
 	const stubs: Record<string, React.ComponentType> = {
-		build: Build,
 		init: Init,
 		status: Status,
 		config: Config,
