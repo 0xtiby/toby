@@ -45,7 +45,7 @@ import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { hasPrd, getPrdPath, readPrd, getTaskSummary } from "../lib/prd.js";
-import { executePlan, executePlanAll } from "./plan.js";
+import { executePlan, executePlanAll, AbortError } from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -449,5 +449,158 @@ describe("executePlanAll", () => {
 		await expect(
 			executePlanAll({ all: true, verbose: false }, {}, "/project"),
 		).rejects.toThrow("No specs found in specs/");
+	});
+});
+
+describe("error handling edge cases", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("proceeds with empty spec content", async () => {
+		mockLoadSpecContent.mockReturnValue({
+			name: "01-auth",
+			path: "/project/specs/01-auth.md",
+			content: "",
+		});
+
+		const result = await executePlan(defaultFlags, {}, "/project");
+
+		expect(mockRunLoop).toHaveBeenCalledOnce();
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockLoadPrompt).toHaveBeenCalledWith(
+			"PROMPT_PLAN",
+			expect.objectContaining({ SPEC_CONTENT: "" }),
+			"/project",
+		);
+		expect(result.specName).toBe("01-auth");
+	});
+
+	it("succeeds with taskCount 0 when AI does not create prd.json", async () => {
+		mockReadPrd.mockReturnValue(null);
+
+		const result = await executePlan(defaultFlags, {}, "/project");
+
+		expect(result.taskCount).toBe(0);
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
+			expect.anything(),
+			"01-auth",
+			"planned",
+		);
+	});
+
+	it("throws AbortError when abortSignal is triggered", async () => {
+		const controller = new AbortController();
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1,
+				sessionId: "sess-1",
+				exitCode: 0,
+				tokensUsed: 150,
+				model: "claude-sonnet-4-6",
+				durationMs: 1000,
+				sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return {
+				iterations: [iterResult],
+				stopReason: "aborted" as const,
+			};
+		});
+
+		await expect(
+			executePlan(defaultFlags, {}, "/project", controller.signal),
+		).rejects.toThrow(AbortError);
+	});
+
+	it("saves partial status before throwing AbortError", async () => {
+		const controller = new AbortController();
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1,
+				sessionId: "sess-1",
+				exitCode: 0,
+				tokensUsed: 150,
+				model: "claude-sonnet-4-6",
+				durationMs: 1000,
+				sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return {
+				iterations: [iterResult],
+				stopReason: "aborted" as const,
+			};
+		});
+
+		try {
+			await executePlan(defaultFlags, {}, "/project", controller.signal);
+		} catch (err) {
+			expect(err).toBeInstanceOf(AbortError);
+			const abortErr = err as AbortError;
+			expect(abortErr.specName).toBe("01-auth");
+			expect(abortErr.completedIterations).toBe(1);
+		}
+
+		// Status should be saved: onIterationComplete writes + abort writes
+		expect(mockWriteStatus).toHaveBeenCalled();
+		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
+			expect.anything(),
+			"01-auth",
+			"planned",
+		);
+	});
+
+	it("passes abortSignal to runLoop", async () => {
+		const controller = new AbortController();
+
+		await executePlan(defaultFlags, {}, "/project", controller.signal);
+
+		expect(mockRunLoop).toHaveBeenCalledWith(
+			expect.objectContaining({ abortSignal: controller.signal }),
+		);
+	});
+
+	it("executePlanAll forwards abortSignal to executePlan", async () => {
+		const controller = new AbortController();
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			// Verify signal was passed through
+			expect(options.abortSignal).toBe(controller.signal);
+			const iterResult = {
+				iteration: 1,
+				sessionId: "sess-1",
+				exitCode: 0,
+				tokensUsed: 150,
+				model: "claude-sonnet-4-6",
+				durationMs: 1000,
+				sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return {
+				iterations: [iterResult],
+				stopReason: "max_iterations" as const,
+			};
+		});
+
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+		mockLoadSpecContent.mockReturnValue({ ...spec1, content: "# Auth" });
+		mockGetPrdPath.mockReturnValue("/project/.toby/prd/01-auth.json");
+
+		await executePlanAll(
+			{ all: true, verbose: false },
+			{},
+			"/project",
+			controller.signal,
+		);
+
+		expect(mockRunLoop).toHaveBeenCalledWith(
+			expect.objectContaining({ abortSignal: controller.signal }),
+		);
 	});
 });

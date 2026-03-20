@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Text, Box, useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
@@ -40,6 +40,17 @@ export interface PlanResult {
 	prdPath: string;
 }
 
+export class AbortError extends Error {
+	specName: string;
+	completedIterations: number;
+	constructor(specName: string, completedIterations: number) {
+		super(`Planning interrupted for ${specName} after ${completedIterations} iteration(s)`);
+		this.name = "AbortError";
+		this.specName = specName;
+		this.completedIterations = completedIterations;
+	}
+}
+
 /**
  * Core planning logic, separated from Ink rendering for testability.
  */
@@ -47,6 +58,7 @@ export async function executePlan(
 	flags: PlanFlags,
 	callbacks: PlanCallbacks = {},
 	cwd: string = process.cwd(),
+	abortSignal?: AbortSignal,
 ): Promise<PlanResult> {
 	ensureLocalDir(cwd);
 
@@ -90,7 +102,7 @@ export async function executePlan(
 	callbacks.onPhase?.("planning");
 	callbacks.onIteration?.(1, commandConfig.iterations);
 
-	await runLoop({
+	const loopResult = await runLoop({
 		maxIterations: commandConfig.iterations,
 		getPrompt: (iteration) =>
 			loadPrompt(
@@ -111,6 +123,7 @@ export async function executePlan(
 		model: commandConfig.model,
 		cwd,
 		continueSession: true,
+		abortSignal,
 		onEvent: (event) => {
 			callbacks.onEvent?.(event);
 		},
@@ -133,6 +146,12 @@ export async function executePlan(
 			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
 		},
 	});
+
+	if (loopResult.stopReason === "aborted") {
+		status = updateSpecStatus(status, found.name, "planned");
+		writeStatus(status, cwd);
+		throw new AbortError(found.name, loopResult.iterations.length);
+	}
 
 	status = updateSpecStatus(status, found.name, "planned");
 	writeStatus(status, cwd);
@@ -170,6 +189,7 @@ export async function executePlanAll(
 	flags: PlanFlags,
 	callbacks: PlanAllCallbacks = {},
 	cwd: string = process.cwd(),
+	abortSignal?: AbortSignal,
 ): Promise<PlanAllResult> {
 	ensureLocalDir(cwd);
 
@@ -197,6 +217,7 @@ export async function executePlanAll(
 				onRefinement: callbacks.onRefinement,
 			},
 			cwd,
+			abortSignal,
 		);
 
 		planned.push(result);
@@ -214,7 +235,7 @@ function getInitialPhase(flags: PlanFlags): "init" | "all" | "selecting" {
 
 export default function Plan(flags: PlanFlags) {
 	const { exit } = useApp();
-	const [phase, setPhase] = useState<"init" | "all" | "selecting" | "planning" | "done" | "error">(
+	const [phase, setPhase] = useState<"init" | "all" | "selecting" | "planning" | "done" | "interrupted" | "error">(
 		getInitialPhase(flags),
 	);
 	const [currentIteration, setCurrentIteration] = useState(0);
@@ -228,6 +249,15 @@ export default function Plan(flags: PlanFlags) {
 	const [activeFlags, setActiveFlags] = useState<PlanFlags>(flags);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string; taskCount: number } | null>(null);
 	const [allProgress, setAllProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+	const [interruptInfo, setInterruptInfo] = useState<{ specName: string; iterations: number } | null>(null);
+	const abortControllerRef = useRef(new AbortController());
+
+	// Wire SIGINT to abort the planning loop
+	useEffect(() => {
+		const handler = () => { abortControllerRef.current.abort(); };
+		process.on("SIGINT", handler);
+		return () => { process.off("SIGINT", handler); };
+	}, []);
 
 	// Resolve verbose: --verbose flag overrides config.verbose
 	const resolvedVerbose = flags.verbose || (() => {
@@ -266,13 +296,19 @@ export default function Plan(flags: PlanFlags) {
 			onEvent: (event) => {
 				setEvents((prev) => [...prev, event]);
 			},
-		})
+		}, undefined, abortControllerRef.current.signal)
 			.then((r) => {
 				setAllResult(r);
 				setPhase("done");
 				exit();
 			})
 			.catch((err) => {
+				if (err instanceof AbortError) {
+					setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
+					setPhase("interrupted");
+					exit();
+					return;
+				}
 				setErrorMessage((err as Error).message);
 				setPhase("error");
 				exit(new Error((err as Error).message));
@@ -292,7 +328,7 @@ export default function Plan(flags: PlanFlags) {
 			onEvent: (event) => {
 				setEvents((prev) => [...prev, event]);
 			},
-		})
+		}, undefined, abortControllerRef.current.signal)
 			.then((r) => {
 				setSpecName(r.specName);
 				setResult(r);
@@ -300,6 +336,12 @@ export default function Plan(flags: PlanFlags) {
 				exit();
 			})
 			.catch((err) => {
+				if (err instanceof AbortError) {
+					setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
+					setPhase("interrupted");
+					exit();
+					return;
+				}
 				setErrorMessage((err as Error).message);
 				setPhase("error");
 				exit(new Error((err as Error).message));
@@ -310,6 +352,15 @@ export default function Plan(flags: PlanFlags) {
 		const newFlags = { ...flags, spec: spec.name };
 		setActiveFlags(newFlags);
 		setPhase("init");
+	}
+
+	if (phase === "interrupted" && interruptInfo) {
+		return (
+			<Box flexDirection="column">
+				<Text color="yellow">{`⚠ Planning interrupted for ${interruptInfo.specName}`}</Text>
+				<Text dimColor>{`  ${interruptInfo.iterations} iteration(s) completed, partial status saved`}</Text>
+			</Box>
+		);
 	}
 
 	if (phase === "error") {
