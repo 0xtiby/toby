@@ -18,6 +18,15 @@ interface SpecRow {
 	iterations: number;
 }
 
+interface IterationRow {
+	index: string;
+	type: string;
+	cli: string;
+	tokens: string;
+	duration: string;
+	exitCode: string;
+}
+
 export function formatDuration(startedAt: string, completedAt: string | null): string {
 	if (!completedAt) return "—";
 	const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
@@ -86,6 +95,37 @@ function StatusTable({ rows }: { rows: SpecRow[] }) {
 	);
 }
 
+function IterationTable({ rows }: { rows: IterationRow[] }) {
+	if (rows.length === 0) {
+		return <Text dimColor>No iterations yet</Text>;
+	}
+
+	const headers = { index: "#", type: "Type", cli: "CLI", tokens: "Tokens", duration: "Duration", exitCode: "Exit" };
+	const w = {
+		index: Math.max(headers.index.length, ...rows.map((r) => r.index.length)),
+		type: Math.max(headers.type.length, ...rows.map((r) => r.type.length)),
+		cli: Math.max(headers.cli.length, ...rows.map((r) => r.cli.length)),
+		tokens: Math.max(headers.tokens.length, ...rows.map((r) => r.tokens.length)),
+		duration: Math.max(headers.duration.length, ...rows.map((r) => r.duration.length)),
+		exitCode: Math.max(headers.exitCode.length, ...rows.map((r) => r.exitCode.length)),
+	};
+
+	const separator = `${"─".repeat(w.index + 2)}┼${"─".repeat(w.type + 2)}┼${"─".repeat(w.cli + 2)}┼${"─".repeat(w.tokens + 2)}┼${"─".repeat(w.duration + 2)}┼${"─".repeat(w.exitCode + 2)}`;
+	const headerLine = ` ${pad(headers.index, w.index)} │ ${pad(headers.type, w.type)} │ ${pad(headers.cli, w.cli)} │ ${pad(headers.tokens, w.tokens)} │ ${pad(headers.duration, w.duration)} │ ${pad(headers.exitCode, w.exitCode)} `;
+
+	return (
+		<Box flexDirection="column">
+			<Text bold>{headerLine}</Text>
+			<Text dimColor>{separator}</Text>
+			{rows.map((row) => (
+				<Text key={row.index}>
+					{` ${pad(row.index, w.index)} │ ${pad(row.type, w.type)} │ ${pad(row.cli, w.cli)} │ ${pad(row.tokens, w.tokens)} │ ${pad(row.duration, w.duration)} │ ${pad(row.exitCode, w.exitCode)} `}
+				</Text>
+			))}
+		</Box>
+	);
+}
+
 function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	const config = loadConfig(cwd);
 	const specs = discoverSpecs(cwd, config);
@@ -105,6 +145,15 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 	}
 	const entry = getSpecStatus(statusData, spec.name);
 
+	const iterationRows: IterationRow[] = entry.iterations.map((iter, i) => ({
+		index: String(i + 1),
+		type: iter.type,
+		cli: iter.cli,
+		tokens: iter.tokensUsed != null ? String(iter.tokensUsed) : "—",
+		duration: formatDuration(iter.startedAt, iter.completedAt),
+		exitCode: iter.exitCode != null ? String(iter.exitCode) : "—",
+	}));
+
 	const totalTokens = entry.iterations.reduce(
 		(sum: number, iter: { tokensUsed: number | null }) => sum + (iter.tokensUsed ?? 0),
 		0,
@@ -116,7 +165,7 @@ function DetailedView({ specName, cwd }: { specName: string; cwd: string }) {
 			<Text bold>{spec.name}</Text>
 			<Text>Status: {entry.status}</Text>
 			<Text>{""}</Text>
-			<Text dimColor>No task data available</Text>
+			<IterationTable rows={iterationRows} />
 			<Text>{""}</Text>
 			<Text>Iterations: {entry.iterations.length}</Text>
 			<Text>Tokens used: {totalTokens}</Text>

@@ -223,7 +223,11 @@ describe("Status", () => {
 
 			expect(output).toContain("01-auth");
 			expect(output).toContain("building");
-			expect(output).toContain("No task data available");
+			expect(output).toContain("Type");
+			expect(output).toContain("CLI");
+			expect(output).toContain("Tokens");
+			expect(output).toContain("Duration");
+			expect(output).toContain("Exit");
 			expect(output).toContain("Iterations: 2");
 			expect(output).toContain("Tokens used: 8000");
 		});
@@ -236,12 +240,12 @@ describe("Status", () => {
 			expect(lastFrame()).toContain("Spec not found: nonexistent");
 		});
 
-		it("shows no task data available message", () => {
+		it("shows no iterations yet message when no iterations", () => {
 			setup({
 				specs: [{ name: "01-auth" }],
 			});
 			const { lastFrame } = render(<Status spec="auth" version="0.1.0" />);
-			expect(lastFrame()).toContain("No task data available");
+			expect(lastFrame()).toContain("No iterations yet");
 		});
 
 		it("sums token usage across all iterations", () => {
