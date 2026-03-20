@@ -8,9 +8,7 @@ import { detectAll, getKnownModels } from "@0xtiby/spawner";
 import { loadConfig, writeConfig } from "../lib/config.js";
 import { getLocalDir, CONFIG_FILE } from "../lib/paths.js";
 import { ConfigSchema } from "../types.js";
-import type { TobyConfig } from "../types.js";
-
-type CliName = "claude" | "codex" | "opencode";
+import type { TobyConfig, CliName } from "../types.js";
 
 export interface ConfigFlags {
 	subcommand?: string;
@@ -73,6 +71,25 @@ function parseValue(raw: string, type: "string" | "number" | "boolean" | "string
 	}
 }
 
+/** Read existing config, merge mutations, write once. Throws on write errors. */
+function readMergeWriteConfig(mutations: { key: string; value: unknown }[]): void {
+	const cwd = process.cwd();
+	const configPath = path.join(getLocalDir(cwd), CONFIG_FILE);
+	let existing: Record<string, unknown> = {};
+	try {
+		const content = fs.readFileSync(configPath, "utf-8");
+		existing = JSON.parse(content);
+	} catch {
+		// File doesn't exist yet, start fresh
+	}
+
+	for (const { key, value } of mutations) {
+		setNestedValue(existing, key, value);
+	}
+
+	writeConfig(existing as Partial<TobyConfig>, configPath);
+}
+
 function ConfigGet({ configKey }: { configKey: string }) {
 	if (!(configKey in VALID_KEYS)) {
 		return <Text color="red">{`Unknown config key: ${configKey}\nValid keys: ${Object.keys(VALID_KEYS).join(", ")}`}</Text>;
@@ -119,25 +136,12 @@ function ConfigSet({ configKey, value }: { configKey: string; value: string }) {
 		return <Text color="red">{`Validation error for ${configKey}: ${msg}`}</Text>;
 	}
 
-	// Read existing local config, merge, and write
-	const cwd = process.cwd();
-	const configPath = path.join(getLocalDir(cwd), CONFIG_FILE);
-	let existing: Record<string, unknown> = {};
 	try {
-		const content = fs.readFileSync(configPath, "utf-8");
-		existing = JSON.parse(content);
-	} catch {
-		// File doesn't exist yet, start fresh
-	}
-
-	setNestedValue(existing, configKey, parsed);
-
-	try {
-		writeConfig(existing as Partial<TobyConfig>, configPath);
+		readMergeWriteConfig([{ key: configKey, value: parsed }]);
 	} catch (err) {
 		const code = (err as NodeJS.ErrnoException).code;
 		const msg = code === "EACCES"
-			? `Permission denied writing to ${configPath}`
+			? `Permission denied writing to ${path.join(getLocalDir(process.cwd()), CONFIG_FILE)}`
 			: `Failed to write config: ${(err as Error).message}`;
 		return <Text color="red">{msg}</Text>;
 	}
@@ -276,11 +280,10 @@ export function ConfigEditor({ version }: { version: string }) {
 		});
 	}, [phase]);
 
-	function cliItems(currentValue: CliName) {
+	function cliItems() {
 		return installedClis.map((name) => ({
 			label: name,
 			value: name,
-			...(name === currentValue ? {} : {}),
 		}));
 	}
 
@@ -310,8 +313,8 @@ export function ConfigEditor({ version }: { version: string }) {
 		return <Text>Loading configuration...</Text>;
 	}
 
-	const planCliItems = cliItems(values.planCli);
-	const buildCliItems = cliItems(values.buildCli);
+	const planCliItems = cliItems();
+	const buildCliItems = cliItems();
 
 	return (
 		<Box flexDirection="column">
@@ -544,28 +547,26 @@ export function ConfigSetBatch({ pairs }: { pairs: string[] }) {
 		);
 	}
 
-	// Read existing config, merge all, write once
-	const cwd = process.cwd();
-	const configPath = path.join(getLocalDir(cwd), CONFIG_FILE);
-	let existing: Record<string, unknown> = {};
-	try {
-		const content = fs.readFileSync(configPath, "utf-8");
-		existing = JSON.parse(content);
-	} catch {
-		// File doesn't exist yet, start fresh
-	}
-
+	// Validate merged values against schema
+	const partial: Record<string, unknown> = {};
 	for (const { key, value } of parsed) {
-		setNestedValue(existing, key, value);
+		setNestedValue(partial, key, value);
+	}
+	try {
+		ConfigSchema.parse({ ...partial });
+	} catch (err) {
+		process.exitCode = 1;
+		const msg = err instanceof Error ? err.message : String(err);
+		return <Text color="red">{`Validation error: ${msg}`}</Text>;
 	}
 
 	try {
-		writeConfig(existing as Partial<TobyConfig>, configPath);
+		readMergeWriteConfig(parsed);
 	} catch (err) {
 		process.exitCode = 1;
 		const code = (err as NodeJS.ErrnoException).code;
 		const msg = code === "EACCES"
-			? `Permission denied writing to ${configPath}`
+			? `Permission denied writing to ${path.join(getLocalDir(process.cwd()), CONFIG_FILE)}`
 			: `Failed to write config: ${(err as Error).message}`;
 		return <Text color="red">{msg}</Text>;
 	}

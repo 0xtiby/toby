@@ -156,7 +156,7 @@ const commands: Record<string, CommandEntry> = {
 			const [, subcommand, ...rest] = input;
 			if (!subcommand) return <ConfigEditor version={version} />;
 			if (subcommand === "set" && rest.some((arg) => arg.includes("="))) {
-				return <ConfigSetBatch pairs={rest} />;
+				return <ConfigSetBatch pairs={rest.filter((arg) => arg.includes("="))} />;
 			}
 			const [configKey, value] = rest;
 			return (

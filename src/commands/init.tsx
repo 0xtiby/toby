@@ -13,7 +13,8 @@ import {
 	DEFAULT_SPECS_DIR,
 	PRD_DIR,
 } from "../lib/paths.js";
-import type { TobyConfig } from "../types.js";
+import { CLI_NAMES } from "../types.js";
+import type { TobyConfig, CliName } from "../types.js";
 
 export interface InitFlags {
 	version: string;
@@ -23,8 +24,6 @@ export interface InitFlags {
 	buildModel?: string;
 	specsDir?: string;
 }
-
-type CliName = "claude" | "codex" | "opencode";
 
 interface CliDetection {
 	installed: boolean;
@@ -174,42 +173,40 @@ function modelItems(cli: CliName) {
 	];
 }
 
-const VALID_CLI_NAMES: CliName[] = ["claude", "codex", "opencode"];
-
 /** Returns true when all 5 optional init flags are present (non-interactive mode). */
 export function hasAllInitFlags(flags: InitFlags): boolean {
-	return !!(
-		flags.planCli &&
-		flags.planModel &&
-		flags.buildCli &&
-		flags.buildModel &&
-		flags.specsDir
+	return (
+		flags.planCli !== undefined &&
+		flags.planModel !== undefined &&
+		flags.buildCli !== undefined &&
+		flags.buildModel !== undefined &&
+		flags.specsDir !== undefined
 	);
 }
 
 function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 	const { exit } = useApp();
+
+	const planCli = flags.planCli!;
+	const buildCli = flags.buildCli!;
+
+	// Validate CLI names synchronously
+	const invalidCli = [planCli, buildCli].find(
+		(cli) => !(CLI_NAMES as readonly string[]).includes(cli),
+	);
+
 	const [status, setStatus] = useState<
 		| { type: "detecting" }
+		| { type: "invalid_cli"; cli: string }
 		| { type: "error"; message: string }
 		| { type: "success"; result: InitResult; selections: InitSelections }
-	>({ type: "detecting" });
+	>(invalidCli ? { type: "invalid_cli", cli: invalidCli } : { type: "detecting" });
 
 	useEffect(() => {
-		const planCli = flags.planCli!;
-		const buildCli = flags.buildCli!;
-
-		// Validate CLI names
-		for (const cli of [planCli, buildCli]) {
-			if (!VALID_CLI_NAMES.includes(cli as CliName)) {
-				setStatus({
-					type: "error",
-					message: `Unknown CLI: ${cli}. Must be one of: claude, codex, opencode`,
-				});
-				process.exitCode = 1;
-				exit();
-				return;
-			}
+		if (invalidCli) {
+			process.exitCode = 1;
+			exit();
+			return;
 		}
 
 		// Check CLIs are installed
@@ -244,6 +241,10 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 			exit();
 		});
 	}, []);
+
+	if (status.type === "invalid_cli") {
+		return <Text color="red">{`✗ Unknown CLI: ${status.cli}. Must be one of: ${CLI_NAMES.join(", ")}`}</Text>;
+	}
 
 	if (status.type === "detecting") {
 		return <Text>Detecting installed CLIs...</Text>;

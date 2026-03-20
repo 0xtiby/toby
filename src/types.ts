@@ -2,8 +2,11 @@ import { z } from "zod";
 
 // ── Config (spec 02) ──────────────────────────────────────────────
 
+export const CLI_NAMES = ["claude", "codex", "opencode"] as const;
+export type CliName = (typeof CLI_NAMES)[number];
+
 export const CommandConfigSchema = z.object({
-	cli: z.enum(["claude", "codex", "opencode"]).default("claude"),
+	cli: z.enum(CLI_NAMES).default("claude"),
 	model: z.string().default("default"),
 	iterations: z.number().int().positive(),
 });
