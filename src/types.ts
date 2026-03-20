@@ -8,13 +8,17 @@ export const CommandConfigSchema = z.object({
 	iterations: z.number().int().positive(),
 });
 
+export const PlanConfigSchema = CommandConfigSchema.extend({
+	iterations: z.number().int().positive().default(2),
+});
+
+export const BuildConfigSchema = CommandConfigSchema.extend({
+	iterations: z.number().int().positive().default(10),
+});
+
 export const ConfigSchema = z.object({
-	plan: CommandConfigSchema.extend({
-		iterations: z.number().int().positive().default(2),
-	}),
-	build: CommandConfigSchema.extend({
-		iterations: z.number().int().positive().default(10),
-	}),
+	plan: PlanConfigSchema.default({}),
+	build: BuildConfigSchema.default({}),
 	specsDir: z.string().default("specs"),
 	excludeSpecs: z.array(z.string()).default(["README.md"]),
 	verbose: z.boolean().default(false),
