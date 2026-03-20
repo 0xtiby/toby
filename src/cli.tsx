@@ -87,7 +87,8 @@ if (!command) {
 		verbose: cli.flags.verbose,
 		cli: cli.flags.cli,
 	};
-	render(<Plan {...flags} />).unmount();
+	const app = render(<Plan {...flags} />);
+	await app.waitUntilExit();
 } else if (COMMANDS.includes(command as Command)) {
 	const stubs: Record<string, React.ComponentType> = {
 		build: Build,

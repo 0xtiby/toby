@@ -56,31 +56,13 @@ describe("cli", () => {
 		expect(output).toContain("Unknown command: foobar");
 	});
 
-	it("shows stub for known command", () => {
+	it("plan without --spec shows error", () => {
 		const output = run("plan");
-		expect(output).toContain("toby plan");
+		expect(output).toContain("No --spec flag provided");
 	});
 
-	it("routes plan with --spec flag", () => {
-		const output = run("plan", "--spec=auth");
-		expect(output).toContain("--spec=auth");
-	});
-
-	it("routes plan with --all flag", () => {
-		const output = run("plan", "--all");
-		expect(output).toContain("--all");
-	});
-
-	it("routes plan with all flags", () => {
-		const output = run("plan", "--iterations=5", "--verbose", "--cli=claude");
-		expect(output).toContain("--iterations=5");
-		expect(output).toContain("--verbose");
-		expect(output).toContain("--cli=claude");
-	});
-
-	it("ignores unknown flags gracefully", () => {
-		const output = run("plan", "--unknown=foo");
-		expect(output).toContain("toby plan");
-		expect(output).not.toContain("--unknown");
+	it("plan with --spec for nonexistent spec shows error", () => {
+		const output = run("plan", "--spec=nonexistent");
+		expect(output).toContain("not found");
 	});
 });
