@@ -4,8 +4,8 @@ import { render } from "ink-testing-library";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import Init, { createProject, getInstalledClis } from "./init.js";
-import type { InitSelections } from "./init.js";
+import Init, { createProject, getInstalledClis, hasAllInitFlags } from "./init.js";
+import type { InitSelections, InitFlags } from "./init.js";
 
 // Mock spawner
 vi.mock("@0xtiby/spawner", () => ({
@@ -258,6 +258,135 @@ describe("Init component", () => {
 		await vi.waitFor(() => {
 			expect(lastFrame()).toContain("npm install -g @anthropic-ai/claude-code");
 			expect(lastFrame()).toContain("npm install -g @openai/codex");
+		});
+	});
+
+	it("delegates to NonInteractiveInit when all flags present", async () => {
+		mockDetectAll.mockResolvedValue(makeDetectResult());
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		// NonInteractiveInit shows "Detecting installed CLIs..." then success
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("Project initialized");
+		});
+	});
+
+	it("falls back to interactive wizard when flags missing", () => {
+		mockDetectAll.mockReturnValue(new Promise(() => {}));
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			// missing planModel, buildCli, buildModel, specsDir
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		// Interactive mode shows detecting message (same as interactive flow)
+		expect(lastFrame()).toContain("Detecting installed CLIs");
+	});
+});
+
+describe("hasAllInitFlags", () => {
+	it("returns true when all 5 flags present", () => {
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		expect(hasAllInitFlags(flags)).toBe(true);
+	});
+
+	it("returns false when any flag missing", () => {
+		const base: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+
+		// Test each missing flag individually
+		for (const key of ["planCli", "planModel", "buildCli", "buildModel", "specsDir"] as const) {
+			const flags = { ...base, [key]: undefined };
+			expect(hasAllInitFlags(flags)).toBe(false);
+		}
+	});
+});
+
+describe("NonInteractiveInit", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-init-ni-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("creates project with valid flags and installed CLI", async () => {
+		mockDetectAll.mockResolvedValue(makeDetectResult());
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("Project initialized");
+		});
+	});
+
+	it("renders error for unknown CLI value", async () => {
+		mockDetectAll.mockResolvedValue(makeDetectResult());
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "unknown-cli",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("Unknown CLI: unknown-cli");
+		});
+	});
+
+	it("renders error for uninstalled CLI", async () => {
+		mockDetectAll.mockResolvedValue(
+			makeDetectResult({
+				codex: {
+					installed: false,
+					version: null,
+					authenticated: false,
+					binaryPath: null,
+				},
+			}),
+		);
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "codex",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("CLI not installed: codex");
 		});
 	});
 });
