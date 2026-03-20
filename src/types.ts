@@ -41,44 +41,6 @@ export interface SpecFile {
 	content?: string;
 }
 
-// ── PRD / Tasks (spec 04) ─────────────────────────────────────────
-
-export const TaskStatusSchema = z.enum([
-	"pending",
-	"in_progress",
-	"done",
-	"blocked",
-]);
-
-export const TaskSchema = z.object({
-	id: z.string(),
-	title: z.string(),
-	description: z.string(),
-	acceptanceCriteria: z.array(z.string()),
-	files: z.array(z.string()),
-	dependencies: z.array(z.string()),
-	status: TaskStatusSchema.default("pending"),
-	priority: z.number().int().positive(),
-});
-
-export const PrdSchema = z
-	.object({
-		spec: z.string(),
-		createdAt: z.string().datetime(),
-		tasks: z.array(TaskSchema),
-	})
-	.refine(
-		(prd) => {
-			const ids = prd.tasks.map((t) => t.id);
-			return new Set(ids).size === ids.length;
-		},
-		{ message: "Task IDs must be unique" },
-	);
-
-export type PRDData = z.infer<typeof PrdSchema>;
-export type Task = z.infer<typeof TaskSchema>;
-export type TaskStatus = z.infer<typeof TaskStatusSchema>;
-
 // ── Status (spec 04) ──────────────────────────────────────────────
 
 export const IterationSchema = z.object({
