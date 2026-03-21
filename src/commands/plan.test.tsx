@@ -71,13 +71,13 @@ function setupDefaults() {
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
+		templateVars: {},
 	});
 
 	mockResolveCommandConfig.mockReturnValue({
 		cli: "claude",
 		model: "default",
 		iterations: 2,
-		templateVars: {},
 	});
 
 	const spec = {

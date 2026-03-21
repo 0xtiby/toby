@@ -42,13 +42,14 @@ interface RunSpecBuildOptions {
 	extraVars?: TemplateVars;
 	existingIterations: number;
 	commandConfig: CommandConfig;
+	configVars: TemplateVars;
 	cwd: string;
 	abortSignal?: AbortSignal;
 	callbacks: BuildCallbacks;
 }
 
 async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
-	const { spec, promptName, extraVars, existingIterations, commandConfig, cwd, abortSignal, callbacks } = options;
+	const { spec, promptName, extraVars, existingIterations, commandConfig, configVars, cwd, abortSignal, callbacks } = options;
 	let status = readStatus(cwd);
 	let iterationStartTime = new Date().toISOString();
 
@@ -66,7 +67,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 					SPEC_CONTENT: spec.content ?? "",
 					...extraVars,
 				},
-				{ cwd, configVars: commandConfig.templateVars },
+				{ cwd, configVars },
 			),
 		cli: commandConfig.cli,
 		model: commandConfig.model,
@@ -167,6 +168,7 @@ export async function executeBuild(
 		extraVars: { IS_LAST_SPEC: "false" },
 		existingIterations,
 		commandConfig,
+		configVars: config.templateVars,
 		cwd,
 		abortSignal,
 		callbacks,
@@ -233,6 +235,7 @@ export async function executeBuildAll(
 			extraVars: { IS_LAST_SPEC: isLastSpec ? "true" : "false" },
 			existingIterations: 0,
 			commandConfig,
+			configVars: config.templateVars,
 			cwd,
 			abortSignal,
 			callbacks: {

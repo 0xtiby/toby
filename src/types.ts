@@ -9,7 +9,6 @@ export const CommandConfigSchema = z.object({
 	cli: z.enum(CLI_NAMES).default("claude"),
 	model: z.string().default("default"),
 	iterations: z.number().int().positive(),
-	templateVars: z.record(z.string(), z.string()).default({}),
 });
 
 export const PlanConfigSchema = CommandConfigSchema.extend({
@@ -26,6 +25,7 @@ export const ConfigSchema = z.object({
 	specsDir: z.string().default("specs"),
 	excludeSpecs: z.array(z.string()).default(["README.md"]),
 	verbose: z.boolean().default(false),
+	templateVars: z.record(z.string(), z.string()).default({}),
 });
 
 export type TobyConfig = z.infer<typeof ConfigSchema>;

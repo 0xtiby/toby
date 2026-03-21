@@ -90,7 +90,7 @@ export async function executePlan(
 					ITERATION: String(iteration + existingIterations),
 					SPEC_CONTENT: specWithContent.content ?? "",
 				},
-				{ cwd, configVars: commandConfig.templateVars },
+				{ cwd, configVars: config.templateVars },
 			),
 		cli: commandConfig.cli,
 		model: commandConfig.model,
