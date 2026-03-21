@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const PROMPTS_DIR = join(import.meta.dirname, ".");
 
-const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md", "PROMPT_BUILD_ALL.md"] as const;
+const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"] as const;
 
 function readPrompt(name: string): string {
 	return readFileSync(join(PROMPTS_DIR, name), "utf-8");
@@ -61,14 +61,3 @@ describe("PROMPT_BUILD.md variables", () => {
 	);
 });
 
-describe("PROMPT_BUILD_ALL.md variables", () => {
-	const vars = extractVars(readPrompt("PROMPT_BUILD_ALL.md"));
-
-	it("contains IS_LAST_SPEC", () => {
-		expect(vars).toContain("IS_LAST_SPEC");
-	});
-
-	it("contains EPIC_NAME", () => {
-		expect(vars).toContain("EPIC_NAME");
-	});
-});

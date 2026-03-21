@@ -112,13 +112,6 @@ describe("resolvePromptPath (integration)", () => {
 		}
 	});
 
-	it("PROMPT_BUILD_ALL resolves to shipped path", () => {
-		const projectDir = path.join(tmpDir, "project");
-		fs.mkdirSync(projectDir, { recursive: true });
-
-		const result = resolvePromptPath("PROMPT_BUILD_ALL", projectDir);
-		expect(result).toMatch(/prompts[/\\]PROMPT_BUILD_ALL\.md$/);
-	});
 });
 
 describe("getShippedPromptPath", () => {
@@ -129,7 +122,7 @@ describe("getShippedPromptPath", () => {
 	});
 
 	it("returns correct path for each prompt name", () => {
-		const names = ["PROMPT_PLAN", "PROMPT_BUILD", "PROMPT_BUILD_ALL"] as const;
+		const names = ["PROMPT_PLAN", "PROMPT_BUILD"] as const;
 		for (const name of names) {
 			const result = getShippedPromptPath(name);
 			expect(result).toContain(`${name}.md`);
@@ -185,21 +178,6 @@ describe("loadPrompt (integration)", () => {
 		);
 	});
 
-	it("loads PROMPT_BUILD_ALL and substitutes correctly", () => {
-		const localDir = path.join(tmpDir, ".toby");
-		fs.mkdirSync(localDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(localDir, "PROMPT_BUILD_ALL.md"),
-			"Build all: {{EPIC_NAME}} last={{IS_LAST_SPEC}}",
-		);
-
-		const result = loadPrompt(
-			"PROMPT_BUILD_ALL",
-			{ EPIC_NAME: "authentication", IS_LAST_SPEC: "false" },
-			{ cwd: tmpDir },
-		);
-		expect(result).toBe("Build all: authentication last=false");
-	});
 
 	it("returns empty string for empty file", () => {
 		const localDir = path.join(tmpDir, ".toby");
