@@ -1,26 +1,10 @@
----
-required_vars:
-  - SPEC_NAME
-  - ITERATION
-  - SPEC_CONTENT
-optional_vars:
-  - BRANCH
-  - WORKTREE
-  - EPIC_NAME
----
 # Planning Mode: Spec → PRD
 
 You are in PLANNING mode. Translate a spec into a structured PRD (Product Requirements Document) with actionable tasks.
 
-**Spec:** `specs/{{SPEC_NAME}}.md`
+**Spec:** `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 **PRD output:** `{{PRD_PATH}}`
 **Iteration:** {{ITERATION}}
-
----
-
-## The Spec
-
-{{SPEC_CONTENT}}
 
 ---
 
@@ -51,7 +35,7 @@ If `{{PRD_PATH}}` already exists, read it and refine:
 
 ### Step 1: Read & Understand the Spec
 
-Extract from the spec content above:
+Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md` and extract:
 - Problem statement (WHY)
 - User stories (WHAT users can do)
 - Data model (entities, relationships)
@@ -100,8 +84,8 @@ Write the PRD to `{{PRD_PATH}}` as a JSON file with this exact structure:
 **Granularity:** Each task should take ~2 minutes. If longer, break it down.
 
 **Tracer bullet approach:** The first tasks should form a minimal end-to-end vertical slice:
-- ❌ Wrong: Schema → all queries → all actions → all UI
-- ✅ Right: Schema + one query + one action + one UI = tracer bullet, then expand
+- Wrong: Schema → all queries → all actions → all UI
+- Right: Schema + one query + one action + one UI = tracer bullet, then expand
 
 **Task structure:**
 1. **Tracer phase** (1+ tasks) — minimal e2e slice

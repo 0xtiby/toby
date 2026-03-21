@@ -65,7 +65,7 @@ describe("prompt files", () => {
 describe("PROMPT_PLAN.md variables", () => {
 	const vars = extractVars(readPrompt("PROMPT_PLAN.md"));
 
-	it.each(["SPEC_NAME", "SPEC_CONTENT", "ITERATION", "PRD_PATH"])(
+	it.each(["SPEC_NAME", "ITERATION", "PRD_PATH", "SPECS_DIR"])(
 		"contains %s",
 		(v) => {
 			expect(vars).toContain(v);
