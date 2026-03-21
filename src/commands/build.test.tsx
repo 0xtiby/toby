@@ -18,6 +18,19 @@ vi.mock("../lib/specs.js", () => ({
 
 vi.mock("../lib/template.js", () => ({
 	loadPrompt: vi.fn(),
+	computeCliVars: vi.fn((opts: Record<string, unknown>) => ({
+		SPEC_NAME: opts.specName,
+		SPEC_SLUG: String(opts.specName).replace(/^\d+-/, ""),
+		ITERATION: String(opts.iteration),
+		SPEC_INDEX: String(opts.specIndex),
+		SPEC_COUNT: String(opts.specCount),
+		SESSION: opts.session,
+		SPECS: (opts.specs as string[]).join(", "),
+		SPECS_DIR: opts.specsDir,
+	})),
+	resolveTemplateVars: vi.fn((cliVars: Record<string, string>, _configVars: Record<string, string>) => ({ ...cliVars })),
+	computeSpecSlug: vi.fn((name: string) => name.replace(/^\d+-/, "")),
+	generateSessionName: vi.fn(() => "bold-hawk-42"),
 }));
 
 vi.mock("../lib/loop.js", () => ({
@@ -37,7 +50,7 @@ vi.mock("../lib/paths.js", () => ({
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
-import { loadPrompt } from "../lib/template.js";
+import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
@@ -54,6 +67,10 @@ const mockSortSpecs = vi.mocked(sortSpecs);
 const mockFindSpec = vi.mocked(findSpec);
 const mockLoadSpecContent = vi.mocked(loadSpecContent);
 const mockLoadPrompt = vi.mocked(loadPrompt);
+const mockComputeCliVars = vi.mocked(computeCliVars);
+const mockResolveTemplateVars = vi.mocked(resolveTemplateVars);
+const mockComputeSpecSlug = vi.mocked(computeSpecSlug);
+const mockGenerateSessionName = vi.mocked(generateSessionName);
 const mockRunLoop = vi.mocked(runLoop);
 const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
@@ -201,7 +218,7 @@ describe("executeBuild", () => {
 				SPEC_CONTENT: "# Auth Spec\nContent here",
 				IS_LAST_SPEC: "false",
 			}),
-			{ cwd: "/project", configVars: {} },
+			{ cwd: "/project" },
 		);
 	});
 
@@ -316,7 +333,7 @@ describe("executeBuild", () => {
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_BUILD",
 			expect.objectContaining({ ITERATION: "3", SPEC_NAME: "01-auth" }),
-			{ cwd: "/project", configVars: {} },
+			{ cwd: "/project" },
 		);
 	});
 
@@ -912,7 +929,7 @@ describe("executeBuildAll", () => {
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_BUILD_ALL",
 			expect.objectContaining({ SPEC_NAME: "01-auth", IS_LAST_SPEC: "true" }),
-			{ cwd: "/p", configVars: {} },
+			{ cwd: "/p" },
 		);
 	});
 
