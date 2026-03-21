@@ -83,7 +83,7 @@ function setupDefaults() {
 	const spec = {
 		name: "01-auth",
 		path: "/project/specs/01-auth.md",
-		order: 1,
+		order: { num: 1, suffix: null },
 		status: "pending" as const,
 	};
 
@@ -343,8 +343,8 @@ describe("executePlanAll", () => {
 	});
 
 	it("processes pending specs in NN- order", async () => {
-		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
-		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
 		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
@@ -366,8 +366,8 @@ describe("executePlanAll", () => {
 	});
 
 	it("skips already-planned specs", async () => {
-		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
-		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
 		mockLoadSpecContent.mockImplementation((spec) => ({ ...spec, content: `# ${spec.name}` }));
@@ -384,8 +384,8 @@ describe("executePlanAll", () => {
 	});
 
 	it("stops on first failure", async () => {
-		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
-		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const };
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 		mockFindSpec.mockImplementation((specs, query) => {
 			const found = specs.find((s) => s.name === query);
@@ -403,8 +403,8 @@ describe("executePlanAll", () => {
 	});
 
 	it("returns empty planned array when all specs are already planned", async () => {
-		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "planned" as const };
-		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "done" as const };
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "done" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
 
 		const result = await executePlanAll(
@@ -561,7 +561,7 @@ describe("error handling edge cases", () => {
 			};
 		});
 
-		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1]);
 		mockFindSpec.mockReturnValue(spec1);
 		mockLoadSpecContent.mockReturnValue({ ...spec1, content: "# Auth" });
@@ -587,8 +587,8 @@ describe("Plan component", () => {
 
 	it("renders spec selector when no --spec flag provided", async () => {
 		const specs = [
-			{ name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const },
-			{ name: "02-api", path: "/project/specs/02-api.md", order: 2, status: "pending" as const },
+			{ name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const },
+			{ name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 
@@ -652,7 +652,7 @@ describe("integration: full plan flow with mocked spawner", () => {
 	});
 
 	it("completes full plan lifecycle: discover → load → plan → update status → return result", async () => {
-		const spec = { name: "01-auth", path: "/project/specs/01-auth.md", order: 1, status: "pending" as const };
+		const spec = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec]);
 		mockFindSpec.mockReturnValue(spec);
 		mockLoadSpecContent.mockReturnValue({ ...spec, content: "# Auth\nFull spec content" });
