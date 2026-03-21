@@ -13,6 +13,11 @@ const RECOGNIZED_VARS = [
 	"IS_LAST_SPEC",
 	"PRD_PATH",
 	"SPEC_CONTENT",
+	"SPECS_DIR",
+	"SPEC_INDEX",
+	"SPEC_COUNT",
+	"SESSION",
+	"SPECS",
 ];
 
 const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md", "PROMPT_BUILD_ALL.md"] as const;
@@ -71,7 +76,7 @@ describe("PROMPT_PLAN.md variables", () => {
 describe("PROMPT_BUILD.md variables", () => {
 	const vars = extractVars(readPrompt("PROMPT_BUILD.md"));
 
-	it.each(["SPEC_NAME", "ITERATION", "PRD_PATH", "SPEC_CONTENT", "BRANCH", "WORKTREE", "EPIC_NAME"])(
+	it.each(["SPEC_NAME", "ITERATION", "SPECS_DIR", "SPEC_INDEX", "SPEC_COUNT", "SESSION", "SPECS"])(
 		"contains %s",
 		(v) => {
 			expect(vars).toContain(v);

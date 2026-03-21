@@ -1,29 +1,12 @@
----
-required_vars:
-  - SPEC_NAME
-  - ITERATION
-  - SPEC_CONTENT
-optional_vars:
-  - BRANCH
-  - WORKTREE
-  - EPIC_NAME
-  - IS_LAST_SPEC
----
 # Build Mode
 
-You are in BUILD mode. Implement one task from the PRD, validate, and commit.
+You are in BUILD mode. Implement one task from the spec, validate, and commit.
 
-**Spec:** `specs/{{SPEC_NAME}}.md`
-**PRD:** `{{PRD_PATH}}`
+**Spec:** `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 **Iteration:** {{ITERATION}}
-**Branch:** `{{BRANCH}}`
-**Worktree:** `{{WORKTREE}}`
-
----
-
-## The Spec
-
-{{SPEC_CONTENT}}
+**Session:** {{SESSION}}
+**Progress:** spec {{SPEC_INDEX}} of {{SPEC_COUNT}}
+**All specs:** {{SPECS}}
 
 ---
 
@@ -42,7 +25,7 @@ For new files: verify the parent directory exists first.
 
 ## Phase 1: Find Ready Task
 
-Read `{{PRD_PATH}}` and find the first task where:
+Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md` and find the first task where:
 - `status` is `"pending"`
 - All tasks listed in `dependencies` have `status: "done"`
 
@@ -72,9 +55,9 @@ Run project validation commands. Common patterns:
 If validation fails:
 1. First attempt: targeted fix based on error
 2. Second attempt: alternative approach
-3. Third attempt: revert changes, mark task as `"blocked"` in PRD, and exit
+3. Third attempt: revert changes, mark task as `"blocked"` in spec, and exit
 
-## Phase 4: Commit & Update PRD
+## Phase 4: Commit
 
 When validation passes:
 
@@ -82,7 +65,7 @@ When validation passes:
    ```bash
    git add -A
    git commit -m "$(cat <<'EOF'
-   feat({{EPIC_NAME}}): [task title]
+   feat({{SPEC_NAME}}): [task title]
 
    Progress: [what was completed]
    Next: [remaining tasks, or "none" if last]
@@ -90,7 +73,7 @@ When validation passes:
    )"
    ```
 
-2. Update `{{PRD_PATH}}`: set the completed task's status to `"done"`
+2. Update the spec: set the completed task's status to `"done"`
 
 3. Push:
    ```bash
@@ -106,6 +89,6 @@ Do NOT output `:::TOBY_DONE:::` after completing a task — just stop.
 
 1. **Single task** — implement ONE task, then STOP
 2. **Validate before commit** — never commit failing code
-3. **Update PRD** — mark task as done after committing
+3. **Update spec** — mark task as done after committing
 4. **Verify paths** — use Glob/Grep before editing files
 5. **Tracer bullet** — build small, test immediately
