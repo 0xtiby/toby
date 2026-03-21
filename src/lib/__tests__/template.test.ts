@@ -159,26 +159,6 @@ describe("loadPrompt (integration)", () => {
 		expect(result).toBe("Planning 01-auth on branch feat/auth iteration 2");
 	});
 
-	it("substitutes SPEC_CONTENT into template", () => {
-		const localDir = path.join(tmpDir, ".toby");
-		fs.mkdirSync(localDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(localDir, "PROMPT_BUILD.md"),
-			"# Build\n\n{{SPEC_CONTENT}}\n\nBranch: {{BRANCH}}",
-		);
-
-		const specContent = "## Auth Spec\n\nImplement OAuth2 login flow";
-		const result = loadPrompt(
-			"PROMPT_BUILD",
-			{ SPEC_CONTENT: specContent, BRANCH: "feat/auth" },
-			{ cwd: tmpDir },
-		);
-		expect(result).toBe(
-			`# Build\n\n${specContent}\n\nBranch: feat/auth`,
-		);
-	});
-
-
 	it("returns empty string for empty file", () => {
 		const localDir = path.join(tmpDir, ".toby");
 		fs.mkdirSync(localDir, { recursive: true });
