@@ -238,6 +238,17 @@ describe("discoverSpecs", () => {
 		const specs = discoverSpecs(tmpDir, defaultConfig);
 		expect(specs[0].path).toBe(path.join(tmpDir, "specs", "01-auth.md"));
 	});
+
+	it("discovers and sorts alphanumeric-prefixed files correctly", () => {
+		writeSpecFile("16-corge.md");
+		writeSpecFile("15a-baz.md");
+		writeSpecFile("15-bar.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs.map((s) => s.name)).toEqual(["15-bar", "15a-baz", "16-corge"]);
+		expect(specs[0].order).toEqual({ num: 15, suffix: null });
+		expect(specs[1].order).toEqual({ num: 15, suffix: "a" });
+		expect(specs[2].order).toEqual({ num: 16, suffix: null });
+	});
 });
 
 describe("loadSpecContent", () => {
