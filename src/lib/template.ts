@@ -8,16 +8,6 @@ import type {
 	ComputeCliVarsOptions,
 } from "../types.js";
 
-/**
- * Strip frontmatter block (--- delimited) from raw prompt content.
- * Returns content without frontmatter. If no frontmatter found, returns original.
- */
-function stripFrontmatter(raw: string): string {
-	if (!raw.startsWith("---\n")) return raw;
-	const closingIndex = raw.indexOf("\n---\n", 4);
-	if (closingIndex === -1) return raw;
-	return raw.slice(closingIndex + 5);
-}
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
 /**
@@ -69,8 +59,8 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Load a prompt by name: resolve its path, read the file, strip frontmatter
- * if present, and substitute pre-merged vars.
+ * Load a prompt by name: resolve its path, read the file, and substitute
+ * pre-merged vars.
  * Callers are responsible for calling resolveTemplateVars before loadPrompt.
  */
 export function loadPrompt(
@@ -80,8 +70,7 @@ export function loadPrompt(
 ): string {
 	const { cwd } = options;
 	const promptPath = resolvePromptPath(name, cwd);
-	const raw = fs.readFileSync(promptPath, "utf-8");
-	const content = stripFrontmatter(raw);
+	const content = fs.readFileSync(promptPath, "utf-8");
 	return substitute(content, vars);
 }
 
