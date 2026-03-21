@@ -134,3 +134,54 @@ toby config get plan.cli             # show a value
 toby config set plan.cli claude      # set a value
 toby config set plan.cli=claude build.cli=codex  # batch set
 ```
+
+---
+
+## Configuration
+
+### Config File Locations
+
+| Location | Path | Purpose |
+|----------|------|---------|
+| Local | `<project>/.toby/config.json` | Per-project settings |
+| Global | `~/.toby/config.json` | User-wide defaults |
+
+**Resolution order:** local > global > built-in defaults. Local values override global values. For nested objects (`plan`, `build`), keys are shallow-merged — local keys override matching global keys while preserving unset ones.
+
+### Config Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `plan.cli` | `"claude"` \| `"codex"` \| `"opencode"` | `"claude"` | AI CLI used for planning |
+| `plan.model` | string | `"default"` | Model identifier passed to the CLI |
+| `plan.iterations` | number | `2` | Max planning iterations per spec |
+| `build.cli` | `"claude"` \| `"codex"` \| `"opencode"` | `"claude"` | AI CLI used for building |
+| `build.model` | string | `"default"` | Model identifier passed to the CLI |
+| `build.iterations` | number | `10` | Max build iterations per spec |
+| `specsDir` | string | `"specs"` | Directory containing spec markdown files |
+| `excludeSpecs` | string[] | `["README.md"]` | Filenames to skip during spec discovery |
+| `verbose` | boolean | `false` | Show full CLI output during runs |
+| `templateVars` | Record\<string, string\> | `{}` | Custom variables injected into prompt templates |
+
+### Full Example
+
+```json
+{
+  "plan": {
+    "cli": "claude",
+    "model": "default",
+    "iterations": 2
+  },
+  "build": {
+    "cli": "claude",
+    "model": "default",
+    "iterations": 10
+  },
+  "specsDir": "specs",
+  "excludeSpecs": ["README.md"],
+  "verbose": false,
+  "templateVars": {}
+}
+```
+
+> **Note:** Spec 16 plans to restructure `templateVars` into a two-category system with separate CLI vars and config vars.
