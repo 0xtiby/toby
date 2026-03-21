@@ -37,6 +37,19 @@ describe("prompt files", () => {
 		const singleBrace = content.match(/(?<!\{)\{([A-Z_]+)\}(?!\})/g);
 		expect(singleBrace).toBeNull();
 	});
+
+	it.each(PROMPT_FILES)("%s does not start with frontmatter", (file) => {
+		const content = readPrompt(file);
+		expect(content.startsWith("---")).toBe(false);
+	});
+
+	it.each(PROMPT_FILES)("%s does not contain dead vars", (file) => {
+		const content = readPrompt(file);
+		const deadVars = ["BRANCH", "WORKTREE", "EPIC_NAME", "IS_LAST_SPEC", "IS_EPIC", "SPEC_CONTENT"];
+		for (const v of deadVars) {
+			expect(content).not.toContain(`{{${v}}}`);
+		}
+	});
 });
 
 describe("PROMPT_PLAN.md variables", () => {
