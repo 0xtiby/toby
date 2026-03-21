@@ -43,3 +43,12 @@ toby build --spec=add-auth
 - `toby build` — iteratively executes the plan, running validation between iterations
 - `toby status` — shows progress across all specs
 - `toby config` — manage CLI, model, and project settings
+
+## Documentation
+
+- [CLI & Config Reference](docs/reference.md) — all commands, flags, and config.json options
+- [Prompt Authoring Guide](docs/prompts.md) — how to write and customize prompt templates
+
+## License
+
+MIT
