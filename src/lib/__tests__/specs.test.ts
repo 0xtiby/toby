@@ -103,6 +103,34 @@ describe("sortSpecs", () => {
 		const sorted = sortSpecs(specs);
 		expect(sorted.map((s) => s.name)).toEqual(["15-base", "15a-foo", "15b-bar"]);
 	});
+
+	it("sorts 15 < 15a < 15b < 16", () => {
+		const specs = [
+			spec("16-corge", o(16)),
+			spec("15b-qux", o(15, "b")),
+			spec("15-bar", o(15)),
+			spec("15a-baz", o(15, "a")),
+		];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["15-bar", "15a-baz", "15b-qux", "16-corge"]);
+	});
+
+	it("sorts suffixed specs without bare number", () => {
+		const specs = [spec("15b-bar", o(15, "b")), spec("15a-foo", o(15, "a"))];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["15a-foo", "15b-bar"]);
+	});
+
+	it("sorts mixed numbered, suffixed, and unnumbered", () => {
+		const specs = [
+			spec("readme", null),
+			spec("15a-foo", o(15, "a")),
+			spec("01-auth", o(1)),
+			spec("15-base", o(15)),
+		];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["01-auth", "15-base", "15a-foo", "readme"]);
+	});
 });
 
 describe("discoverSpecs", () => {
@@ -300,5 +328,20 @@ describe("findSpec", () => {
 
 	it("does not match numeric prefix on unnumbered spec", () => {
 		expect(findSpec(specs, "con")).toBeUndefined();
+	});
+
+	it("matches alphanumeric spec by stripped prefix (e.g. 'baz' matches '15a-baz')", () => {
+		const alphaSpecs = [spec("15a-baz"), spec("01-auth")];
+		expect(findSpec(alphaSpecs, "baz")?.name).toBe("15a-baz");
+	});
+
+	it("matches alphanumeric spec by exact name", () => {
+		const alphaSpecs = [spec("15a-baz")];
+		expect(findSpec(alphaSpecs, "15a-baz")?.name).toBe("15a-baz");
+	});
+
+	it("matches alphanumeric spec by prefix alone (e.g. '15a' matches '15a-baz')", () => {
+		const alphaSpecs = [spec("15a-baz")];
+		expect(findSpec(alphaSpecs, "15a")?.name).toBe("15a-baz");
 	});
 });
