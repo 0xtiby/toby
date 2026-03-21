@@ -8,6 +8,8 @@ import {
 	loadPrompt,
 	parseFrontmatter,
 	validateRequiredVars,
+	computeSpecSlug,
+	computeCliVars,
 } from "../template.js";
 
 /**
@@ -309,5 +311,72 @@ describe("validateRequiredVars", () => {
 
 	it("does not throw when required_vars is empty array", () => {
 		expect(() => validateRequiredVars({ required_vars: [] }, {}, "test")).not.toThrow();
+	});
+});
+
+describe("computeSpecSlug", () => {
+	it("strips single leading numeric prefix", () => {
+		expect(computeSpecSlug("12-decouple-prd-from-code")).toBe("decouple-prd-from-code");
+	});
+
+	it("returns unchanged when no numeric prefix", () => {
+		expect(computeSpecSlug("no-number-prefix")).toBe("no-number-prefix");
+	});
+
+	it("strips only the first numeric prefix", () => {
+		expect(computeSpecSlug("12-03-nested")).toBe("03-nested");
+	});
+});
+
+describe("computeCliVars", () => {
+	const defaultOptions = {
+		specName: "12-auth",
+		iteration: 3,
+		specIndex: 1,
+		specCount: 5,
+		session: "my-session",
+		specs: ["12-auth", "13-api"],
+		specsDir: "specs",
+	};
+
+	it("returns all 8 CLI vars", () => {
+		const vars = computeCliVars(defaultOptions);
+		const keys = Object.keys(vars);
+		expect(keys).toHaveLength(8);
+		expect(keys).toEqual(
+			expect.arrayContaining([
+				"SPEC_NAME", "SPEC_SLUG", "ITERATION", "SPEC_INDEX",
+				"SPEC_COUNT", "SESSION", "SPECS", "SPECS_DIR",
+			]),
+		);
+	});
+
+	it("all values are strings", () => {
+		const vars = computeCliVars(defaultOptions);
+		for (const value of Object.values(vars)) {
+			expect(typeof value).toBe("string");
+		}
+	});
+
+	it("computes SPEC_SLUG from specName", () => {
+		const vars = computeCliVars(defaultOptions);
+		expect(vars.SPEC_SLUG).toBe("auth");
+	});
+
+	it("converts numeric fields to strings", () => {
+		const vars = computeCliVars(defaultOptions);
+		expect(vars.ITERATION).toBe("3");
+		expect(vars.SPEC_INDEX).toBe("1");
+		expect(vars.SPEC_COUNT).toBe("5");
+	});
+
+	it("SPECS_DIR matches provided value", () => {
+		const vars = computeCliVars({ ...defaultOptions, specsDir: "custom/specs" });
+		expect(vars.SPECS_DIR).toBe("custom/specs");
+	});
+
+	it("joins specs array with comma separator", () => {
+		const vars = computeCliVars(defaultOptions);
+		expect(vars.SPECS).toBe("12-auth, 13-api");
 	});
 });

@@ -7,6 +7,7 @@ import type {
 	PromptName,
 	TemplateVars,
 	LoadPromptOptions,
+	ComputeCliVarsOptions,
 } from "../types.js";
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
@@ -160,6 +161,31 @@ export function validateRequiredVars(
 			`Prompt "${promptName}" is missing required variable(s): ${missing.join(", ")}`,
 		);
 	}
+}
+
+/**
+ * Strip a single leading numeric prefix (digits followed by a dash) from a spec name.
+ * e.g. '12-foo' → 'foo', '12-03-nested' → '03-nested', 'no-prefix' → 'no-prefix'
+ */
+export function computeSpecSlug(specName: string): string {
+	return specName.replace(/^\d+-/, "");
+}
+
+/**
+ * Compute all CLI template variables from runtime state.
+ * Returns a Record<string, string> with all 8 CLI vars.
+ */
+export function computeCliVars(options: ComputeCliVarsOptions): TemplateVars {
+	return {
+		SPEC_NAME: options.specName,
+		SPEC_SLUG: computeSpecSlug(options.specName),
+		ITERATION: String(options.iteration),
+		SPEC_INDEX: String(options.specIndex),
+		SPEC_COUNT: String(options.specCount),
+		SESSION: options.session,
+		SPECS: options.specs.join(", "),
+		SPECS_DIR: options.specsDir,
+	};
 }
 
 /**

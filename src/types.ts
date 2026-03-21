@@ -93,3 +93,13 @@ export interface PromptFrontmatter {
 	required_vars?: string[];
 	optional_vars?: string[];
 }
+
+export interface ComputeCliVarsOptions {
+	specName: string;
+	iteration: number;
+	specIndex: number;
+	specCount: number;
+	session: string;
+	specs: string[];
+	specsDir: string;
+}
