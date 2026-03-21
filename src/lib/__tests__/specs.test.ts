@@ -51,6 +51,10 @@ describe("parseSpecOrder", () => {
 	it("handles 0a-foo.md", () => {
 		expect(parseSpecOrder("0a-foo.md")).toEqual({ num: 0, suffix: "a" });
 	});
+
+	it("handles large numeric prefix with suffix 999z-foo.md", () => {
+		expect(parseSpecOrder("999z-foo.md")).toEqual({ num: 999, suffix: "z" });
+	});
 });
 
 describe("sortSpecs", () => {
