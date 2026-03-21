@@ -12,6 +12,7 @@ import {
 	computeCliVars,
 	resolveConfigVars,
 	resolveTemplateVars,
+	generateSessionName,
 } from "../template.js";
 
 /**
@@ -480,5 +481,26 @@ describe("resolveTemplateVars", () => {
 		);
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();
+	});
+});
+
+describe("generateSessionName", () => {
+	it("returns adjective-noun-number format", () => {
+		const name = generateSessionName();
+		expect(name).toMatch(/^[a-z]+-[a-z]+-\d{2}$/);
+	});
+
+	it("number is in 10-99 range", () => {
+		for (let i = 0; i < 50; i++) {
+			const name = generateSessionName();
+			const num = parseInt(name.split("-").pop()!, 10);
+			expect(num).toBeGreaterThanOrEqual(10);
+			expect(num).toBeLessThanOrEqual(99);
+		}
+	});
+
+	it("produces different names across multiple calls", () => {
+		const names = new Set(Array.from({ length: 20 }, () => generateSessionName()));
+		expect(names.size).toBeGreaterThan(1);
 	});
 });

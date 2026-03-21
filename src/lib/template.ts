@@ -231,6 +231,28 @@ export function resolveTemplateVars(
 	return { ...resolved, ...cliVars };
 }
 
+const ADJECTIVES = [
+	"bold", "calm", "cool", "dark", "fast", "free", "glad", "keen",
+	"kind", "neat", "pure", "rare", "safe", "soft", "tall", "warm",
+	"wild", "wise", "blue", "gold",
+];
+
+const NOUNS = [
+	"bear", "crow", "deer", "dove", "fawn", "hawk", "lynx", "mare",
+	"orca", "puma", "seal", "swan", "toad", "vole", "wolf", "wren",
+	"colt", "hare", "moth", "ibis",
+];
+
+/**
+ * Generate a random human-readable session name (e.g., "bold-tiger-42").
+ */
+export function generateSessionName(): string {
+	const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+	const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+	const num = Math.floor(Math.random() * 90) + 10; // 10-99
+	return `${adj}-${noun}-${num}`;
+}
+
 /**
  * Substitute template variables into prompt content.
  * Unknown {{VAR}} patterns are left as-is.
