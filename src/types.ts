@@ -86,7 +86,6 @@ export type TemplateVars = Record<string, string>;
 
 export interface LoadPromptOptions {
 	cwd?: string;
-	configVars?: TemplateVars;
 }
 
 export interface PromptFrontmatter {

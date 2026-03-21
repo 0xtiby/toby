@@ -9,6 +9,17 @@ import type {
 	LoadPromptOptions,
 	ComputeCliVarsOptions,
 } from "../types.js";
+
+/**
+ * Strip frontmatter block (--- delimited) from raw prompt content.
+ * Returns content without frontmatter. If no frontmatter found, returns original.
+ */
+function stripFrontmatter(raw: string): string {
+	if (!raw.startsWith("---\n")) return raw;
+	const closingIndex = raw.indexOf("\n---\n", 4);
+	if (closingIndex === -1) return raw;
+	return raw.slice(closingIndex + 5);
+}
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
 /**
@@ -60,22 +71,20 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Load a prompt by name: resolve its path, read the file, parse frontmatter,
- * merge configVars with built-in vars, validate required vars, and substitute.
- * Returns the final prompt string with frontmatter stripped and all variables replaced.
+ * Load a prompt by name: resolve its path, read the file, strip frontmatter
+ * if present, and substitute pre-merged vars.
+ * Callers are responsible for calling resolveTemplateVars before loadPrompt.
  */
 export function loadPrompt(
 	name: PromptName,
 	vars: TemplateVars,
 	options: LoadPromptOptions = {},
 ): string {
-	const { cwd, configVars } = options;
+	const { cwd } = options;
 	const promptPath = resolvePromptPath(name, cwd);
 	const raw = fs.readFileSync(promptPath, "utf-8");
-	const { frontmatter, content } = parseFrontmatter(raw);
-	const merged: TemplateVars = { ...(configVars ?? {}), ...vars };
-	validateRequiredVars(frontmatter, merged, name);
-	return substitute(content, merged);
+	const content = stripFrontmatter(raw);
+	return substitute(content, vars);
 }
 
 /**
