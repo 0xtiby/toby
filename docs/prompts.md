@@ -69,10 +69,67 @@ This means if you define a config var named `SPEC_NAME`, the CLI-computed value 
 
 ## Custom Prompts
 
-You can override any shipped prompt by placing a file with the same name in your project's `.toby/` directory or your global `~/.toby/` directory. Toby resolves prompts in this order:
+You can override any shipped prompt by placing a file with the same name in your project's `.toby/` directory or your global `~/.toby/` directory.
 
-1. **Local** — `.toby/PROMPT_PLAN.md` (project override)
-2. **Global** — `~/.toby/PROMPT_PLAN.md` (user override)
-3. **Shipped** — built-in default
+### Override Chain
 
-The first file found wins. Custom prompts have access to all the same template variables.
+Toby resolves prompts through a 3-level chain. The first file found wins:
+
+| Priority | Location | Scope | Example path |
+|---|---|---|---|
+| 1 (highest) | `.toby/` | Project override | `.toby/PROMPT_PLAN.md` |
+| 2 | `~/.toby/` | User override (all projects) | `~/.toby/PROMPT_PLAN.md` |
+| 3 (lowest) | Shipped | Built-in default | _(bundled with toby)_ |
+
+This means you can set a personal default in `~/.toby/` and still override it per-project in `.toby/`. Custom prompts have access to all the same template variables as shipped prompts.
+
+### Walkthrough: Creating a Custom Prompt
+
+Follow these steps to create a project-local override for the plan prompt.
+
+1. **Initialize your project** (if you haven't already):
+
+   ```bash
+   toby init
+   ```
+
+   This creates the `.toby/` directory with a default `config.json` and `status.json`.
+
+2. **Copy the shipped prompt** as a starting point:
+
+   ```bash
+   cp node_modules/toby/prompts/PROMPT_PLAN.md .toby/PROMPT_PLAN.md
+   ```
+
+   Or create `.toby/PROMPT_PLAN.md` from scratch — any valid Markdown works.
+
+3. **Edit the prompt** to fit your workflow. You can use any `{{VAR_NAME}}` template variable:
+
+   ```markdown
+   # Planning for {{SPEC_NAME}}
+
+   Read the spec at {{SPECS_DIR}}/{{SPEC_NAME}}.md and create a plan.
+   Output the PRD to {{PRD_PATH}}.
+   ```
+
+4. **Define config vars** referenced in your prompt. Add them to `.toby/config.json`:
+
+   ```json
+   {
+     "plan": {
+       "templateVars": {
+         "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
+       }
+     }
+   }
+   ```
+
+   Here `PRD_PATH` is a config var whose value references the CLI var `SPEC_NAME`. At runtime, if the spec is `12-auth-middleware`, `{{PRD_PATH}}` resolves to `.toby/12-auth-middleware.prd.json`.
+
+5. **Verify your override loads** by running a plan command:
+
+   ```bash
+   toby plan 12-auth-middleware
+   ```
+
+   Toby will pick up `.toby/PROMPT_PLAN.md` instead of the shipped default. Your custom text should appear in the agent's instructions.
