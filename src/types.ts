@@ -9,7 +9,6 @@ export const CommandConfigSchema = z.object({
 	cli: z.enum(CLI_NAMES).default("claude"),
 	model: z.string().default("default"),
 	iterations: z.number().int().positive(),
-	templateVars: z.record(z.string(), z.string()).default({}),
 });
 
 export const PlanConfigSchema = CommandConfigSchema.extend({
@@ -26,6 +25,7 @@ export const ConfigSchema = z.object({
 	specsDir: z.string().default("specs"),
 	excludeSpecs: z.array(z.string()).default(["README.md"]),
 	verbose: z.boolean().default(false),
+	templateVars: z.record(z.string(), z.string()).default({}),
 });
 
 export type TobyConfig = z.infer<typeof ConfigSchema>;
@@ -73,23 +73,20 @@ export type SpecStatusEntry = z.infer<typeof SpecStatusEntrySchema>;
 
 // ── Prompt Template (spec 05) ─────────────────────────────────────
 
-export interface PromptTemplate {
-	/** Resolved file path of the prompt */
-	path: string;
-	/** Raw template content before substitution */
-	content: string;
-}
-
-export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD" | "PROMPT_BUILD_ALL";
+export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD";
 
 export type TemplateVars = Record<string, string>;
 
 export interface LoadPromptOptions {
 	cwd?: string;
-	configVars?: TemplateVars;
 }
 
-export interface PromptFrontmatter {
-	required_vars?: string[];
-	optional_vars?: string[];
+export interface ComputeCliVarsOptions {
+	specName: string;
+	iteration: number;
+	specIndex: number;
+	specCount: number;
+	session: string;
+	specs: string[];
+	specsDir: string;
 }

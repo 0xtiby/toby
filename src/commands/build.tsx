@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
-import { loadPrompt } from "../lib/template.js";
+import { discoverSpecs, filterByStatus, findSpec, sortSpecs } from "../lib/specs.js";
+import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
 import {
@@ -13,7 +13,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, TemplateVars, PromptName, CommandConfig, StatusData, SpecFile } from "../types.js";
+import type { Iteration, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
@@ -39,37 +39,46 @@ export interface BuildResult {
 interface RunSpecBuildOptions {
 	spec: SpecFile;
 	promptName: PromptName;
-	extraVars?: TemplateVars;
 	existingIterations: number;
-	commandConfig: CommandConfig;
+	iterations: number;
+	cli: string;
+	model?: string;
+	templateVars: TemplateVars;
+	specsDir: string;
+	session: string;
+	specIndex: number;
+	specCount: number;
+	specs: string[];
 	cwd: string;
 	abortSignal?: AbortSignal;
 	callbacks: BuildCallbacks;
 }
 
 async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
-	const { spec, promptName, extraVars, existingIterations, commandConfig, cwd, abortSignal, callbacks } = options;
+	const { spec, promptName, existingIterations, iterations, cli, model, templateVars, specsDir, session, specIndex, specCount, specs, cwd, abortSignal, callbacks } = options;
 	let status = readStatus(cwd);
 	let iterationStartTime = new Date().toISOString();
 
 	callbacks.onPhase?.("building");
-	callbacks.onIteration?.(1, commandConfig.iterations);
+	callbacks.onIteration?.(1, iterations);
 
 	const loopResult = await runLoop({
-		maxIterations: commandConfig.iterations,
-		getPrompt: (iteration) =>
-			loadPrompt(
-				promptName,
-				{
-					SPEC_NAME: spec.name,
-					ITERATION: String(iteration + existingIterations),
-					SPEC_CONTENT: spec.content ?? "",
-					...extraVars,
-				},
-				{ cwd, configVars: commandConfig.templateVars },
-			),
-		cli: commandConfig.cli,
-		model: commandConfig.model,
+		maxIterations: iterations,
+		getPrompt: (iteration) => {
+			const cliVars = computeCliVars({
+				specName: spec.name,
+				iteration: iteration + existingIterations,
+				specIndex,
+				specCount,
+				session,
+				specs,
+				specsDir,
+			});
+			const vars = resolveTemplateVars(cliVars, templateVars);
+			return loadPrompt(promptName, vars, { cwd });
+		},
+		cli,
+		model,
 		cwd,
 		continueSession: true,
 		abortSignal,
@@ -82,8 +91,8 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				type: "build",
 				iteration: iterResult.iteration,
 				sessionId: iterResult.sessionId,
-				cli: commandConfig.cli,
-				model: iterResult.model ?? commandConfig.model,
+				cli,
+				model: iterResult.model ?? model,
 				startedAt: iterationStartTime,
 				completedAt,
 				exitCode: iterResult.exitCode,
@@ -93,7 +102,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 			iterationStartTime = new Date().toISOString();
 			status = addIteration(status, spec.name, iteration);
 			writeStatus(status, cwd);
-			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+			callbacks.onIteration?.(iterResult.iteration + 1, iterations);
 		},
 	});
 
@@ -158,15 +167,22 @@ export async function executeBuild(
 		throw new Error(`No plan found for ${found.name}. Run 'toby plan --spec=${flags.spec}' first.`);
 	}
 
-	const specWithContent = loadSpecContent(found);
 	const existingIterations = specEntry.iterations.length;
+	const session = flags.session || computeSpecSlug(found.name);
 
 	const { result } = await runSpecBuild({
-		spec: specWithContent,
+		spec: found,
 		promptName: "PROMPT_BUILD",
-		extraVars: { IS_LAST_SPEC: "false" },
 		existingIterations,
-		commandConfig,
+		iterations: commandConfig.iterations,
+		cli: commandConfig.cli,
+		model: commandConfig.model,
+		templateVars: config.templateVars,
+		specsDir: config.specsDir,
+		session,
+		specIndex: 1,
+		specCount: 1,
+		specs: [found.name],
 		cwd,
 		abortSignal,
 		callbacks,
@@ -191,7 +207,7 @@ export interface BuildAllResult {
 /**
  * Build all planned specs in NN- order.
  * Each spec gets its own iteration counter (resets to 1).
- * Uses PROMPT_BUILD_ALL template. IS_LAST_SPEC is 'true' only for the final spec.
+ * Uses PROMPT_BUILD template with session vars for multi-spec coordination.
  */
 export async function executeBuildAll(
 	flags: BuildFlags,
@@ -215,24 +231,31 @@ export async function executeBuildAll(
 
 	const skipped = specs.filter((s) => s.status !== "planned" && s.status !== "building").map((s) => s.name);
 	const built: BuildResult[] = [];
+	const session = flags.session || generateSessionName();
+	const specNames = planned.map((s) => s.name);
 
 	for (let i = 0; i < planned.length; i++) {
 		const spec = planned[i];
-		const isLastSpec = i === planned.length - 1;
 		callbacks.onSpecStart?.(spec.name, i, planned.length);
 
-		const specWithContent = loadSpecContent(spec);
 		const commandConfig = resolveCommandConfig(config, "build", {
 			cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
 			iterations: flags.iterations,
 		});
 
 		const { result } = await runSpecBuild({
-			spec: specWithContent,
-			promptName: "PROMPT_BUILD_ALL",
-			extraVars: { IS_LAST_SPEC: isLastSpec ? "true" : "false" },
+			spec,
+			promptName: "PROMPT_BUILD",
 			existingIterations: 0,
-			commandConfig,
+			iterations: commandConfig.iterations,
+			cli: commandConfig.cli,
+			model: commandConfig.model,
+			templateVars: config.templateVars,
+			specsDir: config.specsDir,
+			session,
+			specIndex: i + 1,
+			specCount: planned.length,
+			specs: specNames,
 			cwd,
 			abortSignal,
 			callbacks: {

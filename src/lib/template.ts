@@ -2,12 +2,12 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
-	PromptTemplate,
-	PromptFrontmatter,
 	PromptName,
 	TemplateVars,
 	LoadPromptOptions,
+	ComputeCliVarsOptions,
 } from "../types.js";
+
 import { getLocalDir, getGlobalDir } from "./paths.js";
 
 /**
@@ -59,107 +59,100 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
- * Load a prompt by name: resolve its path, read the file, parse frontmatter,
- * merge configVars with built-in vars, validate required vars, and substitute.
- * Returns the final prompt string with frontmatter stripped and all variables replaced.
+ * Load a prompt by name: resolve its path, read the file, and substitute
+ * pre-merged vars.
+ * Callers are responsible for calling resolveTemplateVars before loadPrompt.
  */
 export function loadPrompt(
 	name: PromptName,
 	vars: TemplateVars,
 	options: LoadPromptOptions = {},
 ): string {
-	const { cwd, configVars } = options;
+	const { cwd } = options;
 	const promptPath = resolvePromptPath(name, cwd);
-	const raw = fs.readFileSync(promptPath, "utf-8");
-	const { frontmatter, content } = parseFrontmatter(raw);
-	const merged: TemplateVars = { ...(configVars ?? {}), ...vars };
-	validateRequiredVars(frontmatter, merged, name);
-	return substitute(content, merged);
+	const content = fs.readFileSync(promptPath, "utf-8");
+	return substitute(content, vars);
 }
 
 /**
- * Parse frontmatter directives from a prompt string.
- * Frontmatter must start with `---\n` and end with `---\n`.
- * Supports two directive formats:
- *   - List style:  `required_vars:\n  - A\n  - B`
- *   - Inline style: `required_vars: [A, B, C]`
- * Unrecognized keys are ignored.
- * Returns null frontmatter and original content if no valid frontmatter found.
+ * Strip a single leading alphanumeric prefix (digits, optional lowercase letter, dash) from a spec name.
+ * e.g. '12-foo' → 'foo', '15a-bar' → 'bar', '12-03-nested' → '03-nested', 'no-prefix' → 'no-prefix'
  */
-export function parseFrontmatter(raw: string): {
-	frontmatter: PromptFrontmatter | null;
-	content: string;
-} {
-	if (!raw.startsWith("---\n")) {
-		return { frontmatter: null, content: raw };
-	}
-
-	const closingIndex = raw.indexOf("\n---\n", 4);
-	if (closingIndex === -1) {
-		return { frontmatter: null, content: raw };
-	}
-
-	const yamlBlock = raw.slice(4, closingIndex);
-	const content = raw.slice(closingIndex + 5);
-
-	const frontmatter: PromptFrontmatter = {};
-
-	let currentKey: "required_vars" | "optional_vars" | null = null;
-	for (const line of yamlBlock.split("\n")) {
-		const trimmed = line.trim();
-		if (trimmed === "" || trimmed.startsWith("#")) continue;
-
-		const keyMatch = trimmed.match(/^(required_vars|optional_vars):\s*(.*)$/);
-		if (keyMatch) {
-			const key = keyMatch[1] as "required_vars" | "optional_vars";
-			const rest = keyMatch[2].trim();
-
-			// Inline array: required_vars: [A, B, C]
-			const inlineMatch = rest.match(/^\[(.+)\]$/);
-			if (inlineMatch) {
-				frontmatter[key] = inlineMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
-				currentKey = null;
-			} else {
-				// Block list follows
-				frontmatter[key] = [];
-				currentKey = key;
-			}
-		} else if (currentKey && trimmed.startsWith("- ")) {
-			const value = trimmed.slice(2).trim();
-			if (value) {
-				frontmatter[currentKey]!.push(value);
-			}
-		} else {
-			currentKey = null;
-		}
-	}
-
-	return { frontmatter, content };
+export function computeSpecSlug(specName: string): string {
+	return specName.replace(/^\d+[a-z]?-/, "");
 }
 
 /**
- * Validate that all required vars from frontmatter are present.
- * Throws when required variables are missing.
+ * Compute all CLI template variables from runtime state.
+ * Returns a Record<string, string> with all 8 CLI vars.
  */
-export function validateRequiredVars(
-	frontmatter: PromptFrontmatter | null,
-	vars: TemplateVars,
-	promptName: string,
-): void {
-	if (!frontmatter?.required_vars?.length) return;
+export function computeCliVars(options: ComputeCliVarsOptions): TemplateVars {
+	return {
+		SPEC_NAME: options.specName,
+		SPEC_SLUG: computeSpecSlug(options.specName),
+		ITERATION: String(options.iteration),
+		SPEC_INDEX: String(options.specIndex),
+		SPEC_COUNT: String(options.specCount),
+		SESSION: options.session,
+		SPECS: options.specs.join(", "),
+		SPECS_DIR: options.specsDir,
+	};
+}
 
-	const missing: string[] = [];
-	for (const varName of frontmatter.required_vars) {
-		if (vars[varName] === undefined) {
-			missing.push(varName);
+/**
+ * Resolve config vars by substituting CLI var references in their values.
+ * e.g. configVars = { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" }, cliVars = { SPEC_NAME: "12-foo" }
+ * → { PRD_PATH: ".toby/12-foo.prd.json" }
+ */
+export function resolveConfigVars(
+	configVars: TemplateVars,
+	cliVars: TemplateVars,
+	verbose = false,
+): TemplateVars {
+	const resolved: TemplateVars = {};
+	for (const [key, value] of Object.entries(configVars)) {
+		if (verbose && key in cliVars) {
+			console.warn(`Config var "${key}" is shadowed by CLI var`);
 		}
+		resolved[key] = substitute(value, cliVars);
 	}
+	return resolved;
+}
 
-	if (missing.length > 0) {
-		throw new Error(
-			`Prompt "${promptName}" is missing required variable(s): ${missing.join(", ")}`,
-		);
-	}
+/**
+ * Merge CLI vars and config vars with two-step resolution:
+ * 1. Resolve config vars (substitute CLI var references in their values)
+ * 2. Merge: { ...resolvedConfigVars, ...cliVars } — CLI wins on conflict
+ */
+export function resolveTemplateVars(
+	cliVars: TemplateVars,
+	configVars: TemplateVars,
+	verbose = false,
+): TemplateVars {
+	const resolved = resolveConfigVars(configVars, cliVars, verbose);
+	return { ...resolved, ...cliVars };
+}
+
+const ADJECTIVES = [
+	"bold", "calm", "cool", "dark", "fast", "free", "glad", "keen",
+	"kind", "neat", "pure", "rare", "safe", "soft", "tall", "warm",
+	"wild", "wise", "blue", "gold",
+];
+
+const NOUNS = [
+	"bear", "crow", "deer", "dove", "fawn", "hawk", "lynx", "mare",
+	"orca", "puma", "seal", "swan", "toad", "vole", "wolf", "wren",
+	"colt", "hare", "moth", "ibis",
+];
+
+/**
+ * Generate a random human-readable session name (e.g., "bold-tiger-42").
+ */
+export function generateSessionName(): string {
+	const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+	const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+	const num = Math.floor(Math.random() * 90) + 10; // 10-99
+	return `${adj}-${noun}-${num}`;
 }
 
 /**

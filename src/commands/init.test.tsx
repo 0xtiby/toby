@@ -85,6 +85,9 @@ describe("createProject", () => {
 		expect(config.build.model).toBe("default");
 		expect(config.build.iterations).toBe(10);
 		expect(config.specsDir).toBe("specs");
+		expect(config.templateVars).toEqual({ PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" });
+		expect(config.plan.templateVars).toBeUndefined();
+		expect(config.build.templateVars).toBeUndefined();
 	});
 
 	it("creates .toby/status.json when missing", () => {

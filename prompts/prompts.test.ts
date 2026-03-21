@@ -4,18 +4,7 @@ import { join } from "node:path";
 
 const PROMPTS_DIR = join(import.meta.dirname, ".");
 
-const RECOGNIZED_VARS = [
-	"SPEC_NAME",
-	"ITERATION",
-	"BRANCH",
-	"WORKTREE",
-	"EPIC_NAME",
-	"IS_LAST_SPEC",
-	"PRD_PATH",
-	"SPEC_CONTENT",
-];
-
-const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md", "PROMPT_BUILD_ALL.md"] as const;
+const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"] as const;
 
 function readPrompt(name: string): string {
 	return readFileSync(join(PROMPTS_DIR, name), "utf-8");
@@ -42,25 +31,31 @@ describe("prompt files", () => {
 		expect(content).toContain(":::TOBY_DONE:::");
 	});
 
-	it.each(PROMPT_FILES)("%s uses only recognized template variables", (file) => {
-		const vars = extractVars(readPrompt(file));
-		for (const v of vars) {
-			expect(RECOGNIZED_VARS).toContain(v);
-		}
-	});
-
 	it.each(PROMPT_FILES)("%s uses {{VAR_NAME}} syntax", (file) => {
 		const content = readPrompt(file);
 		// No single-brace vars like {VAR}
 		const singleBrace = content.match(/(?<!\{)\{([A-Z_]+)\}(?!\})/g);
 		expect(singleBrace).toBeNull();
 	});
+
+	it.each(PROMPT_FILES)("%s does not start with frontmatter", (file) => {
+		const content = readPrompt(file);
+		expect(content.startsWith("---")).toBe(false);
+	});
+
+	it.each(PROMPT_FILES)("%s does not contain dead vars", (file) => {
+		const content = readPrompt(file);
+		const deadVars = ["BRANCH", "WORKTREE", "EPIC_NAME", "IS_LAST_SPEC", "IS_EPIC", "SPEC_CONTENT"];
+		for (const v of deadVars) {
+			expect(content).not.toContain(`{{${v}}}`);
+		}
+	});
 });
 
 describe("PROMPT_PLAN.md variables", () => {
 	const vars = extractVars(readPrompt("PROMPT_PLAN.md"));
 
-	it.each(["SPEC_NAME", "SPEC_CONTENT", "ITERATION", "PRD_PATH"])(
+	it.each(["SPEC_NAME", "ITERATION", "PRD_PATH", "SPECS_DIR"])(
 		"contains %s",
 		(v) => {
 			expect(vars).toContain(v);
@@ -71,7 +66,7 @@ describe("PROMPT_PLAN.md variables", () => {
 describe("PROMPT_BUILD.md variables", () => {
 	const vars = extractVars(readPrompt("PROMPT_BUILD.md"));
 
-	it.each(["SPEC_NAME", "ITERATION", "PRD_PATH", "SPEC_CONTENT", "BRANCH", "WORKTREE", "EPIC_NAME"])(
+	it.each(["SPEC_NAME", "ITERATION", "SPECS_DIR", "SPEC_INDEX", "SPEC_COUNT", "SESSION", "SPECS"])(
 		"contains %s",
 		(v) => {
 			expect(vars).toContain(v);
@@ -79,14 +74,3 @@ describe("PROMPT_BUILD.md variables", () => {
 	);
 });
 
-describe("PROMPT_BUILD_ALL.md variables", () => {
-	const vars = extractVars(readPrompt("PROMPT_BUILD_ALL.md"));
-
-	it("contains IS_LAST_SPEC", () => {
-		expect(vars).toContain("IS_LAST_SPEC");
-	});
-
-	it("contains EPIC_NAME", () => {
-		expect(vars).toContain("EPIC_NAME");
-	});
-});

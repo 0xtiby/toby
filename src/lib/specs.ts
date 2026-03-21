@@ -8,35 +8,43 @@ import { getLocalDir, STATUS_FILE } from "./paths.js";
 
 export type SpecStatus = "pending" | "planned" | "building" | "done";
 
+export interface SpecOrder {
+	num: number;
+	suffix: string | null;
+}
+
 export interface Spec extends SpecFile {
-	/** Numeric prefix order (null if no NN- prefix) */
-	order: number | null;
+	/** Parsed prefix order (null if no valid NN[a-z]?- prefix) */
+	order: SpecOrder | null;
 	status: SpecStatus;
 }
 
 // ── Pure Functions ───────────────────────────────────────────────
 
 /**
- * Extract the numeric order from a spec filename's NN- prefix.
- * Returns null if no valid numeric prefix exists.
+ * Extract the order from a spec filename's NN[a-z]?- prefix.
+ * Returns null if no valid prefix exists.
  */
-export function parseSpecOrder(filename: string): number | null {
-	const match = /^(\d+)-/.exec(filename);
+export function parseSpecOrder(filename: string): SpecOrder | null {
+	const match = /^(\d+)([a-z])?-/.exec(filename);
 	if (!match) return null;
-	return parseInt(match[1], 10);
+	return { num: parseInt(match[1], 10), suffix: match[2] ?? null };
 }
 
 /**
  * Sort specs: numbered ascending by order, unnumbered alphabetically after.
  * Duplicate numeric prefixes break ties alphabetically by name.
  */
-export function sortSpecs<T extends { name: string; order: number | null }>(
+export function sortSpecs<T extends { name: string; order: SpecOrder | null }>(
 	specs: T[],
 ): T[] {
 	return [...specs].sort((a, b) => {
-		// Both numbered: sort by order, then name
+		// Both numbered: sort by num, then suffix, then name
 		if (a.order !== null && b.order !== null) {
-			if (a.order !== b.order) return a.order - b.order;
+			if (a.order.num !== b.order.num) return a.order.num - b.order.num;
+			const sa = a.order.suffix ?? "";
+			const sb = b.order.suffix ?? "";
+			if (sa !== sb) return sa.localeCompare(sb);
 			return a.name.localeCompare(b.name);
 		}
 		// Numbered before unnumbered
@@ -63,10 +71,10 @@ export function findSpec(specs: Spec[], query: string): Spec | undefined {
 	return specs.find((s) => {
 		if (s.name === query) return true;
 		if (`${s.name}.md` === query) return true;
-		const withoutPrefix = s.name.replace(/^\d+-/, "");
+		const withoutPrefix = s.name.replace(/^\d+[a-z]?-/, "");
 		if (withoutPrefix === query) return true;
 		// Match by numeric prefix alone (e.g., "09" matches "09-init-status-config")
-		const prefixMatch = /^(\d+)-/.exec(s.name);
+		const prefixMatch = /^(\d+[a-z]?)-/.exec(s.name);
 		if (prefixMatch && prefixMatch[1] === query) return true;
 		return false;
 	});

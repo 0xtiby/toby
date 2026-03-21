@@ -11,15 +11,17 @@ import {
 	parseSpecOrder,
 	sortSpecs,
 } from "../specs.js";
-import type { Spec } from "../specs.js";
+import type { Spec, SpecOrder } from "../specs.js";
+
+const o = (num: number, suffix: string | null = null): SpecOrder => ({ num, suffix });
 
 describe("parseSpecOrder", () => {
 	it("extracts numeric prefix from 01-auth.md", () => {
-		expect(parseSpecOrder("01-auth.md")).toBe(1);
+		expect(parseSpecOrder("01-auth.md")).toEqual({ num: 1, suffix: null });
 	});
 
 	it("extracts numeric prefix from 10-payments.md", () => {
-		expect(parseSpecOrder("10-payments.md")).toBe(10);
+		expect(parseSpecOrder("10-payments.md")).toEqual({ num: 10, suffix: null });
 	});
 
 	it("returns null for filename without numeric prefix", () => {
@@ -31,21 +33,41 @@ describe("parseSpecOrder", () => {
 	});
 
 	it("handles large numeric prefixes", () => {
-		expect(parseSpecOrder("99-final.md")).toBe(99);
+		expect(parseSpecOrder("99-final.md")).toEqual({ num: 99, suffix: null });
+	});
+
+	it("extracts suffix from 15a-foo.md", () => {
+		expect(parseSpecOrder("15a-foo.md")).toEqual({ num: 15, suffix: "a" });
+	});
+
+	it("extracts suffix z from 15z-foo.md", () => {
+		expect(parseSpecOrder("15z-foo.md")).toEqual({ num: 15, suffix: "z" });
+	});
+
+	it("returns null for uppercase suffix 15A-foo.md", () => {
+		expect(parseSpecOrder("15A-foo.md")).toBeNull();
+	});
+
+	it("handles 0a-foo.md", () => {
+		expect(parseSpecOrder("0a-foo.md")).toEqual({ num: 0, suffix: "a" });
+	});
+
+	it("handles large numeric prefix with suffix 999z-foo.md", () => {
+		expect(parseSpecOrder("999z-foo.md")).toEqual({ num: 999, suffix: "z" });
 	});
 });
 
 describe("sortSpecs", () => {
-	const spec = (name: string, order: number | null) => ({ name, order });
+	const spec = (name: string, order: SpecOrder | null) => ({ name, order });
 
 	it("sorts numbered specs ascending", () => {
-		const specs = [spec("10-payments", 10), spec("01-auth", 1), spec("05-users", 5)];
+		const specs = [spec("10-payments", o(10)), spec("01-auth", o(1)), spec("05-users", o(5))];
 		const sorted = sortSpecs(specs);
 		expect(sorted.map((s) => s.name)).toEqual(["01-auth", "05-users", "10-payments"]);
 	});
 
 	it("places unnumbered specs after numbered ones", () => {
-		const specs = [spec("readme", null), spec("01-auth", 1)];
+		const specs = [spec("readme", null), spec("01-auth", o(1))];
 		const sorted = sortSpecs(specs);
 		expect(sorted.map((s) => s.name)).toEqual(["01-auth", "readme"]);
 	});
@@ -57,7 +79,7 @@ describe("sortSpecs", () => {
 	});
 
 	it("breaks duplicate numeric prefix ties alphabetically", () => {
-		const specs = [spec("01-beta", 1), spec("01-alpha", 1)];
+		const specs = [spec("01-beta", o(1)), spec("01-alpha", o(1))];
 		const sorted = sortSpecs(specs);
 		expect(sorted.map((s) => s.name)).toEqual(["01-alpha", "01-beta"]);
 	});
@@ -65,19 +87,53 @@ describe("sortSpecs", () => {
 	it("handles mixed numbered and unnumbered specs", () => {
 		const specs = [
 			spec("zebra", null),
-			spec("03-config", 3),
+			spec("03-config", o(3)),
 			spec("alpha", null),
-			spec("01-auth", 1),
+			spec("01-auth", o(1)),
 		];
 		const sorted = sortSpecs(specs);
 		expect(sorted.map((s) => s.name)).toEqual(["01-auth", "03-config", "alpha", "zebra"]);
 	});
 
 	it("does not mutate the original array", () => {
-		const specs = [spec("02-b", 2), spec("01-a", 1)];
+		const specs = [spec("02-b", o(2)), spec("01-a", o(1))];
 		const original = [...specs];
 		sortSpecs(specs);
 		expect(specs).toEqual(original);
+	});
+
+	it("sorts by suffix within same number", () => {
+		const specs = [spec("15b-bar", o(15, "b")), spec("15a-foo", o(15, "a")), spec("15-base", o(15))];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["15-base", "15a-foo", "15b-bar"]);
+	});
+
+	it("sorts 15 < 15a < 15b < 16", () => {
+		const specs = [
+			spec("16-corge", o(16)),
+			spec("15b-qux", o(15, "b")),
+			spec("15-bar", o(15)),
+			spec("15a-baz", o(15, "a")),
+		];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["15-bar", "15a-baz", "15b-qux", "16-corge"]);
+	});
+
+	it("sorts suffixed specs without bare number", () => {
+		const specs = [spec("15b-bar", o(15, "b")), spec("15a-foo", o(15, "a"))];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["15a-foo", "15b-bar"]);
+	});
+
+	it("sorts mixed numbered, suffixed, and unnumbered", () => {
+		const specs = [
+			spec("readme", null),
+			spec("15a-foo", o(15, "a")),
+			spec("01-auth", o(1)),
+			spec("15-base", o(15)),
+		];
+		const sorted = sortSpecs(specs);
+		expect(sorted.map((s) => s.name)).toEqual(["01-auth", "15-base", "15a-foo", "readme"]);
 	});
 });
 
@@ -120,8 +176,8 @@ describe("discoverSpecs", () => {
 		writeSpecFile("01-auth.md");
 		const specs = discoverSpecs(tmpDir, defaultConfig);
 		expect(specs.map((s) => s.name)).toEqual(["01-auth", "02-payments"]);
-		expect(specs[0].order).toBe(1);
-		expect(specs[1].order).toBe(2);
+		expect(specs[0].order).toEqual({ num: 1, suffix: null });
+		expect(specs[1].order).toEqual({ num: 2, suffix: null });
 	});
 
 	it("excludes files matching excludeSpecs", () => {
@@ -181,6 +237,17 @@ describe("discoverSpecs", () => {
 		writeSpecFile("01-auth.md");
 		const specs = discoverSpecs(tmpDir, defaultConfig);
 		expect(specs[0].path).toBe(path.join(tmpDir, "specs", "01-auth.md"));
+	});
+
+	it("discovers and sorts alphanumeric-prefixed files correctly", () => {
+		writeSpecFile("16-corge.md");
+		writeSpecFile("15a-baz.md");
+		writeSpecFile("15-bar.md");
+		const specs = discoverSpecs(tmpDir, defaultConfig);
+		expect(specs.map((s) => s.name)).toEqual(["15-bar", "15a-baz", "16-corge"]);
+		expect(specs[0].order).toEqual({ num: 15, suffix: null });
+		expect(specs[1].order).toEqual({ num: 15, suffix: "a" });
+		expect(specs[2].order).toEqual({ num: 16, suffix: null });
 	});
 });
 
@@ -276,5 +343,20 @@ describe("findSpec", () => {
 
 	it("does not match numeric prefix on unnumbered spec", () => {
 		expect(findSpec(specs, "con")).toBeUndefined();
+	});
+
+	it("matches alphanumeric spec by stripped prefix (e.g. 'baz' matches '15a-baz')", () => {
+		const alphaSpecs = [spec("15a-baz"), spec("01-auth")];
+		expect(findSpec(alphaSpecs, "baz")?.name).toBe("15a-baz");
+	});
+
+	it("matches alphanumeric spec by exact name", () => {
+		const alphaSpecs = [spec("15a-baz")];
+		expect(findSpec(alphaSpecs, "15a-baz")?.name).toBe("15a-baz");
+	});
+
+	it("matches alphanumeric spec by prefix alone (e.g. '15a' matches '15a-baz')", () => {
+		const alphaSpecs = [spec("15a-baz")];
+		expect(findSpec(alphaSpecs, "15a")?.name).toBe("15a-baz");
 	});
 });
