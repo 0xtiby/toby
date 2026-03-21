@@ -43,15 +43,9 @@ Define custom variables under `templateVars` in your project config (`.toby/conf
 
 ```json
 {
-  "plan": {
-    "templateVars": {
-      "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
-    }
-  },
-  "build": {
-    "templateVars": {
-      "BRANCH": "feat/{{SPEC_SLUG}}"
-    }
+  "templateVars": {
+    "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json",
+    "BRANCH": "feat/{{SPEC_SLUG}}"
   }
 }
 ```
@@ -98,7 +92,7 @@ Follow these steps to create a project-local override for the plan prompt.
 2. **Copy the shipped prompt** as a starting point:
 
    ```bash
-   cp node_modules/toby/prompts/PROMPT_PLAN.md .toby/PROMPT_PLAN.md
+   cp node_modules/@0xtiby/toby/prompts/PROMPT_PLAN.md .toby/PROMPT_PLAN.md
    ```
 
    Or create `.toby/PROMPT_PLAN.md` from scratch — any valid Markdown works.
@@ -116,10 +110,8 @@ Follow these steps to create a project-local override for the plan prompt.
 
    ```json
    {
-     "plan": {
-       "templateVars": {
-         "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
-       }
+     "templateVars": {
+       "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
      }
    }
    ```
@@ -129,7 +121,7 @@ Follow these steps to create a project-local override for the plan prompt.
 5. **Verify your override loads** by running a plan command:
 
    ```bash
-   toby plan 12-auth-middleware
+   toby plan --spec=12-auth-middleware
    ```
 
    Toby will pick up `.toby/PROMPT_PLAN.md` instead of the shipped default. Your custom text should appear in the agent's instructions.

@@ -67,7 +67,7 @@ toby build --spec=auth --all --cli=codex
 
 ### `init`
 
-Initialize toby in current project. Creates a `toby.config.json` file with project defaults.
+Initialize toby in current project. Creates a `.toby/config.json` file with project defaults.
 
 ```
 toby init [options]
@@ -184,4 +184,4 @@ toby config set plan.cli=claude build.cli=codex  # batch set
 }
 ```
 
-> **Note:** Spec 16 plans to restructure `templateVars` into a two-category system with separate CLI vars and config vars.
+> **Planned:** Spec 16 plans to remove frontmatter parsing infrastructure and simplify the template variable system. Spec 17 plans to simplify shipped prompt content.
