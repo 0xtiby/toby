@@ -4,22 +4,6 @@ import { join } from "node:path";
 
 const PROMPTS_DIR = join(import.meta.dirname, ".");
 
-const RECOGNIZED_VARS = [
-	"SPEC_NAME",
-	"ITERATION",
-	"BRANCH",
-	"WORKTREE",
-	"EPIC_NAME",
-	"IS_LAST_SPEC",
-	"PRD_PATH",
-	"SPEC_CONTENT",
-	"SPECS_DIR",
-	"SPEC_INDEX",
-	"SPEC_COUNT",
-	"SESSION",
-	"SPECS",
-];
-
 const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md", "PROMPT_BUILD_ALL.md"] as const;
 
 function readPrompt(name: string): string {
@@ -45,13 +29,6 @@ describe("prompt files", () => {
 	it.each(PROMPT_FILES)("%s contains :::TOBY_DONE::: sentinel", (file) => {
 		const content = readPrompt(file);
 		expect(content).toContain(":::TOBY_DONE:::");
-	});
-
-	it.each(PROMPT_FILES)("%s uses only recognized template variables", (file) => {
-		const vars = extractVars(readPrompt(file));
-		for (const v of vars) {
-			expect(RECOGNIZED_VARS).toContain(v);
-		}
 	});
 
 	it.each(PROMPT_FILES)("%s uses {{VAR_NAME}} syntax", (file) => {

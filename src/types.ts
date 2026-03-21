@@ -73,24 +73,12 @@ export type SpecStatusEntry = z.infer<typeof SpecStatusEntrySchema>;
 
 // ── Prompt Template (spec 05) ─────────────────────────────────────
 
-export interface PromptTemplate {
-	/** Resolved file path of the prompt */
-	path: string;
-	/** Raw template content before substitution */
-	content: string;
-}
-
 export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD" | "PROMPT_BUILD_ALL";
 
 export type TemplateVars = Record<string, string>;
 
 export interface LoadPromptOptions {
 	cwd?: string;
-}
-
-export interface PromptFrontmatter {
-	required_vars?: string[];
-	optional_vars?: string[];
 }
 
 export interface ComputeCliVarsOptions {

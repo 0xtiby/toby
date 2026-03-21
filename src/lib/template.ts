@@ -2,8 +2,6 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
-	PromptTemplate,
-	PromptFrontmatter,
 	PromptName,
 	TemplateVars,
 	LoadPromptOptions,
@@ -85,91 +83,6 @@ export function loadPrompt(
 	const raw = fs.readFileSync(promptPath, "utf-8");
 	const content = stripFrontmatter(raw);
 	return substitute(content, vars);
-}
-
-/**
- * Parse frontmatter directives from a prompt string.
- * Frontmatter must start with `---\n` and end with `---\n`.
- * Supports two directive formats:
- *   - List style:  `required_vars:\n  - A\n  - B`
- *   - Inline style: `required_vars: [A, B, C]`
- * Unrecognized keys are ignored.
- * Returns null frontmatter and original content if no valid frontmatter found.
- */
-export function parseFrontmatter(raw: string): {
-	frontmatter: PromptFrontmatter | null;
-	content: string;
-} {
-	if (!raw.startsWith("---\n")) {
-		return { frontmatter: null, content: raw };
-	}
-
-	const closingIndex = raw.indexOf("\n---\n", 4);
-	if (closingIndex === -1) {
-		return { frontmatter: null, content: raw };
-	}
-
-	const yamlBlock = raw.slice(4, closingIndex);
-	const content = raw.slice(closingIndex + 5);
-
-	const frontmatter: PromptFrontmatter = {};
-
-	let currentKey: "required_vars" | "optional_vars" | null = null;
-	for (const line of yamlBlock.split("\n")) {
-		const trimmed = line.trim();
-		if (trimmed === "" || trimmed.startsWith("#")) continue;
-
-		const keyMatch = trimmed.match(/^(required_vars|optional_vars):\s*(.*)$/);
-		if (keyMatch) {
-			const key = keyMatch[1] as "required_vars" | "optional_vars";
-			const rest = keyMatch[2].trim();
-
-			// Inline array: required_vars: [A, B, C]
-			const inlineMatch = rest.match(/^\[(.+)\]$/);
-			if (inlineMatch) {
-				frontmatter[key] = inlineMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
-				currentKey = null;
-			} else {
-				// Block list follows
-				frontmatter[key] = [];
-				currentKey = key;
-			}
-		} else if (currentKey && trimmed.startsWith("- ")) {
-			const value = trimmed.slice(2).trim();
-			if (value) {
-				frontmatter[currentKey]!.push(value);
-			}
-		} else {
-			currentKey = null;
-		}
-	}
-
-	return { frontmatter, content };
-}
-
-/**
- * Validate that all required vars from frontmatter are present.
- * Throws when required variables are missing.
- */
-export function validateRequiredVars(
-	frontmatter: PromptFrontmatter | null,
-	vars: TemplateVars,
-	promptName: string,
-): void {
-	if (!frontmatter?.required_vars?.length) return;
-
-	const missing: string[] = [];
-	for (const varName of frontmatter.required_vars) {
-		if (vars[varName] === undefined) {
-			missing.push(varName);
-		}
-	}
-
-	if (missing.length > 0) {
-		throw new Error(
-			`Prompt "${promptName}" is missing required variable(s): ${missing.join(", ")}`,
-		);
-	}
 }
 
 /**
