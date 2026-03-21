@@ -3,7 +3,7 @@ import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
-import { loadPrompt } from "../lib/template.js";
+import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
 import {
@@ -76,22 +76,27 @@ export async function executePlan(
 		callbacks.onRefinement?.(found.name);
 	}
 
+	const session = flags.session || computeSpecSlug(found.name);
+
 	let iterationStartTime = new Date().toISOString();
 	callbacks.onPhase?.("planning");
 	callbacks.onIteration?.(1, commandConfig.iterations);
 
 	const loopResult = await runLoop({
 		maxIterations: commandConfig.iterations,
-		getPrompt: (iteration) =>
-			loadPrompt(
-				"PROMPT_PLAN",
-				{
-					SPEC_NAME: found.name,
-					ITERATION: String(iteration + existingIterations),
-					SPEC_CONTENT: specWithContent.content ?? "",
-				},
-				{ cwd, configVars: config.templateVars },
-			),
+		getPrompt: (iteration) => {
+			const cliVars = computeCliVars({
+				specName: found.name,
+				iteration: iteration + existingIterations,
+				specIndex: 1,
+				specCount: 1,
+				session,
+				specs: [found.name],
+				specsDir: config.specsDir,
+			});
+			const vars = resolveTemplateVars(cliVars, config.templateVars);
+			return loadPrompt("PROMPT_PLAN", { ...vars, SPEC_CONTENT: specWithContent.content ?? "" }, { cwd });
+		},
 		cli: commandConfig.cli,
 		model: commandConfig.model,
 		cwd,

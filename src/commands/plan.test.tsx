@@ -14,9 +14,13 @@ vi.mock("../lib/specs.js", () => ({
 	loadSpecContent: vi.fn(),
 }));
 
-vi.mock("../lib/template.js", () => ({
-	loadPrompt: vi.fn(),
-}));
+vi.mock("../lib/template.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../lib/template.js")>();
+	return {
+		...actual,
+		loadPrompt: vi.fn(),
+	};
+});
 
 vi.mock("../lib/loop.js", () => ({
 	runLoop: vi.fn(),
@@ -35,7 +39,7 @@ vi.mock("../lib/paths.js", () => ({
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
-import { loadPrompt } from "../lib/template.js";
+import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
@@ -178,10 +182,16 @@ describe("executePlan", () => {
 			"PROMPT_PLAN",
 			{
 				SPEC_NAME: "01-auth",
+				SPEC_SLUG: "auth",
 				ITERATION: "1",
+				SPEC_INDEX: "1",
+				SPEC_COUNT: "1",
+				SESSION: "auth",
+				SPECS: "01-auth",
+				SPECS_DIR: "specs",
 				SPEC_CONTENT: "# Auth Spec\nContent here",
 			},
-			{ cwd: "/project", configVars: {} },
+			{ cwd: "/project" },
 		);
 	});
 
@@ -232,6 +242,57 @@ describe("executePlan", () => {
 		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 
+	it("SESSION defaults to computeSpecSlug(specName)", async () => {
+		await executePlan(defaultFlags, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+
+		expect(mockLoadPrompt).toHaveBeenCalledWith(
+			"PROMPT_PLAN",
+			expect.objectContaining({ SESSION: "auth" }),
+			{ cwd: "/project" },
+		);
+	});
+
+	it("--session flag overrides default session value", async () => {
+		await executePlan({ ...defaultFlags, session: "my-session" }, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+
+		expect(mockLoadPrompt).toHaveBeenCalledWith(
+			"PROMPT_PLAN",
+			expect.objectContaining({ SESSION: "my-session" }),
+			{ cwd: "/project" },
+		);
+	});
+
+	it("resolves config templateVars with CLI var interpolation", async () => {
+		mockLoadConfig.mockReturnValue({
+			plan: { cli: "claude", model: "default", iterations: 2 },
+			build: { cli: "claude", model: "default", iterations: 10 },
+			specsDir: "specs",
+			excludeSpecs: ["README.md"],
+			verbose: false,
+			templateVars: { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
+		});
+
+		await executePlan(defaultFlags, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+
+		expect(mockLoadPrompt).toHaveBeenCalledWith(
+			"PROMPT_PLAN",
+			expect.objectContaining({
+				PRD_PATH: ".toby/01-auth.prd.json",
+				SPEC_NAME: "01-auth",
+			}),
+			{ cwd: "/project" },
+		);
+	});
+
 	describe("refinement mode", () => {
 		it("detects refinement when status is planned", async () => {
 			mockReadStatus.mockReturnValue({
@@ -274,7 +335,7 @@ describe("executePlan", () => {
 			expect(mockLoadPrompt).toHaveBeenCalledWith(
 				"PROMPT_PLAN",
 				expect.objectContaining({ ITERATION: "3", SPEC_NAME: "01-auth" }),
-				{ cwd: "/project", configVars: {} },
+				{ cwd: "/project" },
 			);
 		});
 
@@ -292,7 +353,7 @@ describe("executePlan", () => {
 			expect(mockLoadPrompt).toHaveBeenCalledWith(
 				"PROMPT_PLAN",
 				expect.objectContaining({ ITERATION: "1", SPEC_NAME: "01-auth" }),
-				{ cwd: "/project", configVars: {} },
+				{ cwd: "/project" },
 			);
 		});
 	});
@@ -448,7 +509,7 @@ describe("error handling edge cases", () => {
 		expect(mockLoadPrompt).toHaveBeenCalledWith(
 			"PROMPT_PLAN",
 			expect.objectContaining({ SPEC_CONTENT: "", SPEC_NAME: "01-auth" }),
-			{ cwd: "/project", configVars: {} },
+			{ cwd: "/project" },
 		);
 		expect(result.specName).toBe("01-auth");
 	});
