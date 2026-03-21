@@ -12,6 +12,7 @@ export interface CommandFlags {
 	iterations?: number;
 	verbose: boolean;
 	cli?: string;
+	session?: string;
 }
 
 export type Phase = "init" | "all" | "selecting" | "running" | "done" | "interrupted" | "error";

@@ -56,6 +56,7 @@ Plan Options
   --iterations=<n>   Override iteration count
   --verbose          Show full CLI output
   --cli=<name>       Override AI CLI (claude, codex, opencode)
+  --session=<name>   Name the session for branch/PR naming
 
 Build Options
   --spec=<name>      Build a specific planned spec
@@ -63,6 +64,7 @@ Build Options
   --iterations=<n>   Override max iteration count
   --verbose          Show full CLI output
   --cli=<name>       Override AI CLI (claude, codex, opencode)
+  --session=<name>   Name the session for branch/PR naming
 
 Status Options
   --spec=<name>      Show detailed status for a specific spec
@@ -93,6 +95,7 @@ Config Subcommands
 			buildCli: { type: "string" },
 			buildModel: { type: "string" },
 			specsDir: { type: "string" },
+			session: { type: "string" },
 		},
 	},
 );
@@ -117,6 +120,7 @@ const commands: Record<string, CommandEntry> = {
 				iterations={flags.iterations}
 				verbose={flags.verbose}
 				cli={flags.cli}
+				session={flags.session}
 			/>
 		),
 		waitForExit: true,
@@ -129,6 +133,7 @@ const commands: Record<string, CommandEntry> = {
 				iterations={flags.iterations}
 				verbose={flags.verbose}
 				cli={flags.cli}
+				session={flags.session}
 			/>
 		),
 		waitForExit: true,
