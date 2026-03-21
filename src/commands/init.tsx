@@ -91,6 +91,9 @@ export function createProject(
 				iterations: 10,
 			},
 			specsDir: selections.specsDir,
+			templateVars: {
+				PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json",
+			},
 		};
 		writeConfig(config, configPath);
 	} catch (err) {

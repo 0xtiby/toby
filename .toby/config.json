@@ -9,5 +9,8 @@
     "model": "default",
     "iterations": 10
   },
-  "specsDir": "specs"
+  "specsDir": "specs",
+  "templateVars": {
+    "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
+  }
 }
