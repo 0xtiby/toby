@@ -189,6 +189,40 @@ export function computeCliVars(options: ComputeCliVarsOptions): TemplateVars {
 }
 
 /**
+ * Resolve config vars by substituting CLI var references in their values.
+ * e.g. configVars = { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" }, cliVars = { SPEC_NAME: "12-foo" }
+ * → { PRD_PATH: ".toby/12-foo.prd.json" }
+ */
+export function resolveConfigVars(
+	configVars: TemplateVars,
+	cliVars: TemplateVars,
+	verbose = false,
+): TemplateVars {
+	const resolved: TemplateVars = {};
+	for (const [key, value] of Object.entries(configVars)) {
+		if (verbose && key in cliVars) {
+			console.warn(`Config var "${key}" is shadowed by CLI var`);
+		}
+		resolved[key] = substitute(value, cliVars);
+	}
+	return resolved;
+}
+
+/**
+ * Merge CLI vars and config vars with two-step resolution:
+ * 1. Resolve config vars (substitute CLI var references in their values)
+ * 2. Merge: { ...resolvedConfigVars, ...cliVars } — CLI wins on conflict
+ */
+export function resolveTemplateVars(
+	cliVars: TemplateVars,
+	configVars: TemplateVars,
+	verbose = false,
+): TemplateVars {
+	const resolved = resolveConfigVars(configVars, cliVars, verbose);
+	return { ...resolved, ...cliVars };
+}
+
+/**
  * Substitute template variables into prompt content.
  * Unknown {{VAR}} patterns are left as-is.
  */

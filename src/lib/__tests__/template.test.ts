@@ -10,6 +10,8 @@ import {
 	validateRequiredVars,
 	computeSpecSlug,
 	computeCliVars,
+	resolveConfigVars,
+	resolveTemplateVars,
 } from "../template.js";
 
 /**
@@ -378,5 +380,105 @@ describe("computeCliVars", () => {
 	it("joins specs array with comma separator", () => {
 		const vars = computeCliVars(defaultOptions);
 		expect(vars.SPECS).toBe("12-auth, 13-api");
+	});
+});
+
+describe("resolveConfigVars", () => {
+	it("substitutes CLI var references in config var values", () => {
+		const result = resolveConfigVars(
+			{ PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
+			{ SPEC_NAME: "12-foo" },
+		);
+		expect(result).toEqual({ PRD_PATH: ".toby/12-foo.prd.json" });
+	});
+
+	it("substitutes multiple CLI var references in one value", () => {
+		const result = resolveConfigVars(
+			{ REPORT: "reports/{{SESSION}}/{{SPEC_NAME}}.md" },
+			{ SESSION: "build-001", SPEC_NAME: "12-foo" },
+		);
+		expect(result).toEqual({ REPORT: "reports/build-001/12-foo.md" });
+	});
+
+	it("leaves {{NOPE}} as literal when CLI var does not exist", () => {
+		const result = resolveConfigVars(
+			{ PATH: "{{NOPE}}/file.txt" },
+			{ SPEC_NAME: "12-foo" },
+		);
+		expect(result).toEqual({ PATH: "{{NOPE}}/file.txt" });
+	});
+
+	it("passes through static config vars unchanged", () => {
+		const result = resolveConfigVars(
+			{ STATIC: "no-refs-here" },
+			{ SPEC_NAME: "12-foo" },
+		);
+		expect(result).toEqual({ STATIC: "no-refs-here" });
+	});
+
+	it("returns empty object for empty configVars", () => {
+		const result = resolveConfigVars({}, { SPEC_NAME: "12-foo" });
+		expect(result).toEqual({});
+	});
+
+	it("warns when verbose=true and config var shadows CLI var", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		resolveConfigVars(
+			{ SPEC_NAME: "overridden" },
+			{ SPEC_NAME: "12-foo" },
+			true,
+		);
+		expect(warnSpy).toHaveBeenCalledWith(
+			'Config var "SPEC_NAME" is shadowed by CLI var',
+		);
+		warnSpy.mockRestore();
+	});
+
+	it("does not warn when verbose=false", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		resolveConfigVars(
+			{ SPEC_NAME: "overridden" },
+			{ SPEC_NAME: "12-foo" },
+		);
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+});
+
+describe("resolveTemplateVars", () => {
+	it("CLI var wins over config var with same name", () => {
+		const result = resolveTemplateVars(
+			{ SPEC_NAME: "cli-value" },
+			{ SPEC_NAME: "config-value" },
+		);
+		expect(result.SPEC_NAME).toBe("cli-value");
+	});
+
+	it("returns only CLI vars when configVars is empty", () => {
+		const cliVars = { SPEC_NAME: "12-foo", ITERATION: "1" };
+		const result = resolveTemplateVars(cliVars, {});
+		expect(result).toEqual(cliVars);
+	});
+
+	it("merges resolved config vars with CLI vars", () => {
+		const result = resolveTemplateVars(
+			{ SPEC_NAME: "12-foo" },
+			{ PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
+		);
+		expect(result).toEqual({
+			SPEC_NAME: "12-foo",
+			PRD_PATH: ".toby/12-foo.prd.json",
+		});
+	});
+
+	it("passes verbose through to resolveConfigVars", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		resolveTemplateVars(
+			{ SPEC_NAME: "cli" },
+			{ SPEC_NAME: "config" },
+			true,
+		);
+		expect(warnSpy).toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 });
