@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, loadSpecContent } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
@@ -64,8 +64,6 @@ export async function executePlan(
 		throw new Error(`Spec '${flags.spec}' not found`);
 	}
 
-	const specWithContent = loadSpecContent(found);
-
 	// Detect refinement mode: status 'planned' means we're refining
 	let status = readStatus(cwd);
 	const specEntry = status.specs[found.name];
@@ -95,7 +93,7 @@ export async function executePlan(
 				specsDir: config.specsDir,
 			});
 			const vars = resolveTemplateVars(cliVars, config.templateVars);
-			return loadPrompt("PROMPT_PLAN", { ...vars, SPEC_CONTENT: specWithContent.content ?? "" }, { cwd });
+			return loadPrompt("PROMPT_PLAN", vars, { cwd });
 		},
 		cli: commandConfig.cli,
 		model: commandConfig.model,
