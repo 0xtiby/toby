@@ -75,11 +75,11 @@ export function loadPrompt(
 }
 
 /**
- * Strip a single leading numeric prefix (digits followed by a dash) from a spec name.
- * e.g. '12-foo' → 'foo', '12-03-nested' → '03-nested', 'no-prefix' → 'no-prefix'
+ * Strip a single leading alphanumeric prefix (digits, optional lowercase letter, dash) from a spec name.
+ * e.g. '12-foo' → 'foo', '15a-bar' → 'bar', '12-03-nested' → '03-nested', 'no-prefix' → 'no-prefix'
  */
 export function computeSpecSlug(specName: string): string {
-	return specName.replace(/^\d+-/, "");
+	return specName.replace(/^\d+[a-z]?-/, "");
 }
 
 /**

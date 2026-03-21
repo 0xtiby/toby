@@ -183,5 +183,3 @@ toby config set plan.cli=claude build.cli=codex  # batch set
   "templateVars": {}
 }
 ```
-
-> **Planned:** Spec 16 plans to remove frontmatter parsing infrastructure and simplify the template variable system. Spec 17 plans to simplify shipped prompt content.

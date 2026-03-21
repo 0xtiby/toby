@@ -193,6 +193,18 @@ describe("computeSpecSlug", () => {
 	it("strips only the first numeric prefix", () => {
 		expect(computeSpecSlug("12-03-nested")).toBe("03-nested");
 	});
+
+	it("strips alphanumeric prefix with letter suffix", () => {
+		expect(computeSpecSlug("15a-template-variable-system")).toBe("template-variable-system");
+	});
+
+	it("strips alphanumeric prefix with any lowercase letter", () => {
+		expect(computeSpecSlug("999z-foo")).toBe("foo");
+	});
+
+	it("does not strip uppercase letter suffix", () => {
+		expect(computeSpecSlug("15A-foo")).toBe("15A-foo");
+	});
 });
 
 describe("computeCliVars", () => {
