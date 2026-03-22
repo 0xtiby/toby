@@ -1,1 +1,107 @@
-{"specs":{"01-project-restructure":{"status":"done","plannedAt":null,"iterations":[]},"02-configuration-system":{"status":"done","plannedAt":null,"iterations":[]},"03-spec-discovery":{"status":"done","plannedAt":null,"iterations":[]},"04-prd-status-model":{"status":"done","plannedAt":null,"iterations":[]},"05-prompt-template-engine":{"status":"done","plannedAt":null,"iterations":[]},"06-loop-engine":{"status":"done","plannedAt":null,"iterations":[]},"07-plan-command":{"status":"done","plannedAt":null,"iterations":[]},"08-build-command":{"status":"done","plannedAt":null,"iterations":[]},"09-init-status-config":{"status":"done","plannedAt":null,"iterations":[]},"10-default-prompts":{"status":"done","plannedAt":null,"iterations":[]},"11-non-interactive-cli-mode":{"status":"done","plannedAt":null,"iterations":[]},"12-decouple-prd-from-code":{"status":"done","plannedAt":null,"iterations":[]},"13-dynamic-template-variables":{"status":"done","plannedAt":null,"iterations":[]},"14-status-command-adaptation":{"status":"done","plannedAt":null,"iterations":[]}}}
+{
+  "specs": {
+    "01-project-restructure": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "02-configuration-system": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "03-spec-discovery": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "04-prd-status-model": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "05-prompt-template-engine": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "06-loop-engine": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "07-plan-command": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "08-build-command": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "09-init-status-config": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "10-default-prompts": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "11-non-interactive-cli-mode": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "12-decouple-prd-from-code": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "13-dynamic-template-variables": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "14-status-command-adaptation": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "15-alphanumeric-spec-ordering": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "840cb5af-e592-4174-a735-a16ab7e1d0d3",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-22T01:27:49.008Z",
+          "completedAt": "2026-03-22T01:27:57.366Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 209
+        }
+      ]
+    },
+    "16-template-variable-system": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "17-prompt-simplification": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    },
+    "18-documentation": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": []
+    }
+  }
+}
