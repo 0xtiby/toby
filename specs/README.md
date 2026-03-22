@@ -28,3 +28,7 @@
 | [Decouple PRD from Code](./12-decouple-prd-from-code.md) | `src/lib/prd.ts`, `src/types.ts`, `src/commands/` | Remove hardcoded PRD tracking — task management lives in prompts, not code |
 | [Dynamic Template Variables](./13-dynamic-template-variables.md) | `src/lib/template.ts`, `src/types.ts` | Replace fixed TemplateVars with dynamic Record, YAML frontmatter, per-command config vars |
 | [Status Command Adaptation](./14-status-command-adaptation.md) | `src/commands/status.tsx` | Replace PRD-derived task display with iteration history from status.json |
+| [Alphanumeric Spec Ordering](./15-alphanumeric-spec-ordering.md) | `src/lib/specs.ts` | Support `15a-`, `15b-` alphanumeric prefixes for sub-spec ordering |
+| [Template Variable System](./16-template-variable-system.md) | `src/lib/template.ts`, `src/lib/config.ts` | Two-category variable model: CLI vars from runtime + user config vars with interpolation |
+| [Prompt Simplification](./17-prompt-simplification.md) | `prompts/PROMPT_PLAN.md`, `prompts/PROMPT_BUILD.md` | Simplify shipped prompts to use new variable set, remove frontmatter and PROMPT_BUILD_ALL |
+| [Documentation](./18-documentation.md) | `README.md`, `docs/` | User-facing README, CLI/config reference, and prompt authoring guide |
