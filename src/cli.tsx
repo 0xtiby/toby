@@ -55,7 +55,7 @@ Commands
   config   Manage configuration
 
 Plan Options
-  --spec=<name>      Plan a specific spec (or comma-separated: --spec=auth,payments)
+  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
   --specs=<names>    Alias for --spec with comma-separated specs
   --all              Plan all pending specs
   --iterations=<n>   Override iteration count
@@ -64,7 +64,7 @@ Plan Options
   --session=<name>   Name the session for branch/PR naming
 
 Build Options
-  --spec=<name>      Build a specific planned spec (or comma-separated: --spec=auth,payments)
+  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
   --specs=<names>    Alias for --spec with comma-separated specs
   --all              Build all planned specs in order
   --iterations=<n>   Override max iteration count
@@ -73,7 +73,7 @@ Build Options
   --session=<name>   Name the session for branch/PR naming
 
 Status Options
-  --spec=<name>      Show detailed status for a specific spec
+  --spec=<query>     Show status for a spec by name, slug, or number
 
 Init Options
   --plan-cli=<name>    Set plan CLI (claude, codex, opencode)
