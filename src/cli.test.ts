@@ -46,6 +46,13 @@ describe("cli", () => {
 		expect(output).toContain("config");
 	});
 
+	it("help text documents --spec number and comma-separated support", () => {
+		const output = run("--help");
+		expect(output).toContain("--spec=<query>");
+		expect(output).toContain("number");
+		expect(output).toContain("comma-separated");
+	});
+
 	it("shows version", () => {
 		const output = run("--version");
 		expect(output).toMatch(/\d+\.\d+\.\d+/);
