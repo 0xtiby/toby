@@ -6,6 +6,7 @@ import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
+import Welcome from "./components/Welcome.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
 function Help({ version }: { version: string }) {
@@ -192,7 +193,12 @@ const version = cli.pkg.version ?? "0.0.0";
 const [command] = cli.input;
 
 if (!command) {
-	render(<Help version={version} />).unmount();
+	if (process.stdin.isTTY) {
+		const app = render(<Welcome version={version} />);
+		await app.waitUntilExit();
+	} else {
+		render(<Help version={version} />).unmount();
+	}
 } else if (command in commands) {
 	const entry = commands[command];
 	const app = render(entry.render(flags, cli.input, version));
