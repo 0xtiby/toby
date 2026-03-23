@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, sortSpecs } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, findSpecs, sortSpecs } from "../lib/specs.js";
+import type { Spec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
@@ -214,22 +215,34 @@ export async function executeBuildAll(
 	callbacks: BuildAllCallbacks = {},
 	cwd: string = process.cwd(),
 	abortSignal?: AbortSignal,
+	specs?: Spec[],
 ): Promise<BuildAllResult> {
 	ensureLocalDir(cwd);
 
 	const config = loadConfig(cwd);
-	const specs = discoverSpecs(cwd, config);
+	let planned: Spec[];
+	let skipped: string[];
 
-	if (specs.length === 0) {
-		throw new Error("No specs found in specs/");
+	if (specs) {
+		// Pre-resolved specs (from multi-spec mode) — use directly
+		planned = specs;
+		skipped = [];
+	} else {
+		// Discovery mode — find and filter planned/building specs
+		const discovered = discoverSpecs(cwd, config);
+
+		if (discovered.length === 0) {
+			throw new Error("No specs found in specs/");
+		}
+
+		planned = sortSpecs([...filterByStatus(discovered, "planned"), ...filterByStatus(discovered, "building")]);
+		if (planned.length === 0) {
+			throw new Error("No planned specs found. Run 'toby plan' first.");
+		}
+
+		skipped = discovered.filter((s) => s.status !== "planned" && s.status !== "building").map((s) => s.name);
 	}
 
-	const planned = sortSpecs([...filterByStatus(specs, "planned"), ...filterByStatus(specs, "building")]);
-	if (planned.length === 0) {
-		throw new Error("No planned specs found. Run 'toby plan' first.");
-	}
-
-	const skipped = specs.filter((s) => s.status !== "planned" && s.status !== "building").map((s) => s.name);
 	const built: BuildResult[] = [];
 	const session = flags.session || generateSessionName();
 	const specNames = planned.map((s) => s.name);
@@ -285,6 +298,23 @@ export default function Build(flags: BuildFlags) {
 
 	const [result, setResult] = useState<BuildResult | null>(null);
 	const [allResult, setAllResult] = useState<BuildAllResult | null>(null);
+
+	// Run multi-spec mode
+	useEffect(() => {
+		if (runner.phase !== "multi") return;
+		const config = loadConfig();
+		const allSpecs = discoverSpecs(process.cwd(), config);
+		const resolved = findSpecs(allSpecs, flags.spec!);
+		executeBuildAll(flags, {
+			onSpecStart: runner.onSpecStartCallback,
+			onSpecComplete: () => {},
+			onPhase: runner.onPhaseCallback,
+			onIteration: runner.onIterationCallback,
+			onEvent: runner.addEvent,
+		}, undefined, runner.abortSignal, resolved)
+			.then((r) => { setAllResult(r); runner.handleDone(); })
+			.catch(runner.handleError);
+	}, [runner.phase]);
 
 	// Run --all mode
 	useEffect(() => {
