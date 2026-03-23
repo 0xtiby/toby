@@ -15,7 +15,7 @@ export interface CommandFlags {
 	session?: string;
 }
 
-export type Phase = "init" | "all" | "selecting" | "running" | "done" | "interrupted" | "error";
+export type Phase = "init" | "all" | "multi" | "selecting" | "running" | "done" | "interrupted" | "error";
 
 const MAX_EVENTS = 100;
 
@@ -30,9 +30,11 @@ export function useCommandRunner(options: {
 
 	const [phase, setPhase] = useState<Phase>(() => {
 		if (flags.all) return "all";
+		if (flags.spec && flags.spec.includes(",")) return "multi";
 		if (flags.spec) return "init";
 		return "selecting";
 	});
+	const [selectedSpecs, setSelectedSpecs] = useState<Spec[]>([]);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
 	const [specName, setSpecName] = useState("");
@@ -91,6 +93,16 @@ export function useCommandRunner(options: {
 		setPhase("init");
 	}
 
+	function handleMultiSpecConfirm(specs: Spec[]) {
+		if (specs.length === 1) {
+			setActiveFlags({ ...flags, spec: specs[0].name });
+			setPhase("init");
+		} else {
+			setSelectedSpecs(specs);
+			setPhase("multi");
+		}
+	}
+
 	function handleError(err: unknown) {
 		if (err instanceof AbortError) {
 			setInterruptInfo({ specName: err.specName, iterations: err.completedIterations });
@@ -132,10 +144,12 @@ export function useCommandRunner(options: {
 		specs,
 		activeFlags,
 		allProgress,
+		selectedSpecs,
 		interruptInfo,
 		abortSignal: abortControllerRef.current.signal,
 		resolvedVerbose,
 		handleSpecSelect,
+		handleMultiSpecConfirm,
 		handleError,
 		handleDone,
 		onPhaseCallback,

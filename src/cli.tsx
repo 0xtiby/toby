@@ -25,7 +25,11 @@ Commands
 
 Options
   --help       Show this help
-  --version    Show version`}
+  --version    Show version
+
+Spec Selection
+  --spec=<name>       Single spec or comma-separated (e.g. --spec=auth,payments)
+  --specs=<names>     Alias for --spec`}
 		</Text>
 	);
 }
@@ -51,7 +55,8 @@ Commands
   config   Manage configuration
 
 Plan Options
-  --spec=<name>      Plan a specific spec
+  --spec=<name>      Plan a specific spec (or comma-separated: --spec=auth,payments)
+  --specs=<names>    Alias for --spec with comma-separated specs
   --all              Plan all pending specs
   --iterations=<n>   Override iteration count
   --verbose          Show full CLI output
@@ -59,7 +64,8 @@ Plan Options
   --session=<name>   Name the session for branch/PR naming
 
 Build Options
-  --spec=<name>      Build a specific planned spec
+  --spec=<name>      Build a specific planned spec (or comma-separated: --spec=auth,payments)
+  --specs=<names>    Alias for --spec with comma-separated specs
   --all              Build all planned specs in order
   --iterations=<n>   Override max iteration count
   --verbose          Show full CLI output
@@ -86,6 +92,7 @@ Config Subcommands
 		importMeta: import.meta,
 		flags: {
 			spec: { type: "string" },
+			specs: { type: "string" },
 			all: { type: "boolean", default: false },
 			iterations: { type: "number" },
 			verbose: { type: "boolean", default: false },
@@ -102,9 +109,13 @@ Config Subcommands
 
 ensureGlobalDir();
 
+// Resolve --specs as alias for --spec (--specs takes precedence)
+const resolvedSpec = cli.flags.specs ?? cli.flags.spec;
+const flags = { ...cli.flags, spec: resolvedSpec };
+
 interface CommandEntry {
 	render: (
-		flags: typeof cli.flags,
+		f: typeof flags,
 		input: string[],
 		version: string,
 	) => React.ReactElement;
@@ -184,7 +195,7 @@ if (!command) {
 	render(<Help version={version} />).unmount();
 } else if (command in commands) {
 	const entry = commands[command];
-	const app = render(entry.render(cli.flags, cli.input, version));
+	const app = render(entry.render(flags, cli.input, version));
 	if (entry.waitForExit) {
 		await app.waitUntilExit();
 	} else {
