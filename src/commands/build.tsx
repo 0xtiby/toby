@@ -18,7 +18,7 @@ import type { Iteration, TemplateVars, PromptName, StatusData, SpecFile } from "
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
-import SpecSelector from "../components/SpecSelector.js";
+import MultiSpecSelector from "../components/MultiSpecSelector.js";
 import StreamOutput from "../components/StreamOutput.js";
 
 export type BuildFlags = CommandFlags;
@@ -359,7 +359,7 @@ export default function Build(flags: BuildFlags) {
 		if (runner.specs.length === 0) {
 			return <Text dimColor>Loading specs...</Text>;
 		}
-		return <SpecSelector specs={runner.specs} onSelect={runner.handleSpecSelect} title="Select a spec to build:" />;
+		return <MultiSpecSelector specs={runner.specs} onConfirm={runner.handleMultiSpecConfirm} title="Select specs to build:" />;
 	}
 
 	if (runner.phase === "done" && allResult) {

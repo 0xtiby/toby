@@ -18,7 +18,7 @@ import type { Iteration } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
-import SpecSelector from "../components/SpecSelector.js";
+import MultiSpecSelector from "../components/MultiSpecSelector.js";
 import StreamOutput from "../components/StreamOutput.js";
 
 export type PlanFlags = CommandFlags;
@@ -281,7 +281,7 @@ export default function Plan(flags: PlanFlags) {
 	}
 
 	if (runner.phase === "selecting") {
-		return <SpecSelector specs={runner.specs} onSelect={runner.handleSpecSelect} />;
+		return <MultiSpecSelector specs={runner.specs} onConfirm={runner.handleMultiSpecConfirm} />;
 	}
 
 	if (runner.phase === "done" && allResult) {

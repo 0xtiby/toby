@@ -631,7 +631,7 @@ describe("Plan component", () => {
 		// Wait for useEffect to discover specs and re-render with SpecSelector
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
-			expect(output).toContain("Select a spec to plan");
+			expect(output).toContain("Select specs to plan");
 			expect(output).toContain("01-auth");
 			expect(output).toContain("02-api");
 		});
@@ -659,7 +659,7 @@ describe("Plan component", () => {
 
 		// Should NOT show selector
 		const output = lastFrame()!;
-		expect(output).not.toContain("Select a spec to plan");
+		expect(output).not.toContain("Select specs to plan");
 	});
 
 	it("shows error when spec not found", async () => {
