@@ -64,16 +64,23 @@ export function filterByStatus(specs: Spec[], status: SpecStatus): Spec[] {
 
 /**
  * Find a spec by flexible name matching.
- * Matches against: exact name, filename with extension, or name with prefix stripped.
- * First match wins.
+ *
+ * Matching priority (first match wins):
+ * 1. Exact name — query matches spec name verbatim (e.g., "09-init-status-config")
+ * 2. Filename — query matches spec name with .md extension (e.g., "09-init-status-config.md")
+ * 3. Slug — query matches name with numeric prefix stripped (e.g., "init-status-config")
+ * 4. Number prefix — query matches the NN[a-z]? prefix alone (e.g., "09", "15a")
  */
 export function findSpec(specs: Spec[], query: string): Spec | undefined {
 	return specs.find((s) => {
+		// Strategy 1: Exact name match
 		if (s.name === query) return true;
+		// Strategy 2: Filename match (with .md extension)
 		if (`${s.name}.md` === query) return true;
+		// Strategy 3: Slug match (name with numeric prefix stripped)
 		const withoutPrefix = s.name.replace(/^\d+[a-z]?-/, "");
 		if (withoutPrefix === query) return true;
-		// Match by numeric prefix alone (e.g., "09" matches "09-init-status-config")
+		// Strategy 4: Number prefix match (e.g., "09" matches "09-init-status-config")
 		const prefixMatch = /^(\d+[a-z]?)-/.exec(s.name);
 		if (prefixMatch && prefixMatch[1] === query) return true;
 		return false;
