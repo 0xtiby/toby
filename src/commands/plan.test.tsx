@@ -628,7 +628,7 @@ describe("Plan component", () => {
 			<Plan all={false} verbose={false} />,
 		);
 
-		// Wait for useEffect to discover specs and re-render with SpecSelector
+		// Wait for useEffect to discover specs and re-render with MultiSpecSelector
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
 			expect(output).toContain("Select specs to plan");
