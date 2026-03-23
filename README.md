@@ -44,6 +44,22 @@ toby build --spec=add-auth
 - `toby status` — shows progress across all specs
 - `toby config` — manage CLI, model, and project settings
 
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build the project
+pnpm build
+
+# Link globally for local testing
+pnpm link --global
+
+# Unlink when done
+pnpm unlink --global @0xtiby/toby
+```
+
 ## Documentation
 
 - [CLI & Config Reference](docs/reference.md) — all commands, flags, and config.json options
