@@ -7,6 +7,7 @@ import {
 	discoverSpecs,
 	filterByStatus,
 	findSpec,
+	findSpecs,
 	loadSpecContent,
 	parseSpecOrder,
 	sortSpecs,
@@ -358,5 +359,45 @@ describe("findSpec", () => {
 	it("matches alphanumeric spec by prefix alone (e.g. '15a' matches '15a-baz')", () => {
 		const alphaSpecs = [spec("15a-baz")];
 		expect(findSpec(alphaSpecs, "15a")?.name).toBe("15a-baz");
+	});
+});
+
+describe("findSpecs", () => {
+	const spec = (name: string): Spec => ({
+		name,
+		path: `/specs/${name}.md`,
+		order: parseSpecOrder(`${name}.md`),
+		status: "pending",
+	});
+
+	const specs = [spec("01-auth"), spec("02-payments"), spec("03-config"), spec("15a-baz")];
+
+	it("returns one spec for a single value", () => {
+		const result = findSpecs(specs, "01-auth");
+		expect(result.map((s) => s.name)).toEqual(["01-auth"]);
+	});
+
+	it("returns multiple sorted specs for comma-separated values", () => {
+		const result = findSpecs(specs, "03-config,01-auth");
+		expect(result.map((s) => s.name)).toEqual(["01-auth", "03-config"]);
+	});
+
+	it("trims whitespace around commas", () => {
+		const result = findSpecs(specs, "  01-auth , 02-payments ");
+		expect(result.map((s) => s.name)).toEqual(["01-auth", "02-payments"]);
+	});
+
+	it("deduplicates matching specs", () => {
+		const result = findSpecs(specs, "01-auth,auth,01");
+		expect(result.map((s) => s.name)).toEqual(["01-auth"]);
+	});
+
+	it("throws error naming the unresolved spec", () => {
+		expect(() => findSpecs(specs, "01-auth,nonexistent")).toThrow('Spec not found: "nonexistent"');
+	});
+
+	it("resolves mixed numeric and name queries", () => {
+		const result = findSpecs(specs, "01,payments,15a");
+		expect(result.map((s) => s.name)).toEqual(["01-auth", "02-payments", "15a-baz"]);
 	});
 });

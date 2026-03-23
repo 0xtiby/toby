@@ -80,6 +80,30 @@ export function findSpec(specs: Spec[], query: string): Spec | undefined {
 	});
 }
 
+/**
+ * Resolve a comma-separated query string into multiple specs.
+ * Each query is trimmed, resolved via findSpec(), and deduplicated (first occurrence kept).
+ * Results are sorted via sortSpecs(). Throws if any query fails to resolve.
+ */
+export function findSpecs(specs: Spec[], query: string): Spec[] {
+	const queries = query.split(",").map((q) => q.trim()).filter((q) => q.length > 0);
+	const seen = new Set<string>();
+	const results: Spec[] = [];
+
+	for (const q of queries) {
+		const found = findSpec(specs, q);
+		if (!found) {
+			throw new Error(`Spec not found: "${q}"`);
+		}
+		if (!seen.has(found.name)) {
+			seen.add(found.name);
+			results.push(found);
+		}
+	}
+
+	return sortSpecs(results);
+}
+
 // ── Filesystem ──────────────────────────────────────────────────
 
 /**
