@@ -11,3 +11,8 @@ coverage
 opencode.json
 .beads/
 .worktrees/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

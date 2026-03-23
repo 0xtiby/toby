@@ -32,3 +32,7 @@
 | [Template Variable System](./16-template-variable-system.md) | `src/lib/template.ts`, `src/lib/config.ts` | Two-category variable model: CLI vars from runtime + user config vars with interpolation |
 | [Prompt Simplification](./17-prompt-simplification.md) | `prompts/PROMPT_PLAN.md`, `prompts/PROMPT_BUILD.md` | Simplify shipped prompts to use new variable set, remove frontmatter and PROMPT_BUILD_ALL |
 | [Documentation](./18-documentation.md) | `README.md`, `docs/` | User-facing README, CLI/config reference, and prompt authoring guide |
+| [Multi-Spec Selection](./19-multi-spec-selection.md) | `src/components/SpecSelector.tsx`, `src/hooks/useCommandRunner.ts`, `src/lib/specs.ts`, `src/cli.tsx` | Interactive multi-select with Select All, --spec/--specs comma-separated CLI flag |
+| [Spec Number Shorthand](./20-spec-number-shorthand.md) | `src/lib/specs.ts`, `src/cli.tsx` | Document and verify bare number resolution in --spec/--specs flags |
+| [Welcome Screen & Menu](./21-welcome-screen.md) | `src/components/Welcome.tsx`, `src/components/Mascot.tsx`, `src/components/MainMenu.tsx`, `src/cli.tsx` | Interactive welcome screen with ASCII mascot, version, status summary, and command menu |
+| [Project Status Summary](./22-project-status-summary.md) | `src/lib/stats.ts`, `src/components/StatusSummary.tsx` | Aggregate project stats (spec counts, iterations) as reusable data layer and display component |
