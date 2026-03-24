@@ -270,6 +270,7 @@ export interface BuildAllCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
+	onOutput?: (message: string) => void;
 }
 
 export interface BuildAllResult {
@@ -313,6 +314,7 @@ export async function executeBuildAll(
 	const built: BuildResult[] = [];
 	const session = flags.session || generateSessionName();
 	const specNames = planned.map((s) => s.name);
+	const status = readStatus(cwd);
 
 	return withTranscript(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
@@ -322,6 +324,23 @@ export async function executeBuildAll(
 				const spec = planned[i];
 				writer?.writeSpecHeader(i + 1, planned.length, spec.name);
 				callbacks.onSpecStart?.(spec.name, i, planned.length);
+
+				// Per-spec resume detection
+				const specEntry = status.specs[spec.name];
+				const lastIteration = specEntry?.iterations.at(-1);
+				const isCrashResume = specEntry?.status !== "done" && lastIteration?.state === "in_progress";
+				const isExhaustedResume = specEntry?.status !== "done" && specEntry?.stopReason === "max_iterations";
+				const needsResume = (isCrashResume || isExhaustedResume) ?? false;
+
+				if (isCrashResume) {
+					callbacks.onOutput?.(
+						`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration.iteration} was in progress). Resuming...`,
+					);
+				} else if (isExhaustedResume) {
+					callbacks.onOutput?.(
+						`⚠ [${spec.name}] Previous build exhausted iterations without completing. Resuming in same worktree...`,
+					);
+				}
 
 				const commandConfig = resolveCommandConfig(config, "build", {
 					cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
@@ -347,12 +366,13 @@ export async function executeBuildAll(
 						onPhase: callbacks.onPhase,
 						onIteration: callbacks.onIteration,
 						onEvent: callbacks.onEvent,
+						onOutput: callbacks.onOutput,
 					},
 					writer,
 				});
 
-				built.push(result);
-				callbacks.onSpecComplete?.(result);
+				built.push({ ...result, needsResume });
+				callbacks.onSpecComplete?.({ ...result, needsResume });
 			}
 
 			return { built };
