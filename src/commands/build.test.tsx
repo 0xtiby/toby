@@ -1029,6 +1029,113 @@ describe("executeBuild crash/exhaustion detection", () => {
 		expect(callbacks.onOutput).not.toHaveBeenCalled();
 		expect(result.needsResume).toBe(false);
 	});
+
+	it("no resume when stopReason is error", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 1, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "error",
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).not.toHaveBeenCalled();
+		expect(result.needsResume).toBe(false);
+	});
+
+	it("no resume when stopReason is aborted", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "aborted",
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).not.toHaveBeenCalled();
+		expect(result.needsResume).toBe(false);
+	});
+
+	it("no resume when fresh spec has no iterations", async () => {
+		// Default setupDefaults has empty iterations array
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).not.toHaveBeenCalled();
+		expect(result.needsResume).toBe(false);
+	});
+
+	it("no resume when spec status is done even if last iteration is in_progress", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		// executeBuild throws for non-planned/building status, so this tests that done specs aren't buildable
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
+	});
+
+	it("no resume when stopReason is max_iterations but spec status is done", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
+	});
+
+	it("only last iteration matters for crash detection", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+						{ type: "build", iteration: 3, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:02:00.000Z", completedAt: "2026-03-20T00:02:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).not.toHaveBeenCalled();
+		expect(result.needsResume).toBe(false);
+	});
 });
 
 describe("executeBuildAll", () => {
