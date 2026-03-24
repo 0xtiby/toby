@@ -84,6 +84,7 @@ Init Options
   --build-cli=<name>   Set build CLI (claude, codex, opencode)
   --build-model=<id>   Set build model
   --specs-dir=<path>   Set specs directory
+  --verbose            Enable verbose output in config
 
 Config Subcommands
   config             Interactive config editor
@@ -162,6 +163,7 @@ const commands: Record<string, CommandEntry> = {
 				buildCli={flags.buildCli}
 				buildModel={flags.buildModel}
 				specsDir={flags.specsDir}
+				verbose={flags.verbose}
 			/>
 		),
 		waitForExit: true,

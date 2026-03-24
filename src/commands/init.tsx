@@ -22,6 +22,7 @@ export interface InitFlags {
 	buildCli?: string;
 	buildModel?: string;
 	specsDir?: string;
+	verbose?: boolean;
 }
 
 interface CliDetection {
@@ -49,6 +50,7 @@ export interface InitSelections {
 	buildCli: CliName;
 	buildModel: string;
 	specsDir: string;
+	verbose: boolean;
 }
 
 export interface InitResult {
@@ -91,6 +93,7 @@ export function createProject(
 				iterations: 10,
 			},
 			specsDir: selections.specsDir,
+			verbose: selections.verbose,
 			templateVars: {
 				PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json",
 			},
@@ -229,6 +232,7 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 				buildCli: buildCli as CliName,
 				buildModel: flags.buildModel!,
 				specsDir: flags.specsDir!,
+				verbose: flags.verbose ?? false,
 			};
 
 			try {
@@ -283,6 +287,7 @@ function InteractiveInit({ version }: { version: string }) {
 		buildCli: "claude",
 		buildModel: "default",
 		specsDir: DEFAULT_SPECS_DIR,
+		verbose: false,
 	});
 	const [specsDirInput, setSpecsDirInput] = useState(DEFAULT_SPECS_DIR);
 	const [result, setResult] = useState<InitResult | null>(null);

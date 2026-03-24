@@ -58,6 +58,7 @@ const DEFAULT_SELECTIONS: InitSelections = {
 	buildCli: "claude",
 	buildModel: "default",
 	specsDir: "specs",
+	verbose: false,
 };
 
 describe("createProject", () => {
