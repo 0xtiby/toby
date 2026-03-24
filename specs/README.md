@@ -36,3 +36,6 @@
 | [Spec Number Shorthand](./20-spec-number-shorthand.md) | `src/lib/specs.ts`, `src/cli.tsx` | Document and verify bare number resolution in --spec/--specs flags |
 | [Welcome Screen & Menu](./21-welcome-screen.md) | `src/components/Welcome.tsx`, `src/components/Mascot.tsx`, `src/components/MainMenu.tsx`, `src/cli.tsx` | Interactive welcome screen with ASCII mascot, version, status summary, and command menu |
 | [Project Status Summary](./22-project-status-summary.md) | `src/lib/stats.ts`, `src/components/StatusSummary.tsx` | Aggregate project stats (spec counts, iterations) as reusable data layer and display component |
+| [Fix Skipped Display](./23-fix-skipped-display.md) | `src/commands/plan.tsx`, `src/commands/build.tsx` | Remove misleading "Skipped" list from --all mode summary output |
+| [Session Transcript](./24-session-transcript.md) | `src/lib/transcript.ts`, `src/types.ts`, `src/commands/plan.tsx`, `src/commands/build.tsx` | Stream session output to timestamped transcript files in .toby/transcripts/ |
+| [Init Verbose Option](./25-init-verbose-option.md) | `src/commands/init.tsx`, `src/cli.tsx` | Add verbose preference to init wizard and non-interactive flags |

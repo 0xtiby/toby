@@ -102,6 +102,366 @@
       "status": "done",
       "plannedAt": null,
       "iterations": []
+    },
+    "19-multi-spec-selection": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "d1a90abd-1af8-48e2-a106-21a5b45c40fb",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:47:45.494Z",
+          "completedAt": "2026-03-23T20:50:11.697Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 5321
+        },
+        {
+          "type": "plan",
+          "iteration": 2,
+          "sessionId": "d1a90abd-1af8-48e2-a106-21a5b45c40fb",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:50:11.697Z",
+          "completedAt": "2026-03-23T20:51:59.650Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 4666
+        },
+        {
+          "type": "build",
+          "iteration": 1,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:15:09.821Z",
+          "completedAt": "2026-03-23T21:16:52.370Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3522
+        },
+        {
+          "type": "build",
+          "iteration": 2,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:16:52.370Z",
+          "completedAt": "2026-03-23T21:19:46.285Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 6225
+        },
+        {
+          "type": "build",
+          "iteration": 3,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:19:46.285Z",
+          "completedAt": "2026-03-23T21:22:24.718Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 5509
+        },
+        {
+          "type": "build",
+          "iteration": 4,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:22:24.718Z",
+          "completedAt": "2026-03-23T21:28:03.232Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 15383
+        },
+        {
+          "type": "build",
+          "iteration": 5,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:28:03.232Z",
+          "completedAt": "2026-03-23T21:29:20.130Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1901
+        },
+        {
+          "type": "build",
+          "iteration": 6,
+          "sessionId": "ced4d055-81d2-43d5-ab3b-5b6fa3a4d22e",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:29:20.130Z",
+          "completedAt": "2026-03-23T21:30:15.880Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 571
+        }
+      ]
+    },
+    "20-spec-number-shorthand": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "d5f9c2a0-d80b-4316-a1b2-606d516abc94",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:51:59.659Z",
+          "completedAt": "2026-03-23T20:54:12.122Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 4760
+        },
+        {
+          "type": "plan",
+          "iteration": 2,
+          "sessionId": "d5f9c2a0-d80b-4316-a1b2-606d516abc94",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:54:12.122Z",
+          "completedAt": "2026-03-23T20:54:50.333Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 958
+        },
+        {
+          "type": "build",
+          "iteration": 1,
+          "sessionId": "4e48c51b-817e-4154-9cd3-4001a45d8e56",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:30:15.889Z",
+          "completedAt": "2026-03-23T21:31:34.046Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2319
+        },
+        {
+          "type": "build",
+          "iteration": 2,
+          "sessionId": "4e48c51b-817e-4154-9cd3-4001a45d8e56",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:31:34.046Z",
+          "completedAt": "2026-03-23T21:32:38.555Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1417
+        },
+        {
+          "type": "build",
+          "iteration": 3,
+          "sessionId": "4e48c51b-817e-4154-9cd3-4001a45d8e56",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:32:38.555Z",
+          "completedAt": "2026-03-23T21:33:39.869Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1558
+        },
+        {
+          "type": "build",
+          "iteration": 4,
+          "sessionId": "4e48c51b-817e-4154-9cd3-4001a45d8e56",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:33:39.869Z",
+          "completedAt": "2026-03-23T21:34:43.426Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1283
+        },
+        {
+          "type": "build",
+          "iteration": 5,
+          "sessionId": "4e48c51b-817e-4154-9cd3-4001a45d8e56",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:34:43.426Z",
+          "completedAt": "2026-03-23T21:35:10.446Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 506
+        }
+      ]
+    },
+    "21-welcome-screen": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "61863880-e9f8-4eed-b560-6c5b3487d2df",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:54:50.339Z",
+          "completedAt": "2026-03-23T20:56:27.159Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 4238
+        },
+        {
+          "type": "plan",
+          "iteration": 2,
+          "sessionId": "61863880-e9f8-4eed-b560-6c5b3487d2df",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:56:27.159Z",
+          "completedAt": "2026-03-23T20:57:15.394Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1659
+        },
+        {
+          "type": "build",
+          "iteration": 1,
+          "sessionId": "f28d62bb-51f3-435f-aec5-a612f6112ebd",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:35:10.454Z",
+          "completedAt": "2026-03-23T21:36:48.731Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2677
+        },
+        {
+          "type": "build",
+          "iteration": 2,
+          "sessionId": "f28d62bb-51f3-435f-aec5-a612f6112ebd",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:36:48.731Z",
+          "completedAt": "2026-03-23T21:38:24.298Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2610
+        },
+        {
+          "type": "build",
+          "iteration": 3,
+          "sessionId": "f28d62bb-51f3-435f-aec5-a612f6112ebd",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:38:24.298Z",
+          "completedAt": "2026-03-23T21:40:31.104Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3224
+        },
+        {
+          "type": "build",
+          "iteration": 4,
+          "sessionId": "f28d62bb-51f3-435f-aec5-a612f6112ebd",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:40:31.104Z",
+          "completedAt": "2026-03-23T21:41:07.277Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 468
+        }
+      ]
+    },
+    "22-project-status-summary": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "60cb8230-ad86-474e-9e20-f42e1823dde4",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:57:15.402Z",
+          "completedAt": "2026-03-23T20:59:00.236Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 4270
+        },
+        {
+          "type": "plan",
+          "iteration": 2,
+          "sessionId": "60cb8230-ad86-474e-9e20-f42e1823dde4",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T20:59:00.236Z",
+          "completedAt": "2026-03-23T20:59:32.099Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 884
+        },
+        {
+          "type": "build",
+          "iteration": 1,
+          "sessionId": "39296419-105b-408f-8f58-9103c1c0eaa7",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:41:07.281Z",
+          "completedAt": "2026-03-23T21:42:48.737Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3116
+        },
+        {
+          "type": "build",
+          "iteration": 2,
+          "sessionId": "39296419-105b-408f-8f58-9103c1c0eaa7",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:42:48.737Z",
+          "completedAt": "2026-03-23T21:44:08.566Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3434
+        },
+        {
+          "type": "build",
+          "iteration": 3,
+          "sessionId": "39296419-105b-408f-8f58-9103c1c0eaa7",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:44:08.566Z",
+          "completedAt": "2026-03-23T21:45:15.439Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2025
+        },
+        {
+          "type": "build",
+          "iteration": 4,
+          "sessionId": "39296419-105b-408f-8f58-9103c1c0eaa7",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:45:15.439Z",
+          "completedAt": "2026-03-23T21:46:17.009Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1805
+        },
+        {
+          "type": "build",
+          "iteration": 5,
+          "sessionId": "39296419-105b-408f-8f58-9103c1c0eaa7",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-23T21:46:17.009Z",
+          "completedAt": "2026-03-23T21:47:03.530Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1386
+        }
+      ]
     }
   }
 }
