@@ -2,35 +2,45 @@
 
 ## Overview
 
-Detect when a build session crashed unexpectedly vs was intentionally stopped. Uses iteration state tracking to identify in-progress iterations that never completed.
+Detect when a build crashed unexpectedly by checking if the last iteration has `state: "in_progress"`. This allows Toby to know when progress was lost and needs recovery.
 
 ## Users & Problem
 
-**Who has the problem:** Developers running `toby build` sessions.
+**Who has the problem:** Developers whose `toby build` sessions crash mid-iteration.
 
-**Why it matters:** Without crash detection, Toby can't distinguish between "user aborted" and "agent crashed". This affects both the user experience (knowing what happened) and the resume logic (knowing if progress was lost).
+**Why it matters:** Users need to know when their build was interrupted unexpectedly vs stopped intentionally. Crash detection enables the resume feature.
 
 ## Scope
 
 ### Inclusions
-- Track `state` field on each iteration: `in_progress | complete | failed`
-- Detect crash when iteration has `state: "in_progress"` on next run
-- Differentiate `stopReason` in LoopResult
+- Detect crash on build startup by checking last iteration state
+- Log crash warning to user
+- Trigger resume logic after crash detection
 
 ### Exclusions
-- No automatic recovery from crashes (just detection)
-- No timeout-based crash detection
-- No network failure detection
+- No new `stopReason` needed (crash is detected via state, not stopReason)
+- No `detectCrash()` function (inline check in build.tsx)
+- No `onCrashDetected` callback
 
 ## Business Rules
 
 ### Crash Detection Logic
 
-An iteration is considered **crashed** when:
-1. On next `toby build` run, the last iteration for a spec has `state: "in_progress"`
-2. This means the previous session exited without marking the iteration complete
+In `executeBuild()`, before starting a new session:
 
-### Stop Reasons (existing + new)
+```typescript
+const specEntry = status.specs[specName];
+const lastIteration = specEntry?.iterations.at(-1);
+
+if (lastIteration && lastIteration.state === "in_progress") {
+  // Crash detected — iteration was in progress when session ended
+  if (config.verbose) {
+    console.log(`Warning: previous build crashed. Last iteration (${lastIteration.iteration}) was in progress.`);
+  }
+}
+```
+
+### Stop Reasons (unchanged)
 
 | Stop Reason | Meaning | Iteration State |
 |-------------|---------|-----------------|
@@ -38,67 +48,6 @@ An iteration is considered **crashed** when:
 | `max_iterations` | All iterations exhausted | `complete` |
 | `error` | Non-zero exit, not retryable | `failed` |
 | `aborted` | User pressed Ctrl+C | `failed` |
-| `crashed` | (NEW) Process died unexpectedly | N/A |
-
-## Data Model
-
-```typescript
-// src/lib/loop.ts
-
-export type StopReason = "sentinel" | "max_iterations" | "error" | "aborted" | "crashed";
-
-export interface LoopResult {
-  iterations: IterationResult[];
-  stopReason: StopReason;
-}
-```
-
-### State Transitions
-
-```
-┌─────────────┐     iteration starts     ┌──────────────┐
-│   (none)    │ ─────────────────────────► │ in_progress  │
-└─────────────┘                           └──────────────┘
-                                                │
-                    ┌───────────────────────────┼───────────────────────────┐
-                    │                           │                           │
-                    ▼                           ▼                           ▼
-           ┌──────────────┐            ┌──────────────┐            ┌──────────────┐
-           │   complete   │            │    failed    │            │    failed    │
-           │ (sentinel or │            │   (error)    │            │   (abort)    │
-           │ max_iter)    │            └──────────────┘            └──────────────┘
-           └──────────────┘
-```
-
-## API / Interface
-
-### Crash Detection (`src/lib/loop.ts`)
-
-```typescript
-export function detectCrash(lastIteration: Iteration | undefined): boolean {
-  if (!lastIteration) return false;
-  return lastIteration.state === "in_progress";
-}
-```
-
-### Modified runLoop Signature
-
-```typescript
-export interface LoopOptions {
-  maxIterations: number;
-  getPrompt: (iteration: number) => string;
-  cli: "claude" | "codex" | "opencode";
-  model?: string;
-  cwd: string;
-  autoApprove?: boolean;
-  sessionId?: string;
-  continueSession?: boolean;
-  onEvent?: (event: CliEvent) => void;
-  onIterationComplete?: (result: IterationResult) => void;
-  onCrashDetected?: () => void;  // NEW: callback when crash detected
-  abortSignal?: AbortSignal;
-}
-```
 
 ## Architecture
 
@@ -106,16 +55,11 @@ export interface LoopOptions {
 ┌─────────────────────────────────────────────────────────┐
 │ executeBuild()                                          │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ Check existing iterations in status.json         │  │
-│  │ If last iteration.state === "in_progress":       │  │
-│  │   → crash detected                               │  │
-│  │   → Log warning                                  │  │
-│  │   → Proceed with resume logic                    │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ runLoop() executes                               │  │
-│  │ - onIterationStart: mark "in_progress"           │  │
-│  │ - onIterationComplete: mark "complete/failed"    │  │
+│  │ Read status.json                                  │  │
+│  │ Check last iteration state                       │  │
+│  │ if state === "in_progress":                     │  │
+│  │   → Log crash warning (verbose)                 │  │
+│  │   → Proceed with resume logic                   │  │
 │  └──────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -124,22 +68,20 @@ export interface LoopOptions {
 
 | Scenario | Handling |
 |----------|----------|
-| Crash mid-write to status.json | Accept corrupted file, user must manually fix |
-| Session from different project | Ignore, treat as no prior session |
-| status.json missing | Return default empty status |
+| No prior session | `specEntry` is undefined, no crash check |
+| status.json corrupted | Error thrown by `readStatus()` |
+| Fresh spec (no iterations) | `lastIteration` undefined, no crash |
 
 ## Acceptance Criteria
 
 | Given | When | Then |
 |-------|------|------|
-| Build crashes mid-iteration | Next build starts | Crash warning logged |
-| Build completes normally | Iteration finishes | State = "complete" |
-| User presses Ctrl+C | Process receives signal | State = "failed", stopReason = "aborted" |
-| Build exits with error code | CLI returns non-zero | State = "failed", stopReason = "error" |
-| Crash detected | Resume logic triggers | User informed via verbose output |
+| Build crashed last time | Next build starts | Warning logged (if verbose) |
+| Build completed normally | Next build starts | No warning |
+| User aborted | Next build starts | No warning (state = "failed", not "in_progress") |
 
 ## Testing Strategy
 
-1. **Unit tests:** `detectCrash()` with various iteration states
-2. **Integration tests:** Kill build process, check crash detection triggers
-3. **Manual test:** Kill -9 during iteration, verify next run shows crash warning
+1. **Unit tests:** Crash detection logic with various status states
+2. **Integration tests:** Kill build, check crash detection on restart
+3. **Manual test:** `toby build` → kill -9 → run again → see warning
