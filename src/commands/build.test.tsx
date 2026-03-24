@@ -1628,6 +1628,35 @@ describe("executeBuildAll", () => {
 		);
 	});
 
+	it("buildAll with exhausted spec → session equals status.sessionName", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
 	it("buildAll with crashed spec + same CLI → per-spec sessionId passed", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
