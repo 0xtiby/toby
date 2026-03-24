@@ -311,6 +311,47 @@ describe("writeStatus", () => {
 		expect(result.specs["01-auth"].iterations[0].type).toBe("build");
 	});
 
+	it("round-trips sessionName and lastCli", () => {
+		const statusWithSession = {
+			...validStatus,
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+		};
+		writeStatus(statusWithSession, tmpDir);
+		const result = readStatus(tmpDir);
+		expect(result.sessionName).toBe("warm-lynx-52");
+		expect(result.lastCli).toBe("claude");
+	});
+
+	it("round-trips stopReason on spec entry", () => {
+		const statusWithStopReason = {
+			specs: {
+				"01-auth": { ...validEntry, stopReason: "max_iterations" as const },
+			},
+		};
+		writeStatus(statusWithStopReason, tmpDir);
+		const result = readStatus(tmpDir);
+		expect(result.specs["01-auth"].stopReason).toBe("max_iterations");
+	});
+
+	it("round-trips iteration state field", () => {
+		const iterationWithState = {
+			...validIteration,
+			state: "complete" as const,
+		};
+		const statusWithState = {
+			specs: {
+				"01-auth": {
+					...validEntry,
+					iterations: [iterationWithState],
+				},
+			},
+		};
+		writeStatus(statusWithState, tmpDir);
+		const result = readStatus(tmpDir);
+		expect(result.specs["01-auth"].iterations[0].state).toBe("complete");
+	});
+
 	it("writes pretty-printed JSON", () => {
 		writeStatus(validStatus, tmpDir);
 		const raw = fs.readFileSync(
