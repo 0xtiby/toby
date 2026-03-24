@@ -1250,6 +1250,52 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
+	it("writes sessionName and lastCli to status on iteration start", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// writeStatus is called by onIterationStart — verify sessionName and lastCli are set
+		expect(mockWriteStatus).toHaveBeenCalledWith(
+			expect.objectContaining({ sessionName: "auth", lastCli: "claude" }),
+			"/project",
+		);
+	});
+
+	it("sessionName and lastCli written before iteration completes", async () => {
+		let statusAtIterationStart: Record<string, unknown> | null = null;
+		mockWriteStatus.mockImplementation((s: Record<string, unknown>) => {
+			if (!statusAtIterationStart) {
+				statusAtIterationStart = { ...s };
+			}
+		});
+
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// First writeStatus call (from onIterationStart) should have sessionName and lastCli
+		expect(statusAtIterationStart).toEqual(
+			expect.objectContaining({ sessionName: "auth", lastCli: "claude" }),
+		);
+	});
+
 	it("only last iteration matters for crash detection", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
