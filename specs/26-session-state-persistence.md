@@ -41,6 +41,17 @@ Iteration state is written **twice** per iteration to guarantee crash detection:
 
 **Note:** `max_iterations` without sentinel means the agent exhausted its retries without signaling completion — this is a failure, not success.
 
+### Stop Reason Persistence
+
+The `stopReason` from `runLoop` is persisted at the spec status entry level so the next run can distinguish *why* the spec stopped:
+
+- `"sentinel"` → task completed successfully
+- `"max_iterations"` → agent ran out of iterations without completing — **resumable**
+- `"error"` → non-retryable error
+- `"aborted"` → user pressed Ctrl+C
+
+This is critical for resume: `max_iterations` means the work is in progress in the worktree and should be continued, not abandoned.
+
 ### Session-Level Tracking
 - `sessionName`: The session identifier (e.g., "warm-lynx-52") used by the CLI to name worktrees and branches. Persisted so resume can reuse the same worktree.
 - `lastCli`: The CLI used in the most recent build (e.g., "claude", "opencode"). Persisted so resume knows whether to continue the session or start a new one in the same worktree.
@@ -71,6 +82,17 @@ export const IterationSchema = z.object({
   exitCode: z.number().int().nullable(),
   taskCompleted: z.string().nullable(),
   tokensUsed: z.number().int().nullable(),
+});
+
+// New: StopReasonSchema
+export const StopReasonSchema = z.enum(["sentinel", "max_iterations", "error", "aborted"]);
+export type StopReason = z.infer<typeof StopReasonSchema>;
+
+// Extended: SpecStatusEntrySchema gets stopReason
+// (added to the per-spec entry, not per-iteration)
+export const SpecStatusEntrySchema = z.object({
+  // ... existing fields ...
+  stopReason: StopReasonSchema.nullable().optional(),  // NEW: why the last run stopped
 });
 
 // Extended: StatusSchema gets session-level tracking
@@ -164,6 +186,26 @@ onIterationComplete: (iterResult: IterationResult) => {
 },
 ```
 
+### After Loop Completes — Persist stopReason (`src/commands/build.tsx`)
+
+After `runLoop` returns, persist the `stopReason` on the spec entry:
+
+```typescript
+const loopResult = await runLoop({ /* ... */ });
+
+// Persist stopReason so next run knows why we stopped
+const specEntry = status.specs[spec.name];
+status = {
+  ...status,
+  specs: {
+    ...status.specs,
+    [spec.name]: { ...specEntry, stopReason: loopResult.stopReason },
+  },
+};
+writeStatus(status, cwd);
+```
+```
+
 ## Acceptance Criteria
 
 | Given | When | Then |
@@ -175,6 +217,9 @@ onIterationComplete: (iterResult: IterationResult) => {
 | Build is aborted (Ctrl+C) | Process exits | state updated to `"failed"` |
 | Build crashes (kill -9, context limit) | Next build starts | Last iteration state = `"in_progress"` (onIterationComplete never fired) |
 | Build runs | After any iteration | `sessionName` and `lastCli` persisted in status.json |
+| Loop finishes for any reason | After `runLoop` returns | `stopReason` persisted on spec entry in status.json |
+| Loop returns `max_iterations` | After `runLoop` returns | `specEntry.stopReason = "max_iterations"` |
+| Loop returns `sentinel` | After `runLoop` returns | `specEntry.stopReason = "sentinel"` |
 
 ## Testing Strategy
 
@@ -182,5 +227,7 @@ onIterationComplete: (iterResult: IterationResult) => {
 2. **Unit tests:** `onIterationComplete` updates last iteration with final state, completedAt, exitCode
 3. **Unit tests:** `max_iterations` without sentinel → state = `"failed"`
 4. **Unit tests:** `sessionName` and `lastCli` persisted after iteration
-5. **Integration tests:** Kill process mid-iteration, verify status.json has `"in_progress"` state
-6. **Manual test:** `toby build --spec=foo` → kill -9 → verify status.json
+5. **Unit tests:** `stopReason` persisted on spec entry after loop completes
+6. **Unit tests:** `stopReason` reflects loop result (`sentinel`, `max_iterations`, `error`, `aborted`)
+7. **Integration tests:** Kill process mid-iteration, verify status.json has `"in_progress"` state
+8. **Manual test:** `toby build --spec=foo` → kill -9 → verify status.json

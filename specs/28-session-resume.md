@@ -2,25 +2,26 @@
 
 ## Overview
 
-Resume build sessions after crash or interruption. The key mechanism is **reusing the session name** persisted in status.json — since the session name is what the CLI uses to create/find worktrees and branches, passing the same name on resume ensures the CLI finds the existing worktree instead of creating a new one.
+Resume build sessions after crash or iteration exhaustion. The key mechanism is **reusing the session name** persisted in status.json — since the session name is what the CLI uses to create/find worktrees and branches, passing the same name on resume ensures the CLI finds the existing worktree instead of creating a new one.
 
 ## Users & Problem
 
-**Who has the problem:** Developers whose `toby build` sessions are interrupted (crash, context limit, kill).
+**Who has the problem:** Developers whose `toby build` sessions are interrupted (crash, context limit, kill) or exhausted (max iterations reached without completing).
 
-**Why it matters:** Without resume, a crash mid-task creates a new worktree and branch, orphaning the previous work. This is exactly what happened when Claude hit its context limit during session "warm-lynx-52" — re-running with opencode generated a new session name and worktree instead of continuing in the existing one.
+**Why it matters:** Without resume, a crash or exhaustion creates a new worktree and branch, orphaning the previous work. This is exactly what happened when Claude hit its context limit during session "warm-lynx-52" — re-running with opencode generated a new session name and worktree instead of continuing in the existing one.
 
 ## Scope
 
 ### Inclusions
 - Reuse `sessionName` from status.json instead of generating a new one
-- Same-CLI resume: pass `sessionId` for AI context continuity
-- Cross-CLI resume: same worktree (via session name), fresh AI session
+- Crash resume (same-CLI): pass `sessionId` for AI context continuity
+- Crash resume (cross-CLI): same worktree, fresh AI session
+- Exhaustion resume: same worktree, always fresh AI session (no sessionId — the previous session ended cleanly)
 - Update `lastCli` and `sessionName` in status.json after each build
 - Log resume info to user
 
 ### Exclusions
-- Manual resume flag not needed (auto-resume is based on crash detection)
+- Manual resume flag not needed (auto-resume is based on crash/exhaustion detection)
 - Mid-iteration checkpoint not in v1
 
 ## Business Rules
@@ -66,12 +67,16 @@ In `executeBuild()`:
 const specEntry = status.specs[specName];
 const lastIteration = specEntry?.iterations.at(-1);
 const isCrashResume = lastIteration?.state === "in_progress";
+const isExhaustedResume = specEntry?.stopReason === "max_iterations";
+const needsResume = isCrashResume || isExhaustedResume;
 
 // Reuse session name from status (critical for worktree reuse)
-const session = flags.session || status.sessionName || computeSpecSlug(found.name);
+const session = flags.session || (needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
 
-// Same-CLI: pass sessionId for AI context continuity
-// Cross-CLI or no crash: no sessionId, but same worktree via session name
+// Session ID reuse: ONLY for crash resume with same CLI
+// - Crash + same CLI: pass sessionId → AI continues mid-conversation
+// - Crash + cross CLI: no sessionId → fresh AI session, same worktree
+// - Exhaustion: no sessionId → previous session ended cleanly, start fresh
 const isSameCli = commandConfig.cli === status.lastCli;
 const sessionId = (isSameCli && isCrashResume)
   ? lastIteration?.sessionId
@@ -80,8 +85,14 @@ const sessionId = (isSameCli && isCrashResume)
 if (isCrashResume) {
   const resumeType = isSameCli ? "continuing session" : `switching from ${status.lastCli} to ${commandConfig.cli}`;
   callbacks.onOutput?.(`Resuming session "${session}" (${resumeType})`);
+} else if (isExhaustedResume) {
+  callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
 }
 ```
+
+### Why Exhaustion Resume Never Passes sessionId
+
+When `max_iterations` is reached, the CLI process exited cleanly (exit code 0). The AI session is properly closed — there is no interrupted conversation to continue. The value is in the **worktree** (the code changes), not the AI session. So exhaustion resume always starts a fresh AI session in the same worktree, regardless of whether the CLI is the same or different.
 
 ### Status Updates
 
@@ -106,11 +117,16 @@ For `--all` mode, the shared session name is already generated once:
 // CURRENT:
 const session = flags.session || generateSessionName();
 
-// FIXED:
-const session = flags.session || status.sessionName || generateSessionName();
+// FIXED (check if any spec needs resume):
+const anyNeedsResume = specsToRun.some(spec => {
+  const entry = status.specs[spec.name];
+  const last = entry?.iterations.at(-1);
+  return last?.state === "in_progress" || entry?.stopReason === "max_iterations";
+});
+const session = flags.session || (anyNeedsResume ? status.sessionName : null) || generateSessionName();
 ```
 
-Each spec in the batch checks for crash resume independently.
+Each spec in the batch checks for crash/exhaustion resume independently.
 
 ## Data Model
 
@@ -125,16 +141,19 @@ Each spec in the batch checks for crash resume independently.
 ### In executeBuild (`src/commands/build.tsx`)
 
 ```typescript
-const session = flags.session || status.sessionName || computeSpecSlug(found.name);
 const isCrashResume = lastIteration?.state === "in_progress";
+const isExhaustedResume = specEntry?.stopReason === "max_iterations";
+const needsResume = isCrashResume || isExhaustedResume;
+const session = flags.session || (needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
 const isSameCli = commandConfig.cli === status.lastCli;
+// Only pass sessionId for crash + same CLI (exhaustion = clean exit, no session to continue)
 const sessionId = (isSameCli && isCrashResume) ? lastIteration?.sessionId : undefined;
 
 await runSpecBuild({
   spec: found,
   session,
-  sessionId,                            // undefined for cross-cli or non-resume
-  continueSession: sessionId != null,   // true only for same-cli resume
+  sessionId,                            // undefined for exhaustion, cross-cli, or non-resume
+  continueSession: sessionId != null,   // true only for crash + same-cli resume
   // ...
 });
 ```
@@ -161,11 +180,13 @@ await runLoop({
 │ executeBuild()                                               │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ 1. Read status.json                                    │ │
-│  │ 2. Crash detection (spec 27): isCrashResume?           │ │
-│  │ 3. Session name: flags.session || status.sessionName   │ │
+│  │ 2. Resume detection (spec 27):                          │ │
+│  │    isCrashResume? isExhaustedResume? needsResume?      │ │
+│  │ 3. Session name: flags.session ||                      │ │
+│  │    (needsResume ? status.sessionName : null)           │ │
 │  │    || computeSpecSlug()                                │ │
-│  │ 4. Same CLI? → pass sessionId for AI continuity        │ │
-│  │    Diff CLI? → no sessionId, same worktree via session │ │
+│  │ 4. Crash + same CLI? → pass sessionId for AI continuity│ │
+│  │    Exhaustion or diff CLI? → no sessionId, fresh AI    │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                          │                                   │
 │                          ▼                                   │
@@ -179,17 +200,18 @@ await runLoop({
 │                          ▼                                   │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ runLoop()                                              │ │
-│  │ - Same CLI resume: sessionId passed → AI continues     │ │
-│  │ - Cross-CLI resume: no sessionId → fresh AI session    │ │
-│  │ - Either way: same worktree because session name match │ │
+│  │ - Crash + same CLI: sessionId passed → AI continues     │ │
+│  │ - Crash + cross CLI: no sessionId → fresh AI session   │ │
+│  │ - Exhaustion: no sessionId → fresh AI session          │ │
+│  │ - All resume types: same worktree via session name     │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                          │                                   │
 │                          ▼                                   │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ CLI (claude/opencode/codex)                            │ │
 │  │ - Receives session name → finds existing worktree      │ │
-│  │ - Same CLI: continues AI conversation via sessionId    │ │
-│  │ - Diff CLI: starts fresh but sees all prior file edits │ │
+│  │ - Crash + same CLI: continues AI conversation          │ │
+│  │ - Exhaustion or diff CLI: fresh AI, sees prior edits   │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -203,6 +225,9 @@ await runLoop({
 | Worktree was manually deleted | CLI will recreate it with the same name — work is lost but branch may still exist on remote |
 | Multiple specs crashed in --all mode | Each spec checks independently; shared session name still reused |
 | status.json has sessionName but spec status is "done" | Don't resume — spec is complete, session name is informational |
+| Exhaustion + same CLI | Same worktree, fresh AI session (no sessionId — session ended cleanly) |
+| Exhaustion + different CLI | Same worktree, fresh AI session (same behavior as same CLI) |
+| Crash after a previous exhaustion | Crash takes priority — `isCrashResume` is checked first; stale `stopReason` from prior run is irrelevant |
 
 ## Acceptance Criteria
 
@@ -210,18 +235,26 @@ await runLoop({
 |-------|------|------|
 | Build crashes with claude | Run `toby build` (same cli) | Same worktree reused via sessionName, AI session continued via sessionId |
 | Build crashes with claude | Run `toby build --cli=opencode` | Same worktree reused via sessionName, fresh AI session |
+| Build exhausts iterations | Run `toby build` (same cli) | Same worktree reused via sessionName, **fresh AI session** (no sessionId) |
+| Build exhausts iterations | Run `toby build --cli=opencode` | Same worktree reused via sessionName, fresh AI session |
 | Build crashes | Resume happens | "Resuming session: {name}" logged |
+| Build exhausts iterations | Resume happens | "Previous build exhausted iterations..." logged |
 | Build crashes | Resume with different CLI | Log shows "switching from claude to opencode" |
-| Build completes | `sessionName` and `lastCli` updated | Next run can detect same/different CLI |
+| Build completes (sentinel) | Next run | No resume, new session name generated |
 | No prior session | Fresh build | New session name generated as before |
 | User passes `--session=foo` | Build starts | `--session` flag overrides status.sessionName |
 
 ## Testing Strategy
 
-1. **Unit tests:** `session` reads from `status.sessionName` when available
+1. **Unit tests:** `session` reads from `status.sessionName` when `needsResume` is true
 2. **Unit tests:** `flags.session` overrides `status.sessionName`
-3. **Unit tests:** Same-CLI resume passes `sessionId`, cross-CLI does not
-4. **Unit tests:** `continueSession` is true only when `sessionId` is passed
-5. **Unit tests:** Resume log message includes session name and CLI switch info
-6. **Integration tests:** Write crash state + sessionName to status.json → build → verify same session name passed to CLI
-7. **Manual test:** `toby build --cli=claude` → kill -9 → `toby build --cli=opencode` → verify same worktree
+3. **Unit tests:** Crash + same-CLI resume passes `sessionId`
+4. **Unit tests:** Crash + cross-CLI resume does not pass `sessionId`
+5. **Unit tests:** Exhaustion resume never passes `sessionId` (regardless of CLI match)
+6. **Unit tests:** `continueSession` is true only when `sessionId` is passed
+7. **Unit tests:** Crash resume log message includes session name and CLI switch info
+8. **Unit tests:** Exhaustion resume log message mentions exhausted iterations
+9. **Integration tests:** Write crash state + sessionName to status.json → build → verify same session name passed to CLI
+10. **Integration tests:** Write `stopReason: "max_iterations"` + sessionName → build → verify same session name, no sessionId
+11. **Manual test:** `toby build --cli=claude` → kill -9 → `toby build --cli=opencode` → verify same worktree
+12. **Manual test:** `toby build` with low `--iterations=1` → re-run → verify same worktree, fresh AI session
