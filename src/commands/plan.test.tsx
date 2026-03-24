@@ -598,6 +598,68 @@ describe("executePlanAll", () => {
 	});
 });
 
+describe("executePlanAll transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executePlanAll with transcript:true creates one writer with spec headers", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/all-plan-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		await executePlanAll(
+			{ all: true, verbose: false, transcript: true },
+			{},
+			"/project",
+		);
+
+		// One writer opened for all specs
+		expect(mockOpenTranscript).toHaveBeenCalledTimes(1);
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "plan" }),
+		);
+
+		// Spec headers written for each spec
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledTimes(2);
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(1, 2, "01-auth");
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
+
+		// Close called once at the end
+		expect(mockWriter.close).toHaveBeenCalledTimes(1);
+	});
+
+	it("executePlan with external writer does not close it", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/test.md",
+		};
+
+		await executePlan(defaultFlags, {}, "/project", undefined, mockWriter);
+
+		// Writer used for events/headers
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		// But NOT closed (caller's responsibility)
+		expect(mockWriter.close).not.toHaveBeenCalled();
+		// And openTranscript NOT called (external writer provided)
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
+	});
+});
+
 describe("error handling edge cases", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

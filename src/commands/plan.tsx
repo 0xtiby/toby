@@ -44,6 +44,7 @@ export async function executePlan(
 	callbacks: PlanCallbacks = {},
 	cwd: string = process.cwd(),
 	abortSignal?: AbortSignal,
+	externalWriter?: TranscriptWriter | null,
 ): Promise<PlanResult> {
 	ensureLocalDir(cwd);
 
@@ -79,15 +80,17 @@ export async function executePlan(
 
 	const session = flags.session || computeSpecSlug(found.name);
 
-	const transcriptEnabled = flags.transcript ?? config.transcript;
-	const writer: TranscriptWriter | null = transcriptEnabled
-		? openTranscript({
-			command: "plan",
-			specName: found.name,
-			session: flags.session,
-			verbose: flags.verbose || config.verbose,
-		})
-		: null;
+	const ownsWriter = externalWriter === undefined;
+	const writer: TranscriptWriter | null = externalWriter !== undefined
+		? externalWriter
+		: (flags.transcript ?? config.transcript)
+			? openTranscript({
+				command: "plan",
+				specName: found.name,
+				session: flags.session,
+				verbose: flags.verbose || config.verbose,
+			})
+			: null;
 
 	try {
 		let iterationStartTime = new Date().toISOString();
@@ -156,7 +159,7 @@ export async function executePlan(
 
 		return { specName: found.name };
 	} finally {
-		writer?.close();
+		if (ownsWriter) writer?.close();
 	}
 }
 
@@ -186,6 +189,7 @@ export async function executePlanAll(
 ): Promise<PlanAllResult> {
 	ensureLocalDir(cwd);
 
+	const config = loadConfig(cwd);
 	let pending: Spec[];
 
 	if (specs) {
@@ -193,7 +197,6 @@ export async function executePlanAll(
 		pending = specs;
 	} else {
 		// Discovery mode — find and filter pending specs
-		const config = loadConfig(cwd);
 		const discovered = discoverSpecs(cwd, config);
 
 		if (discovered.length === 0) {
@@ -205,28 +208,42 @@ export async function executePlanAll(
 
 	const planned: PlanResult[] = [];
 	const session = flags.session || generateSessionName();
+	const transcriptEnabled = flags.transcript ?? config.transcript;
+	const writer: TranscriptWriter | null = transcriptEnabled
+		? openTranscript({
+			command: "plan",
+			session: flags.session,
+			verbose: flags.verbose || config.verbose,
+		})
+		: null;
 
-	for (let i = 0; i < pending.length; i++) {
-		const spec = pending[i];
-		callbacks.onSpecStart?.(spec.name, i, pending.length);
+	try {
+		for (let i = 0; i < pending.length; i++) {
+			const spec = pending[i];
+			writer?.writeSpecHeader(i + 1, pending.length, spec.name);
+			callbacks.onSpecStart?.(spec.name, i, pending.length);
 
-		const result = await executePlan(
-			{ ...flags, spec: spec.name, all: false, session },
-			{
-				onPhase: callbacks.onPhase,
-				onIteration: callbacks.onIteration,
-				onEvent: callbacks.onEvent,
-				onRefinement: callbacks.onRefinement,
-			},
-			cwd,
-			abortSignal,
-		);
+			const result = await executePlan(
+				{ ...flags, spec: spec.name, all: false, session },
+				{
+					onPhase: callbacks.onPhase,
+					onIteration: callbacks.onIteration,
+					onEvent: callbacks.onEvent,
+					onRefinement: callbacks.onRefinement,
+				},
+				cwd,
+				abortSignal,
+				writer,
+			);
 
-		planned.push(result);
-		callbacks.onSpecComplete?.(result);
+			planned.push(result);
+			callbacks.onSpecComplete?.(result);
+		}
+
+		return { planned };
+	} finally {
+		writer?.close();
 	}
-
-	return { planned };
 }
 
 export default function Plan(flags: PlanFlags) {
