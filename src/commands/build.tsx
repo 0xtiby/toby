@@ -149,6 +149,7 @@ export async function executeBuild(
 	callbacks: BuildCallbacks = {},
 	cwd: string = process.cwd(),
 	abortSignal?: AbortSignal,
+	externalWriter?: TranscriptWriter | null,
 ): Promise<BuildResult> {
 	ensureLocalDir(cwd);
 
@@ -181,15 +182,17 @@ export async function executeBuild(
 	const existingIterations = specEntry.iterations.length;
 	const session = flags.session || computeSpecSlug(found.name);
 
-	const transcriptEnabled = flags.transcript ?? config.transcript;
-	const writer: TranscriptWriter | null = transcriptEnabled
-		? openTranscript({
-			command: "build",
-			specName: found.name,
-			session: flags.session,
-			verbose: flags.verbose || config.verbose,
-		})
-		: null;
+	const ownsWriter = externalWriter === undefined;
+	const writer: TranscriptWriter | null = externalWriter !== undefined
+		? externalWriter
+		: (flags.transcript ?? config.transcript)
+			? openTranscript({
+				command: "build",
+				specName: found.name,
+				session: flags.session,
+				verbose: flags.verbose || config.verbose,
+			})
+			: null;
 
 	try {
 		const { result } = await runSpecBuild({
@@ -213,7 +216,7 @@ export async function executeBuild(
 
 		return result;
 	} finally {
-		writer?.close();
+		if (ownsWriter) writer?.close();
 	}
 }
 
@@ -267,42 +270,57 @@ export async function executeBuildAll(
 	const session = flags.session || generateSessionName();
 	const specNames = planned.map((s) => s.name);
 
-	for (let i = 0; i < planned.length; i++) {
-		const spec = planned[i];
-		callbacks.onSpecStart?.(spec.name, i, planned.length);
+	const transcriptEnabled = flags.transcript ?? config.transcript;
+	const writer: TranscriptWriter | null = transcriptEnabled
+		? openTranscript({
+			command: "build",
+			session: flags.session ?? session,
+			verbose: flags.verbose || config.verbose,
+		})
+		: null;
 
-		const commandConfig = resolveCommandConfig(config, "build", {
-			cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
-			iterations: flags.iterations,
-		});
+	try {
+		for (let i = 0; i < planned.length; i++) {
+			const spec = planned[i];
+			writer?.writeSpecHeader(i + 1, planned.length, spec.name);
+			callbacks.onSpecStart?.(spec.name, i, planned.length);
 
-		const { result } = await runSpecBuild({
-			spec,
-			promptName: "PROMPT_BUILD",
-			existingIterations: 0,
-			iterations: commandConfig.iterations,
-			cli: commandConfig.cli,
-			model: commandConfig.model,
-			templateVars: config.templateVars,
-			specsDir: config.specsDir,
-			session,
-			specIndex: i + 1,
-			specCount: planned.length,
-			specs: specNames,
-			cwd,
-			abortSignal,
-			callbacks: {
-				onPhase: callbacks.onPhase,
-				onIteration: callbacks.onIteration,
-				onEvent: callbacks.onEvent,
-			},
-		});
+			const commandConfig = resolveCommandConfig(config, "build", {
+				cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
+				iterations: flags.iterations,
+			});
 
-		built.push(result);
-		callbacks.onSpecComplete?.(result);
+			const { result } = await runSpecBuild({
+				spec,
+				promptName: "PROMPT_BUILD",
+				existingIterations: 0,
+				iterations: commandConfig.iterations,
+				cli: commandConfig.cli,
+				model: commandConfig.model,
+				templateVars: config.templateVars,
+				specsDir: config.specsDir,
+				session,
+				specIndex: i + 1,
+				specCount: planned.length,
+				specs: specNames,
+				cwd,
+				abortSignal,
+				callbacks: {
+					onPhase: callbacks.onPhase,
+					onIteration: callbacks.onIteration,
+					onEvent: callbacks.onEvent,
+				},
+				writer,
+			});
+
+			built.push(result);
+			callbacks.onSpecComplete?.(result);
+		}
+
+		return { built };
+	} finally {
+		writer?.close();
 	}
-
-	return { built };
 }
 
 export default function Build(flags: BuildFlags) {

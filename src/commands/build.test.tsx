@@ -994,4 +994,66 @@ describe("executeBuild transcript", () => {
 		await executeBuild({ ...defaultFlags, transcript: false }, {}, "/project");
 		expect(mockOpenTranscript).not.toHaveBeenCalled();
 	});
+
+	it("executeBuild with external writer does not close it", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/test.md",
+		};
+
+		await executeBuild(defaultFlags, {}, "/project", undefined, mockWriter);
+
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		expect(mockWriter.close).not.toHaveBeenCalled();
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
+	});
+});
+
+describe("executeBuildAll transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuildAll with transcript:true creates one writer with spec headers", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/bold-hawk-42-build-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockSortSpecs.mockImplementation((specs) => [...specs]);
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		});
+
+		await executeBuildAll(
+			{ all: true, verbose: false, transcript: true },
+			{},
+			"/project",
+		);
+
+		expect(mockOpenTranscript).toHaveBeenCalledTimes(1);
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "build" }),
+		);
+
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledTimes(2);
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(1, 2, "01-auth");
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
+
+		expect(mockWriter.close).toHaveBeenCalledTimes(1);
+	});
 });
