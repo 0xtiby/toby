@@ -163,6 +163,24 @@ describe("createProject", () => {
 		);
 		expect(config.plan.cli).toBe("codex");
 	});
+
+	it("writes verbose: false to config when verbose is false", () => {
+		createProject({ ...DEFAULT_SELECTIONS, verbose: false }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.verbose).toBe(false);
+	});
+
+	it("writes verbose: true to config when verbose is true", () => {
+		createProject({ ...DEFAULT_SELECTIONS, verbose: true }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.verbose).toBe(true);
+	});
 });
 
 describe("getInstalledClis", () => {
@@ -303,6 +321,19 @@ describe("hasAllInitFlags", () => {
 		expect(hasAllInitFlags(flags)).toBe(true);
 	});
 
+	it("returns true when all 5 flags plus verbose are present", () => {
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+			verbose: true,
+		};
+		expect(hasAllInitFlags(flags)).toBe(true);
+	});
+
 	it("returns false when any flag missing", () => {
 		const base: InitFlags = {
 			version: "0.1.0",
@@ -361,6 +392,39 @@ describe("NonInteractiveInit", () => {
 		const { lastFrame } = render(<Init {...flags} />);
 		await vi.waitFor(() => {
 			expect(lastFrame()).toContain("Unknown CLI: unknown-cli");
+		});
+	});
+
+	it("creates project with verbose: true when flag is set", async () => {
+		mockDetectAll.mockResolvedValue(makeDetectResult());
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+			verbose: true,
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("Project initialized");
+		});
+	});
+
+	it("defaults verbose to false when flag is omitted", async () => {
+		mockDetectAll.mockResolvedValue(makeDetectResult());
+		const flags: InitFlags = {
+			version: "0.1.0",
+			planCli: "claude",
+			planModel: "default",
+			buildCli: "claude",
+			buildModel: "default",
+			specsDir: "specs",
+		};
+		const { lastFrame } = render(<Init {...flags} />);
+		await vi.waitFor(() => {
+			expect(lastFrame()).toContain("Project initialized");
 		});
 	});
 
