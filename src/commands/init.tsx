@@ -42,6 +42,7 @@ type Phase =
 	| "build_cli"
 	| "build_model"
 	| "specs_dir"
+	| "verbose"
 	| "done";
 
 export interface InitSelections {
@@ -338,7 +339,13 @@ function InteractiveInit({ version }: { version: string }) {
 
 	function handleSpecsDirSubmit(value: string) {
 		const dir = value.trim() || DEFAULT_SPECS_DIR;
-		const final = { ...selections, specsDir: dir };
+		setSelections((s) => ({ ...s, specsDir: dir }));
+		setPhase("verbose");
+	}
+
+	function handleVerboseSelect(item: { value: string }) {
+		const verbose = item.value === "true";
+		const final = { ...selections, verbose };
 		setSelections(final);
 		try {
 			const res = createProject(final);
@@ -430,6 +437,20 @@ function InteractiveInit({ version }: { version: string }) {
 							onSubmit={handleSpecsDirSubmit}
 						/>
 					</Box>
+				</Box>
+			)}
+
+			{phase === "verbose" && (
+				<Box flexDirection="column">
+					<Text bold>Verbose output:</Text>
+					<Text dimColor>  Show full CLI output including tool use and system events</Text>
+					<SelectInput
+						items={[
+							{ label: "false", value: "false" },
+							{ label: "true", value: "true" },
+						]}
+						onSelect={handleVerboseSelect}
+					/>
 				</Box>
 			)}
 
