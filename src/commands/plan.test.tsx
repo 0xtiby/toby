@@ -36,12 +36,17 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
+vi.mock("../lib/transcript.js", () => ({
+	openTranscript: vi.fn(),
+}));
+
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
+import { openTranscript } from "../lib/transcript.js";
 import { executePlan, executePlanAll } from "./plan.js";
 import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
@@ -58,6 +63,7 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockOpenTranscript = vi.mocked(openTranscript);
 const defaultFlags: PlanFlags = {
 	spec: "auth",
 	all: false,
@@ -73,6 +79,7 @@ function setupDefaults() {
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
+		transcript: false,
 		templateVars: {},
 	});
 
@@ -271,6 +278,7 @@ describe("executePlan", () => {
 			specsDir: "specs",
 			excludeSpecs: ["README.md"],
 			verbose: false,
+			transcript: false,
 			templateVars: { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
 		});
 
@@ -351,6 +359,118 @@ describe("executePlan", () => {
 				expect.objectContaining({ ITERATION: "1", SPEC_NAME: "01-auth" }),
 				{ cwd: "/project" },
 			);
+		});
+	});
+
+	describe("transcript", () => {
+		it("executePlan with transcript:true creates transcript writer", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+
+			expect(mockOpenTranscript).toHaveBeenCalledWith(
+				expect.objectContaining({ command: "plan", specName: "01-auth" }),
+			);
+			expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+			expect(mockWriter.close).toHaveBeenCalled();
+		});
+
+		it("executePlan with transcript:false creates no transcript writer", async () => {
+			await executePlan({ ...defaultFlags, transcript: false }, {}, "/project");
+			expect(mockOpenTranscript).not.toHaveBeenCalled();
+		});
+
+		it("--transcript flag overrides config false", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			// config.transcript is false (default), but flag is true
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+			expect(mockOpenTranscript).toHaveBeenCalled();
+		});
+
+		it("--no-transcript flag overrides config true", async () => {
+			mockLoadConfig.mockReturnValue({
+				plan: { cli: "claude", model: "default", iterations: 2 },
+				build: { cli: "claude", model: "default", iterations: 10 },
+				specsDir: "specs",
+				excludeSpecs: ["README.md"],
+				verbose: false,
+				transcript: true,
+				templateVars: {},
+			});
+
+			await executePlan({ ...defaultFlags, transcript: false }, {}, "/project");
+			expect(mockOpenTranscript).not.toHaveBeenCalled();
+		});
+
+		it("transcript file contains iteration headers and text events", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+				options.onEvent?.({ type: "text", timestamp: 1, content: "hello" } as never);
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			});
+
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+
+			expect(mockWriter.writeEvent).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "text", content: "hello" }),
+			);
+			expect(mockWriter.writeIterationHeader).toHaveBeenCalledWith(
+				expect.objectContaining({ iteration: 1, total: 2, cli: "claude" }),
+			);
+		});
+
+		it("abort mid-session still calls close() via finally", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "aborted" as const };
+			});
+
+			await expect(
+				executePlan({ ...defaultFlags, transcript: true }, {}, "/project"),
+			).rejects.toThrow(AbortError);
+
+			expect(mockWriter.close).toHaveBeenCalled();
 		});
 	});
 

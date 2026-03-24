@@ -16,6 +16,8 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
 import { AbortError } from "../lib/errors.js";
+import { openTranscript } from "../lib/transcript.js";
+import type { TranscriptWriter } from "../lib/transcript.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
 import MultiSpecSelector from "../components/MultiSpecSelector.js";
@@ -77,64 +79,85 @@ export async function executePlan(
 
 	const session = flags.session || computeSpecSlug(found.name);
 
-	let iterationStartTime = new Date().toISOString();
-	callbacks.onPhase?.("planning");
-	callbacks.onIteration?.(1, commandConfig.iterations);
+	const transcriptEnabled = flags.transcript ?? config.transcript;
+	const writer: TranscriptWriter | null = transcriptEnabled
+		? openTranscript({
+			command: "plan",
+			specName: found.name,
+			session: flags.session,
+			verbose: flags.verbose || config.verbose,
+		})
+		: null;
 
-	const loopResult = await runLoop({
-		maxIterations: commandConfig.iterations,
-		getPrompt: (iteration) => {
-			const cliVars = computeCliVars({
-				specName: found.name,
-				iteration: iteration + existingIterations,
-				specIndex: 1,
-				specCount: 1,
-				session,
-				specs: [found.name],
-				specsDir: config.specsDir,
-			});
-			const vars = resolveTemplateVars(cliVars, config.templateVars);
-			return loadPrompt("PROMPT_PLAN", vars, { cwd });
-		},
-		cli: commandConfig.cli,
-		model: commandConfig.model,
-		cwd,
-		continueSession: true,
-		abortSignal,
-		onEvent: (event) => {
-			callbacks.onEvent?.(event);
-		},
-		onIterationComplete: (iterResult: IterationResult) => {
-			const completedAt = new Date().toISOString();
-			const iteration: Iteration = {
-				type: "plan",
-				iteration: iterResult.iteration,
-				sessionId: iterResult.sessionId,
-				cli: commandConfig.cli,
-				model: iterResult.model ?? commandConfig.model,
-				startedAt: iterationStartTime,
-				completedAt,
-				exitCode: iterResult.exitCode,
-				taskCompleted: null,
-				tokensUsed: iterResult.tokensUsed,
-			};
-			iterationStartTime = new Date().toISOString();
-			status = addIteration(status, found.name, iteration);
+	try {
+		let iterationStartTime = new Date().toISOString();
+		callbacks.onPhase?.("planning");
+		callbacks.onIteration?.(1, commandConfig.iterations);
+
+		const loopResult = await runLoop({
+			maxIterations: commandConfig.iterations,
+			getPrompt: (iteration) => {
+				const cliVars = computeCliVars({
+					specName: found.name,
+					iteration: iteration + existingIterations,
+					specIndex: 1,
+					specCount: 1,
+					session,
+					specs: [found.name],
+					specsDir: config.specsDir,
+				});
+				const vars = resolveTemplateVars(cliVars, config.templateVars);
+				return loadPrompt("PROMPT_PLAN", vars, { cwd });
+			},
+			cli: commandConfig.cli,
+			model: commandConfig.model,
+			cwd,
+			continueSession: true,
+			abortSignal,
+			onEvent: (event) => {
+				writer?.writeEvent(event);
+				callbacks.onEvent?.(event);
+			},
+			onIterationComplete: (iterResult: IterationResult) => {
+				writer?.writeIterationHeader({
+					iteration: iterResult.iteration,
+					total: commandConfig.iterations,
+					cli: commandConfig.cli,
+					model: iterResult.model ?? commandConfig.model,
+				});
+				const completedAt = new Date().toISOString();
+				const iteration: Iteration = {
+					type: "plan",
+					iteration: iterResult.iteration,
+					sessionId: iterResult.sessionId,
+					cli: commandConfig.cli,
+					model: iterResult.model ?? commandConfig.model,
+					startedAt: iterationStartTime,
+					completedAt,
+					exitCode: iterResult.exitCode,
+					taskCompleted: null,
+					tokensUsed: iterResult.tokensUsed,
+				};
+				iterationStartTime = new Date().toISOString();
+				status = addIteration(status, found.name, iteration);
+				writeStatus(status, cwd);
+				callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+			},
+		});
+
+		if (loopResult.stopReason === "aborted") {
+			status = updateSpecStatus(status, found.name, "planned");
 			writeStatus(status, cwd);
-			callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
-		},
-	});
+			throw new AbortError(found.name, loopResult.iterations.length);
+		}
 
-	if (loopResult.stopReason === "aborted") {
 		status = updateSpecStatus(status, found.name, "planned");
 		writeStatus(status, cwd);
-		throw new AbortError(found.name, loopResult.iterations.length);
+
+		return { specName: found.name };
+	} finally {
+		writer?.close();
 	}
-
-	status = updateSpecStatus(status, found.name, "planned");
-	writeStatus(status, cwd);
-
-	return { specName: found.name };
 }
 
 export interface PlanAllCallbacks {
