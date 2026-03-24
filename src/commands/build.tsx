@@ -16,6 +16,8 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
 import { AbortError } from "../lib/errors.js";
+import { openTranscript } from "../lib/transcript.js";
+import type { TranscriptWriter } from "../lib/transcript.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
 import MultiSpecSelector from "../components/MultiSpecSelector.js";
@@ -53,10 +55,11 @@ interface RunSpecBuildOptions {
 	cwd: string;
 	abortSignal?: AbortSignal;
 	callbacks: BuildCallbacks;
+	writer?: TranscriptWriter | null;
 }
 
 async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
-	const { spec, promptName, existingIterations, iterations, cli, model, templateVars, specsDir, session, specIndex, specCount, specs, cwd, abortSignal, callbacks } = options;
+	const { spec, promptName, existingIterations, iterations, cli, model, templateVars, specsDir, session, specIndex, specCount, specs, cwd, abortSignal, callbacks, writer } = options;
 	let status = readStatus(cwd);
 	let iterationStartTime = new Date().toISOString();
 
@@ -84,9 +87,16 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 		continueSession: true,
 		abortSignal,
 		onEvent: (event) => {
+			writer?.writeEvent(event);
 			callbacks.onEvent?.(event);
 		},
 		onIterationComplete: (iterResult: IterationResult) => {
+			writer?.writeIterationHeader({
+				iteration: iterResult.iteration,
+				total: iterations,
+				cli,
+				model: iterResult.model ?? model ?? "default",
+			});
 			const completedAt = new Date().toISOString();
 			const iteration: Iteration = {
 				type: "build",
@@ -171,25 +181,40 @@ export async function executeBuild(
 	const existingIterations = specEntry.iterations.length;
 	const session = flags.session || computeSpecSlug(found.name);
 
-	const { result } = await runSpecBuild({
-		spec: found,
-		promptName: "PROMPT_BUILD",
-		existingIterations,
-		iterations: commandConfig.iterations,
-		cli: commandConfig.cli,
-		model: commandConfig.model,
-		templateVars: config.templateVars,
-		specsDir: config.specsDir,
-		session,
-		specIndex: 1,
-		specCount: 1,
-		specs: [found.name],
-		cwd,
-		abortSignal,
-		callbacks,
-	});
+	const transcriptEnabled = flags.transcript ?? config.transcript;
+	const writer: TranscriptWriter | null = transcriptEnabled
+		? openTranscript({
+			command: "build",
+			specName: found.name,
+			session: flags.session,
+			verbose: flags.verbose || config.verbose,
+		})
+		: null;
 
-	return result;
+	try {
+		const { result } = await runSpecBuild({
+			spec: found,
+			promptName: "PROMPT_BUILD",
+			existingIterations,
+			iterations: commandConfig.iterations,
+			cli: commandConfig.cli,
+			model: commandConfig.model,
+			templateVars: config.templateVars,
+			specsDir: config.specsDir,
+			session,
+			specIndex: 1,
+			specCount: 1,
+			specs: [found.name],
+			cwd,
+			abortSignal,
+			callbacks,
+			writer,
+		});
+
+		return result;
+	} finally {
+		writer?.close();
+	}
 }
 
 export interface BuildAllCallbacks {

@@ -48,12 +48,17 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
+vi.mock("../lib/transcript.js", () => ({
+	openTranscript: vi.fn(),
+}));
+
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
+import { openTranscript } from "../lib/transcript.js";
 import { executeBuild, executeBuildAll } from "./build.js";
 import { AbortError } from "../lib/errors.js";
 import Build from "./build.js";
@@ -76,6 +81,7 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockOpenTranscript = vi.mocked(openTranscript);
 const defaultFlags: BuildFlags = {
 	spec: "auth",
 	all: false,
@@ -91,6 +97,7 @@ function setupDefaults() {
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
+		transcript: false,
 		templateVars: {},
 	});
 
@@ -955,5 +962,36 @@ describe("executeBuildAll", () => {
 
 		expect(result.built).toHaveLength(1);
 		expect(result.built[0].specName).toBe("01-auth");
+	});
+});
+
+describe("executeBuild transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuild with transcript:true creates transcript file with build in filename", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/auth-build-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		await executeBuild({ ...defaultFlags, transcript: true }, {}, "/project");
+
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "build", specName: "01-auth" }),
+		);
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		expect(mockWriter.close).toHaveBeenCalled();
+	});
+
+	it("executeBuild with transcript:false creates no transcript file", async () => {
+		await executeBuild({ ...defaultFlags, transcript: false }, {}, "/project");
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
 	});
 });
