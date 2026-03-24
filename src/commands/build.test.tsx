@@ -1250,6 +1250,80 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
+	it("exhaustion + cross CLI → session reused, sessionId undefined", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
+
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
+		const getPrompt = opts.getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("fresh build → session from computeSpecSlug, sessionId undefined", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
+		const getPrompt = opts.getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "auth" }),
+		);
+	});
+
+	it("status.sessionName is null → falls through to computeSpecSlug", async () => {
+		mockReadStatus.mockReturnValue({
+			sessionName: null,
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "auth" }),
+		);
+	});
+
 	it("writes sessionName and lastCli to status on iteration start", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
