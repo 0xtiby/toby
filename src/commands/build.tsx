@@ -218,13 +218,24 @@ export async function executeBuild(
 	}
 
 	const existingIterations = specEntry.iterations.length;
-	const session = flags.session || computeSpecSlug(found.name);
 
 	// Resume detection: check for crash or exhaustion from previous run
 	const lastIteration = specEntry.iterations.at(-1);
 	const isCrashResume = specEntry.status !== "done" && lastIteration?.state === "in_progress";
 	const isExhaustedResume = specEntry.status !== "done" && specEntry.stopReason === "max_iterations";
 	const needsResume = (isCrashResume || isExhaustedResume) ?? false;
+
+	// Session name reuse: reuse status.sessionName on resume so CLI finds existing worktree
+	const session = flags.session || (needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
+
+	// Session ID reuse: ONLY for crash resume with same CLI
+	// - Crash + same CLI: pass sessionId → AI continues mid-conversation
+	// - Crash + cross CLI: no sessionId → fresh AI session, same worktree
+	// - Exhaustion: no sessionId → previous session ended cleanly, start fresh
+	const isSameCli = commandConfig.cli === status.lastCli;
+	const sessionId = (isSameCli && isCrashResume)
+		? lastIteration?.sessionId
+		: undefined;
 
 	if (isCrashResume) {
 		callbacks.onOutput?.(

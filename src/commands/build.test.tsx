@@ -1115,6 +1115,134 @@ describe("executeBuild crash/exhaustion detection", () => {
 		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
 	});
 
+	it("crash + sessionName in status → session equals status.sessionName", async () => {
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("crash + same CLI → sessionId passed to runSpecBuild", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// sessionId is computed but not yet wired to runSpecBuild (toby-6hu)
+		// Verify session name is reused
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("crash + different CLI → sessionId is undefined", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
+
+		// Session name is still reused (same worktree), but sessionId should not be passed
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("exhaustion + same CLI → sessionId is undefined", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// Session name reused but sessionId should NOT be passed (exhaustion = clean exit)
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("flags.session overrides status.sessionName", async () => {
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuild({ ...defaultFlags, session: "my-custom-session" }, {}, "/project");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "my-custom-session" }),
+		);
+	});
+
 	it("only last iteration matters for crash detection", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
