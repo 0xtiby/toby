@@ -39,3 +39,6 @@
 | [Fix Skipped Display](./23-fix-skipped-display.md) | `src/commands/plan.tsx`, `src/commands/build.tsx` | Remove misleading "Skipped" list from --all mode summary output |
 | [Session Transcript](./24-session-transcript.md) | `src/lib/transcript.ts`, `src/types.ts`, `src/commands/plan.tsx`, `src/commands/build.tsx` | Stream session output to timestamped transcript files in .toby/transcripts/ |
 | [Init Verbose Option](./25-init-verbose-option.md) | `src/commands/init.tsx`, `src/cli.tsx` | Add verbose preference to init wizard and non-interactive flags |
+| [Session State Persistence](./26-session-state-persistence.md) | `src/lib/status.ts`, `src/types.ts` | Save sessionName and sessionId to status.json on iteration complete or error/abort |
+| [Crash Detection](./27-crash-detection.md) | `src/lib/loop.ts`, `src/types.ts` | Detect when build crashed vs stopped intentionally via iteration state tracking |
+| [Session Resume](./28-session-resume.md) | `src/commands/build.tsx`, `src/lib/loop.ts` | Auto-resume from last session; cross-CLI resume preserves worktree context |
