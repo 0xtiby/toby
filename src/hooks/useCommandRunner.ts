@@ -11,6 +11,7 @@ export interface CommandFlags {
 	all: boolean;
 	iterations?: number;
 	verbose: boolean;
+	transcript?: boolean;
 	cli?: string;
 	session?: string;
 }

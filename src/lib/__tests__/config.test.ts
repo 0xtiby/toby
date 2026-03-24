@@ -158,6 +158,19 @@ describe("config", () => {
 			const config = loadConfig("/tmp/proj");
 			expect(config.plan.cli).toBe("claude");
 			expect(config.verbose).toBe(false);
+			expect(config.transcript).toBe(false);
+		});
+
+		it("config with transcript: true parses correctly", () => {
+			mockConfigFile(globalConfigPath, { transcript: true });
+			const config = loadConfig("/tmp/proj");
+			expect(config.transcript).toBe(true);
+		});
+
+		it("config without transcript defaults to false", () => {
+			mockConfigFile(globalConfigPath, { verbose: true });
+			const config = loadConfig("/tmp/proj");
+			expect(config.transcript).toBe(false);
 		});
 
 		it("corrupted JSON returns defaults", () => {

@@ -61,6 +61,7 @@ Plan Options
   --all              Plan all pending specs
   --iterations=<n>   Override iteration count
   --verbose          Show full CLI output
+  --transcript       Save session transcript to file
   --cli=<name>       Override AI CLI (claude, codex, opencode)
   --session=<name>   Name the session for branch/PR naming
 
@@ -70,6 +71,7 @@ Build Options
   --all              Build all planned specs in order
   --iterations=<n>   Override max iteration count
   --verbose          Show full CLI output
+  --transcript       Save session transcript to file
   --cli=<name>       Override AI CLI (claude, codex, opencode)
   --session=<name>   Name the session for branch/PR naming
 
@@ -97,6 +99,7 @@ Config Subcommands
 			all: { type: "boolean", default: false },
 			iterations: { type: "number" },
 			verbose: { type: "boolean", default: false },
+			transcript: { type: "boolean" },
 			cli: { type: "string" },
 			planCli: { type: "string" },
 			planModel: { type: "string" },
