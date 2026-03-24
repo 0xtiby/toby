@@ -904,6 +904,82 @@ describe("integration: full build flow with mocked spawner", () => {
 	});
 });
 
+describe("executeBuild crash/exhaustion detection", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("detects crash when last iteration state is in_progress", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("Previous build interrupted"),
+		);
+		expect(callbacks.onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("iteration 1 was in progress"),
+		);
+		expect(result.needsResume).toBe(true);
+	});
+
+	it("detects exhaustion when stopReason is max_iterations", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("exhausted iterations"),
+		);
+		expect(result.needsResume).toBe(true);
+	});
+
+	it("no resume when stopReason is sentinel", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "sentinel",
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).not.toHaveBeenCalled();
+		expect(result.needsResume).toBe(false);
+	});
+});
+
 describe("executeBuildAll", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

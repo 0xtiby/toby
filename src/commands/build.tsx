@@ -29,6 +29,7 @@ export interface BuildCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
+	onOutput?: (message: string) => void;
 }
 
 export interface BuildResult {
@@ -36,6 +37,7 @@ export interface BuildResult {
 	totalIterations: number;
 	totalTokens: number;
 	specDone: boolean;
+	needsResume?: boolean;
 	error?: string;
 }
 
@@ -218,6 +220,22 @@ export async function executeBuild(
 	const existingIterations = specEntry.iterations.length;
 	const session = flags.session || computeSpecSlug(found.name);
 
+	// Resume detection: check for crash or exhaustion from previous run
+	const lastIteration = specEntry.iterations.at(-1);
+	const isCrashResume = specEntry.status !== "done" && lastIteration?.state === "in_progress";
+	const isExhaustedResume = specEntry.status !== "done" && specEntry.stopReason === "max_iterations";
+	const needsResume = (isCrashResume || isExhaustedResume) ?? false;
+
+	if (isCrashResume) {
+		callbacks.onOutput?.(
+			`⚠ Previous build interrupted (iteration ${lastIteration.iteration} was in progress). Resuming...`,
+		);
+	} else if (isExhaustedResume) {
+		callbacks.onOutput?.(
+			`⚠ Previous build exhausted iterations without completing. Resuming in same worktree...`,
+		);
+	}
+
 	return withTranscript(
 		{ flags, config, command: "build", specName: found.name },
 		externalWriter,
@@ -241,7 +259,7 @@ export async function executeBuild(
 				writer,
 			});
 
-			return result;
+			return { ...result, needsResume };
 		},
 	);
 }
