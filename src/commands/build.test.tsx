@@ -958,6 +958,57 @@ describe("executeBuild crash/exhaustion detection", () => {
 		expect(result.needsResume).toBe(true);
 	});
 
+	it("crash message includes correct iteration number", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:00:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: "2026-03-20T00:01:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 3, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:02:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).toHaveBeenCalledWith(
+			"⚠ Previous build interrupted (iteration 3 was in progress). Resuming...",
+		);
+		expect(result.needsResume).toBe(true);
+	});
+
+	it("crash takes priority over exhaustion when both conditions are true", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+					stopReason: "max_iterations",
+				},
+			},
+		});
+
+		const callbacks = { onOutput: vi.fn() };
+		const result = await executeBuild(defaultFlags, callbacks, "/project");
+
+		expect(callbacks.onOutput).toHaveBeenCalledTimes(1);
+		expect(callbacks.onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("Previous build interrupted"),
+		);
+		expect(callbacks.onOutput).not.toHaveBeenCalledWith(
+			expect.stringContaining("exhausted iterations"),
+		);
+		expect(result.needsResume).toBe(true);
+	});
+
 	it("no resume when stopReason is sentinel", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
