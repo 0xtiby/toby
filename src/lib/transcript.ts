@@ -19,14 +19,6 @@ export interface IterationMeta {
 	model: string;
 }
 
-export interface TranscriptWriter {
-	writeEvent(event: CliEvent): void;
-	writeIterationHeader(meta: IterationMeta): void;
-	writeSpecHeader(specIndex: number, totalSpecs: number, specName: string): void;
-	close(): void;
-	readonly filePath: string;
-}
-
 function formatTimestamp(): string {
 	const now = new Date();
 	const pad = (n: number, len = 2) => String(n).padStart(len, "0");
@@ -67,6 +59,43 @@ function formatEventPlaintext(event: CliEvent, verbose: boolean): string | null 
 	}
 }
 
+export class TranscriptWriter {
+	readonly filePath: string;
+	private stream: fs.WriteStream;
+	private verbose: boolean;
+
+	constructor(filePath: string, stream: fs.WriteStream, verbose: boolean) {
+		this.filePath = filePath;
+		this.stream = stream;
+		this.verbose = verbose;
+	}
+
+	writeEvent(event: CliEvent): void {
+		const line = formatEventPlaintext(event, this.verbose);
+		if (line === null) return;
+		this.stream.write(line + "\n");
+	}
+
+	writeIterationHeader(meta: IterationMeta): void {
+		const ts = new Date().toISOString();
+		const header = `\n## Iteration ${meta.iteration}/${meta.total}\n\ncli: ${meta.cli} | model: ${meta.model} | started: ${ts}\n\n`;
+		this.stream.write(header);
+	}
+
+	writeSpecHeader(specIndex: number, totalSpecs: number, specName: string): void {
+		const header = `\n## Spec ${specIndex}/${totalSpecs}: ${specName}\n\n`;
+		this.stream.write(header);
+	}
+
+	close(): void {
+		try {
+			this.stream.end();
+		} catch (err) {
+			console.error(`Warning: transcript close error: ${(err as Error).message}`);
+		}
+	}
+}
+
 export function openTranscript(options: TranscriptOptions): TranscriptWriter {
 	const { command, specName, session, verbose } = options;
 	const prefix = session ?? specName ?? "all";
@@ -103,44 +132,36 @@ export function openTranscript(options: TranscriptOptions): TranscriptWriter {
 		console.error(`Warning: transcript write error: ${err.message}`);
 	});
 
-	return {
-		filePath,
+	return new TranscriptWriter(filePath, stream, verbose);
+}
 
-		writeEvent(event: CliEvent): void {
-			const line = formatEventPlaintext(event, verbose);
-			if (line === null) return;
-			try {
-				stream.write(line + "\n");
-			} catch (err) {
-				console.error(`Warning: transcript write error: ${(err as Error).message}`);
-			}
-		},
+export interface WithTranscriptOptions {
+	flags: { transcript?: boolean; session?: string; verbose?: boolean };
+	config: { transcript?: boolean; verbose: boolean };
+	command: string;
+	specName?: string;
+}
 
-		writeIterationHeader(meta: IterationMeta): void {
-			const ts = new Date().toISOString();
-			const header = `\n## Iteration ${meta.iteration}/${meta.total}\n\ncli: ${meta.cli} | model: ${meta.model} | started: ${ts}\n\n`;
-			try {
-				stream.write(header);
-			} catch (err) {
-				console.error(`Warning: transcript write error: ${(err as Error).message}`);
-			}
-		},
+export async function withTranscript<T>(
+	options: WithTranscriptOptions,
+	externalWriter: TranscriptWriter | null | undefined,
+	fn: (writer: TranscriptWriter | null) => Promise<T>,
+): Promise<T> {
+	const owns = externalWriter === undefined;
+	const writer = externalWriter !== undefined
+		? externalWriter
+		: (options.flags.transcript ?? options.config.transcript)
+			? openTranscript({
+				command: options.command,
+				specName: options.specName,
+				session: options.flags.session,
+				verbose: options.flags.verbose || options.config.verbose,
+			})
+			: null;
 
-		writeSpecHeader(specIndex: number, totalSpecs: number, specName: string): void {
-			const header = `\n## Spec ${specIndex}/${totalSpecs}: ${specName}\n\n`;
-			try {
-				stream.write(header);
-			} catch (err) {
-				console.error(`Warning: transcript write error: ${(err as Error).message}`);
-			}
-		},
-
-		close(): void {
-			try {
-				stream.end();
-			} catch (err) {
-				console.error(`Warning: transcript close error: ${(err as Error).message}`);
-			}
-		},
-	};
+	try {
+		return await fn(writer);
+	} finally {
+		if (owns) writer?.close();
+	}
 }

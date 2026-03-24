@@ -345,17 +345,19 @@ function InteractiveInit({ version }: { version: string }) {
 
 	function handleVerboseSelect(item: { value: string }) {
 		const verbose = item.value === "true";
-		const final = { ...selections, verbose };
-		setSelections(final);
-		try {
-			const res = createProject(final);
-			setResult(res);
-			setPhase("done");
-		} catch (err) {
-			setError((err as Error).message);
-			setPhase("done");
-		}
-		exit();
+		setSelections((s) => {
+			const final = { ...s, verbose };
+			try {
+				const res = createProject(final);
+				setResult(res);
+				setPhase("done");
+			} catch (err) {
+				setError((err as Error).message);
+				setPhase("done");
+			}
+			exit();
+			return final;
+		});
 	}
 
 	if (phase === "detecting") {

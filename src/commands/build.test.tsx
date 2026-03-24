@@ -48,9 +48,30 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
-vi.mock("../lib/transcript.js", () => ({
-	openTranscript: vi.fn(),
-}));
+vi.mock("../lib/transcript.js", () => {
+	const openTranscript = vi.fn();
+	return {
+		openTranscript,
+		withTranscript: async (options: Record<string, unknown>, externalWriter: unknown, fn: (w: unknown) => Promise<unknown>) => {
+			const owns = externalWriter === undefined;
+			const writer = externalWriter !== undefined
+				? externalWriter
+				: ((options.flags as Record<string, unknown>).transcript ?? (options.config as Record<string, unknown>).transcript)
+					? openTranscript({
+						command: options.command,
+						specName: options.specName,
+						session: (options.flags as Record<string, unknown>).session,
+						verbose: (options.flags as Record<string, unknown>).verbose || (options.config as Record<string, unknown>).verbose,
+					})
+					: null;
+			try {
+				return await fn(writer);
+			} finally {
+				if (owns) (writer as { close?: () => void })?.close?.();
+			}
+		},
+	};
+});
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";

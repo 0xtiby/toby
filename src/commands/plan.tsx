@@ -16,7 +16,7 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration } from "../types.js";
 import { AbortError } from "../lib/errors.js";
-import { openTranscript } from "../lib/transcript.js";
+import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
@@ -80,87 +80,77 @@ export async function executePlan(
 
 	const session = flags.session || computeSpecSlug(found.name);
 
-	const ownsWriter = externalWriter === undefined;
-	const writer: TranscriptWriter | null = externalWriter !== undefined
-		? externalWriter
-		: (flags.transcript ?? config.transcript)
-			? openTranscript({
-				command: "plan",
-				specName: found.name,
-				session: flags.session,
-				verbose: flags.verbose || config.verbose,
-			})
-			: null;
+	return withTranscript(
+		{ flags, config, command: "plan", specName: found.name },
+		externalWriter,
+		async (writer) => {
+			let iterationStartTime = new Date().toISOString();
+			callbacks.onPhase?.("planning");
+			callbacks.onIteration?.(1, commandConfig.iterations);
 
-	try {
-		let iterationStartTime = new Date().toISOString();
-		callbacks.onPhase?.("planning");
-		callbacks.onIteration?.(1, commandConfig.iterations);
+			const loopResult = await runLoop({
+				maxIterations: commandConfig.iterations,
+				getPrompt: (iteration) => {
+					const cliVars = computeCliVars({
+						specName: found.name,
+						iteration: iteration + existingIterations,
+						specIndex: 1,
+						specCount: 1,
+						session,
+						specs: [found.name],
+						specsDir: config.specsDir,
+					});
+					const vars = resolveTemplateVars(cliVars, config.templateVars);
+					return loadPrompt("PROMPT_PLAN", vars, { cwd });
+				},
+				cli: commandConfig.cli,
+				model: commandConfig.model,
+				cwd,
+				continueSession: true,
+				abortSignal,
+				onEvent: (event) => {
+					writer?.writeEvent(event);
+					callbacks.onEvent?.(event);
+				},
+				onIterationComplete: (iterResult: IterationResult) => {
+					writer?.writeIterationHeader({
+						iteration: iterResult.iteration,
+						total: commandConfig.iterations,
+						cli: commandConfig.cli,
+						model: iterResult.model ?? commandConfig.model,
+					});
+					const completedAt = new Date().toISOString();
+					const iteration: Iteration = {
+						type: "plan",
+						iteration: iterResult.iteration,
+						sessionId: iterResult.sessionId,
+						cli: commandConfig.cli,
+						model: iterResult.model ?? commandConfig.model,
+						startedAt: iterationStartTime,
+						completedAt,
+						exitCode: iterResult.exitCode,
+						taskCompleted: null,
+						tokensUsed: iterResult.tokensUsed,
+					};
+					iterationStartTime = new Date().toISOString();
+					status = addIteration(status, found.name, iteration);
+					writeStatus(status, cwd);
+					callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
+				},
+			});
 
-		const loopResult = await runLoop({
-			maxIterations: commandConfig.iterations,
-			getPrompt: (iteration) => {
-				const cliVars = computeCliVars({
-					specName: found.name,
-					iteration: iteration + existingIterations,
-					specIndex: 1,
-					specCount: 1,
-					session,
-					specs: [found.name],
-					specsDir: config.specsDir,
-				});
-				const vars = resolveTemplateVars(cliVars, config.templateVars);
-				return loadPrompt("PROMPT_PLAN", vars, { cwd });
-			},
-			cli: commandConfig.cli,
-			model: commandConfig.model,
-			cwd,
-			continueSession: true,
-			abortSignal,
-			onEvent: (event) => {
-				writer?.writeEvent(event);
-				callbacks.onEvent?.(event);
-			},
-			onIterationComplete: (iterResult: IterationResult) => {
-				writer?.writeIterationHeader({
-					iteration: iterResult.iteration,
-					total: commandConfig.iterations,
-					cli: commandConfig.cli,
-					model: iterResult.model ?? commandConfig.model,
-				});
-				const completedAt = new Date().toISOString();
-				const iteration: Iteration = {
-					type: "plan",
-					iteration: iterResult.iteration,
-					sessionId: iterResult.sessionId,
-					cli: commandConfig.cli,
-					model: iterResult.model ?? commandConfig.model,
-					startedAt: iterationStartTime,
-					completedAt,
-					exitCode: iterResult.exitCode,
-					taskCompleted: null,
-					tokensUsed: iterResult.tokensUsed,
-				};
-				iterationStartTime = new Date().toISOString();
-				status = addIteration(status, found.name, iteration);
+			if (loopResult.stopReason === "aborted") {
+				status = updateSpecStatus(status, found.name, "planned");
 				writeStatus(status, cwd);
-				callbacks.onIteration?.(iterResult.iteration + 1, commandConfig.iterations);
-			},
-		});
+				throw new AbortError(found.name, loopResult.iterations.length);
+			}
 
-		if (loopResult.stopReason === "aborted") {
 			status = updateSpecStatus(status, found.name, "planned");
 			writeStatus(status, cwd);
-			throw new AbortError(found.name, loopResult.iterations.length);
-		}
 
-		status = updateSpecStatus(status, found.name, "planned");
-		writeStatus(status, cwd);
-
-		return { specName: found.name };
-	} finally {
-		if (ownsWriter) writer?.close();
-	}
+			return { specName: found.name };
+		},
+	);
 }
 
 export interface PlanAllCallbacks {
@@ -208,42 +198,36 @@ export async function executePlanAll(
 
 	const planned: PlanResult[] = [];
 	const session = flags.session || generateSessionName();
-	const transcriptEnabled = flags.transcript ?? config.transcript;
-	const writer: TranscriptWriter | null = transcriptEnabled
-		? openTranscript({
-			command: "plan",
-			session: flags.session,
-			verbose: flags.verbose || config.verbose,
-		})
-		: null;
 
-	try {
-		for (let i = 0; i < pending.length; i++) {
-			const spec = pending[i];
-			writer?.writeSpecHeader(i + 1, pending.length, spec.name);
-			callbacks.onSpecStart?.(spec.name, i, pending.length);
+	return withTranscript(
+		{ flags, config, command: "plan" },
+		undefined,
+		async (writer) => {
+			for (let i = 0; i < pending.length; i++) {
+				const spec = pending[i];
+				writer?.writeSpecHeader(i + 1, pending.length, spec.name);
+				callbacks.onSpecStart?.(spec.name, i, pending.length);
 
-			const result = await executePlan(
-				{ ...flags, spec: spec.name, all: false, session },
-				{
-					onPhase: callbacks.onPhase,
-					onIteration: callbacks.onIteration,
-					onEvent: callbacks.onEvent,
-					onRefinement: callbacks.onRefinement,
-				},
-				cwd,
-				abortSignal,
-				writer,
-			);
+				const result = await executePlan(
+					{ ...flags, spec: spec.name, all: false, session },
+					{
+						onPhase: callbacks.onPhase,
+						onIteration: callbacks.onIteration,
+						onEvent: callbacks.onEvent,
+						onRefinement: callbacks.onRefinement,
+					},
+					cwd,
+					abortSignal,
+					writer,
+				);
 
-			planned.push(result);
-			callbacks.onSpecComplete?.(result);
-		}
+				planned.push(result);
+				callbacks.onSpecComplete?.(result);
+			}
 
-		return { planned };
-	} finally {
-		writer?.close();
-	}
+			return { planned };
+		},
+	);
 }
 
 export default function Plan(flags: PlanFlags) {
