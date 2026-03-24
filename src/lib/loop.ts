@@ -17,6 +17,7 @@ export interface LoopOptions {
 	sessionId?: string;
 	continueSession?: boolean;
 	onEvent?: (event: CliEvent) => void;
+	onIterationStart?: (iteration: number, sessionId: string | null) => void;
 	onIterationComplete?: (result: IterationResult) => void;
 	abortSignal?: AbortSignal;
 }
@@ -49,6 +50,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 		autoApprove = true,
 		continueSession = false,
 		onEvent,
+		onIterationStart,
 		onIterationComplete,
 		abortSignal,
 	} = options;
@@ -79,6 +81,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 			...(model && model !== "default" ? { model } : {}),
 			...(effectiveSessionId ? { sessionId: effectiveSessionId, continueSession: true } : {}),
 		};
+
+		onIterationStart?.(iteration, effectiveSessionId ?? null);
 
 		const proc = spawn(spawnOpts);
 

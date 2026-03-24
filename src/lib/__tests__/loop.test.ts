@@ -217,6 +217,75 @@ describe("runLoop integration", () => {
 		expect(received[2]).toMatchObject({ type: "tool_use" });
 	});
 
+	it("onIterationStart called before spawn for each iteration", async () => {
+		const callOrder: string[] = [];
+		mockSpawn.mockImplementation(() => {
+			callOrder.push("spawn");
+			return makeMockProc([{ type: "text", content: "ok", raw: "ok" }]);
+		});
+
+		const startCalls: Array<{ iteration: number; sessionId: string | null }> = [];
+		await runLoop(baseOptions({
+			maxIterations: 2,
+			onIterationStart: (iteration, sessionId) => {
+				callOrder.push("onIterationStart");
+				startCalls.push({ iteration, sessionId });
+			},
+		}));
+
+		expect(startCalls).toHaveLength(2);
+		expect(startCalls[0].iteration).toBe(1);
+		expect(startCalls[1].iteration).toBe(2);
+		// Verify onIterationStart is called before spawn
+		expect(callOrder.filter((c) => c === "onIterationStart").length).toBe(2);
+		expect(callOrder[0]).toBe("onIterationStart");
+		expect(callOrder[1]).toBe("spawn");
+	});
+
+	it("onIterationStart receives sessionId when provided", async () => {
+		mockSpawn.mockImplementation(() =>
+			makeMockProc([{ type: "text", content: "ok", raw: "ok" }]),
+		);
+
+		const startCalls: Array<{ iteration: number; sessionId: string | null }> = [];
+		await runLoop(baseOptions({
+			maxIterations: 1,
+			sessionId: "my-session",
+			onIterationStart: (iteration, sessionId) => {
+				startCalls.push({ iteration, sessionId });
+			},
+		}));
+
+		expect(startCalls[0].sessionId).toBe("my-session");
+	});
+
+	it("onIterationStart receives null sessionId when none provided", async () => {
+		mockSpawn.mockImplementation(() =>
+			makeMockProc([{ type: "text", content: "ok", raw: "ok" }]),
+		);
+
+		const startCalls: Array<{ iteration: number; sessionId: string | null }> = [];
+		await runLoop(baseOptions({
+			maxIterations: 1,
+			onIterationStart: (iteration, sessionId) => {
+				startCalls.push({ iteration, sessionId });
+			},
+		}));
+
+		expect(startCalls[0].sessionId).toBeNull();
+	});
+
+	it("loop works without onIterationStart (backward compat)", async () => {
+		mockSpawn.mockImplementation(() =>
+			makeMockProc([{ type: "text", content: "ok", raw: "ok" }]),
+		);
+
+		const result = await runLoop(baseOptions({ maxIterations: 2 }));
+
+		expect(result.stopReason).toBe("max_iterations");
+		expect(result.iterations).toHaveLength(2);
+	});
+
 	it("onIterationComplete receives IterationResult", async () => {
 		mockSpawn.mockImplementation(() =>
 			makeMockProc(
