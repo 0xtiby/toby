@@ -4,7 +4,9 @@ import path from "node:path";
 import os from "node:os";
 import {
 	IterationSchema,
+	IterationStateSchema,
 	SpecStatusEntrySchema,
+	StopReasonSchema,
 	StatusSchema,
 } from "../types.js";
 import type { StatusData } from "../types.js";
@@ -75,6 +77,48 @@ describe("IterationSchema", () => {
 			IterationSchema.parse({ ...validIteration, iteration: 0 }),
 		).toThrow();
 	});
+
+	it("defaults state to in_progress when omitted", () => {
+		const result = IterationSchema.parse(validIteration);
+		expect(result.state).toBe("in_progress");
+	});
+
+	it("accepts explicit state field", () => {
+		for (const state of ["in_progress", "complete", "failed"]) {
+			const result = IterationSchema.parse({ ...validIteration, state });
+			expect(result.state).toBe(state);
+		}
+	});
+
+	it("rejects invalid state value", () => {
+		expect(() =>
+			IterationSchema.parse({ ...validIteration, state: "running" }),
+		).toThrow();
+	});
+});
+
+describe("IterationStateSchema", () => {
+	it("validates all three values", () => {
+		for (const state of ["in_progress", "complete", "failed"]) {
+			expect(IterationStateSchema.parse(state)).toBe(state);
+		}
+	});
+
+	it("rejects invalid values", () => {
+		expect(() => IterationStateSchema.parse("unknown")).toThrow();
+	});
+});
+
+describe("StopReasonSchema", () => {
+	it("validates all four values", () => {
+		for (const reason of ["sentinel", "max_iterations", "error", "aborted"]) {
+			expect(StopReasonSchema.parse(reason)).toBe(reason);
+		}
+	});
+
+	it("rejects invalid values", () => {
+		expect(() => StopReasonSchema.parse("timeout")).toThrow();
+	});
 });
 
 describe("SpecStatusEntrySchema", () => {
@@ -97,6 +141,34 @@ describe("SpecStatusEntrySchema", () => {
 			plannedAt: null,
 		});
 		expect(result.plannedAt).toBeNull();
+	});
+
+	it("accepts stopReason field", () => {
+		for (const stopReason of [
+			"sentinel",
+			"max_iterations",
+			"error",
+			"aborted",
+		]) {
+			const result = SpecStatusEntrySchema.parse({
+				...validEntry,
+				stopReason,
+			});
+			expect(result.stopReason).toBe(stopReason);
+		}
+	});
+
+	it("accepts null stopReason", () => {
+		const result = SpecStatusEntrySchema.parse({
+			...validEntry,
+			stopReason: null,
+		});
+		expect(result.stopReason).toBeNull();
+	});
+
+	it("defaults stopReason to undefined when omitted", () => {
+		const result = SpecStatusEntrySchema.parse(validEntry);
+		expect(result.stopReason).toBeUndefined();
 	});
 
 	it("rejects invalid status", () => {
@@ -125,6 +197,32 @@ describe("StatusSchema", () => {
 			},
 		});
 		expect(Object.keys(result.specs)).toHaveLength(2);
+	});
+
+	it("accepts sessionName and lastCli fields", () => {
+		const result = StatusSchema.parse({
+			...validStatus,
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+		});
+		expect(result.sessionName).toBe("warm-lynx-52");
+		expect(result.lastCli).toBe("claude");
+	});
+
+	it("defaults sessionName and lastCli to undefined when omitted", () => {
+		const result = StatusSchema.parse(validStatus);
+		expect(result.sessionName).toBeUndefined();
+		expect(result.lastCli).toBeUndefined();
+	});
+
+	it("accepts null sessionName and lastCli", () => {
+		const result = StatusSchema.parse({
+			...validStatus,
+			sessionName: null,
+			lastCli: null,
+		});
+		expect(result.sessionName).toBeNull();
+		expect(result.lastCli).toBeNull();
 	});
 
 	it("rejects missing specs field", () => {
