@@ -5,6 +5,7 @@ import { Text } from "ink";
 import { useCommandRunner } from "./useCommandRunner.js";
 import type { CommandFlags, Phase } from "./useCommandRunner.js";
 import type { Spec } from "../lib/specs.js";
+import { findSpecs } from "../lib/specs.js";
 
 // Mock ink's useApp
 vi.mock("ink", async () => {
@@ -22,6 +23,7 @@ vi.mock("../lib/config.js", () => ({
 
 vi.mock("../lib/specs.js", () => ({
 	discoverSpecs: vi.fn(() => []),
+	findSpecs: vi.fn(() => []),
 }));
 
 function PhaseCapture({ flags, onPhase }: { flags: CommandFlags; onPhase: (p: Phase) => void }) {
@@ -53,6 +55,7 @@ describe("useCommandRunner", () => {
 	};
 
 	it("sets phase to 'multi' when flags.spec contains comma", () => {
+		vi.mocked(findSpecs).mockReturnValue([]);
 		let captured: Phase = "init";
 		render(<PhaseCapture flags={{ ...baseFlags, spec: "auth,payments" }} onPhase={(p) => { captured = p; }} />);
 		expect(captured).toBe("multi");
@@ -77,6 +80,13 @@ describe("useCommandRunner", () => {
 	});
 
 	it("handleMultiSpecConfirm with 1 spec sets phase to 'init'", async () => {
+		const mockFindSpecs = vi.mocked(findSpecs);
+		const resolvedSpecs: Spec[] = [
+			{ name: "01-auth", path: "/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" },
+			{ name: "02-payments", path: "/specs/02-payments.md", order: { num: 2, suffix: null }, status: "pending" },
+		];
+		mockFindSpecs.mockReturnValue(resolvedSpecs);
+
 		let result: { phase: Phase; handleMultiSpecConfirm: (specs: Spec[]) => void; selectedSpecs: Spec[] } | null = null;
 		const { rerender } = render(
 			<MultiSpecCapture
@@ -85,6 +95,7 @@ describe("useCommandRunner", () => {
 			/>,
 		);
 
+		// Phase is "multi" initially; the resolution effect will populate selectedSpecs
 		expect(result!.phase).toBe("multi");
 
 		const singleSpec: Spec = { name: "01-auth", path: "/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" };

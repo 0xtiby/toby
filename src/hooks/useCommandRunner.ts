@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig } from "../lib/config.js";
-import { discoverSpecs } from "../lib/specs.js";
+import { discoverSpecs, findSpecs } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { AbortError } from "../lib/errors.js";
 
@@ -78,6 +78,22 @@ export function useCommandRunner(options: {
 			exit(new Error((err as Error).message));
 		}
 	}, [phase]);
+
+	// Resolve specs for multi-spec mode (comma-separated --spec)
+	useEffect(() => {
+		if (phase !== "multi" || selectedSpecs.length > 0) return;
+		if (!flags.spec) return;
+		try {
+			const config = loadConfig();
+			const discovered = discoverSpecs(process.cwd(), config);
+			const resolved = findSpecs(discovered, flags.spec);
+			setSelectedSpecs(resolved);
+		} catch (err) {
+			setErrorMessage((err as Error).message);
+			setPhase("error");
+			exit(new Error((err as Error).message));
+		}
+	}, [phase, selectedSpecs.length]);
 
 	// Bounded event buffer
 	function addEvent(event: CliEvent) {

@@ -26,7 +26,8 @@ export function computeProjectStats(cwd?: string): ProjectStats | null {
 	let statusData;
 	try {
 		statusData = readStatus(cwd);
-	} catch {
+	} catch (err) {
+		console.warn(`Warning: could not read status file: ${(err as Error).message}`);
 		return null;
 	}
 

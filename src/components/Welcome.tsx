@@ -15,6 +15,8 @@ export default function Welcome({ version }: WelcomeProps) {
 	const { exit } = useApp();
 	const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
 
+	// Status renders synchronously (no async work / no own exit lifecycle),
+	// so we defer exit() to the next tick to let Ink flush the final render.
 	useEffect(() => {
 		if (selectedCommand === "status") {
 			const timer = setTimeout(() => exit(), 0);

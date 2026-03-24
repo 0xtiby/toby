@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, findSpecs } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
@@ -221,35 +221,27 @@ export default function Plan(flags: PlanFlags) {
 	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string } | null>(null);
 
-	// Run multi-spec mode
+	const allCallbacks: PlanAllCallbacks = useMemo(() => ({
+		onSpecStart: runner.onSpecStartCallback,
+		onSpecComplete: () => {},
+		onPhase: runner.onPhaseCallback,
+		onRefinement: (name: string) => { setRefinementInfo({ specName: name }); },
+		onIteration: runner.onIterationCallback,
+		onEvent: runner.addEvent,
+	}), [runner.onSpecStartCallback, runner.onPhaseCallback, runner.onIterationCallback, runner.addEvent]);
+
+	// Run multi-spec mode (specs resolved by useCommandRunner)
 	useEffect(() => {
-		if (runner.phase !== "multi") return;
-		const config = loadConfig();
-		const allSpecs = discoverSpecs(process.cwd(), config);
-		const resolved = findSpecs(allSpecs, flags.spec!);
-		executePlanAll(flags, {
-			onSpecStart: runner.onSpecStartCallback,
-			onSpecComplete: () => {},
-			onPhase: runner.onPhaseCallback,
-			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
-			onIteration: runner.onIterationCallback,
-			onEvent: runner.addEvent,
-		}, undefined, runner.abortSignal, resolved)
+		if (runner.phase !== "multi" || runner.selectedSpecs.length === 0) return;
+		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal, runner.selectedSpecs)
 			.then((r) => { setAllResult(r); runner.handleDone(); })
 			.catch(runner.handleError);
-	}, [runner.phase]);
+	}, [runner.phase, runner.selectedSpecs]);
 
 	// Run --all mode
 	useEffect(() => {
 		if (runner.phase !== "all") return;
-		executePlanAll(flags, {
-			onSpecStart: runner.onSpecStartCallback,
-			onSpecComplete: () => {},
-			onPhase: runner.onPhaseCallback,
-			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
-			onIteration: runner.onIterationCallback,
-			onEvent: runner.addEvent,
-		}, undefined, runner.abortSignal)
+		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal)
 			.then((r) => { setAllResult(r); runner.handleDone(); })
 			.catch(runner.handleError);
 	}, [runner.phase]);
