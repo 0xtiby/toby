@@ -150,7 +150,16 @@ function setupDefaults() {
 			},
 		},
 	});
-	mockAddIteration.mockImplementation((status) => status);
+	mockAddIteration.mockImplementation((status, specName, iteration) => ({
+		...status,
+		specs: {
+			...status.specs,
+			[specName]: {
+				...(status.specs[specName] ?? { status: "pending", plannedAt: null, iterations: [] }),
+				iterations: [...(status.specs[specName]?.iterations ?? []), iteration],
+			},
+		},
+	}));
 	mockUpdateSpecStatus.mockImplementation((status) => status);
 
 	mockRunLoop.mockImplementation(async (options: LoopOptions) => {
@@ -163,6 +172,7 @@ function setupDefaults() {
 			durationMs: 1000,
 			sentinelDetected: false,
 		};
+		options.onIterationStart?.(1, null);
 		options.onIterationComplete?.(iterResult);
 		return {
 			iterations: [iterResult],
@@ -303,6 +313,7 @@ describe("executeBuild", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "error" as const };
 		});
@@ -324,11 +335,11 @@ describe("executeBuild", () => {
 			expect.objectContaining({
 				type: "build",
 				iteration: 1,
-				sessionId: "sess-1",
+				state: "in_progress",
 				cli: "claude",
 			}),
 		);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(2);
+		expect(mockWriteStatus).toHaveBeenCalledTimes(3); // 1 onIterationStart + 1 onIterationComplete + 1 final
 	});
 
 	it("spec status transitions to building on completion", async () => {
@@ -373,6 +384,7 @@ describe("executeBuild", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
@@ -395,7 +407,8 @@ describe("executeBuild", () => {
 					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 100 * i,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
-				options.onIterationComplete?.(iterResult);
+				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -420,6 +433,7 @@ describe("executeBuild", () => {
 				durationMs: 1000,
 				sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -445,6 +459,7 @@ describe("executeBuild", () => {
 				durationMs: 1000,
 				sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -543,6 +558,7 @@ describe("Build component", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -590,6 +606,7 @@ describe("Build component", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "error" as const };
 		});
@@ -618,6 +635,7 @@ describe("Build component", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -649,6 +667,7 @@ describe("Build component", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -687,6 +706,7 @@ describe("Build component", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -723,7 +743,8 @@ describe("integration: full build flow with mocked spawner", () => {
 					durationMs: 1000,
 					sentinelDetected: i === 4,
 				};
-				options.onIterationComplete?.(iterResult);
+				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "sentinel" as const };
@@ -736,7 +757,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(result.specDone).toBe(true);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "done");
 		expect(mockAddIteration).toHaveBeenCalledTimes(4);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 4 iterations + 1 final
+		expect(mockWriteStatus).toHaveBeenCalledTimes(9); // 4 onIterationStart + 4 onIterationComplete + 1 final
 	});
 
 	it("build --all processes specs in order with correct session vars and collects results", async () => {
@@ -756,6 +777,7 @@ describe("integration: full build flow with mocked spawner", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
 				model: "claude-sonnet-4-6", durationMs: 500, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -800,7 +822,8 @@ describe("integration: full build flow with mocked spawner", () => {
 					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 150,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
-				options.onIterationComplete?.(iterResult);
+				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -830,9 +853,7 @@ describe("integration: full build flow with mocked spawner", () => {
 			},
 		});
 
-		const updatedStatus = { specs: { "01-auth": { status: "building", plannedAt: null, iterations: [] } } };
-		mockAddIteration.mockReturnValue(updatedStatus);
-		mockUpdateSpecStatus.mockReturnValue(updatedStatus);
+		// Use default mockAddIteration (adds iterations to status) — no override needed
 
 		let iterationCount = 0;
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
@@ -848,7 +869,8 @@ describe("integration: full build flow with mocked spawner", () => {
 					durationMs: 1000 * i,
 					sentinelDetected: false,
 				};
-				options.onIterationComplete?.(iterResult);
+				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -873,7 +895,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(iterationCount).toBe(3);
 		expect(mockAddIteration).toHaveBeenCalledTimes(3);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
-		expect(mockWriteStatus).toHaveBeenCalledTimes(4); // 3 iterations + 1 final
+		expect(mockWriteStatus).toHaveBeenCalledTimes(7); // 3 onIterationStart + 3 onIterationComplete + 1 final
 
 		expect(result.specName).toBe("01-auth");
 
@@ -922,6 +944,7 @@ describe("executeBuildAll", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -947,6 +970,7 @@ describe("executeBuildAll", () => {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});

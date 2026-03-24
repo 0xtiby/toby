@@ -14,7 +14,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
+import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -90,6 +90,25 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 			options.writer?.writeEvent(event);
 			callbacks.onEvent?.(event);
 		},
+		onIterationStart: (iteration: number, sessionId: string | null) => {
+			iterationStartTime = new Date().toISOString();
+			const iterationRecord: Iteration = {
+				type: "build",
+				iteration: iteration + options.existingIterations,
+				sessionId,
+				state: "in_progress" as IterationState,
+				cli,
+				model: model ?? "default",
+				startedAt: iterationStartTime,
+				completedAt: null,
+				exitCode: null,
+				taskCompleted: null,
+				tokensUsed: null,
+			};
+			status = addIteration(status, spec.name, iterationRecord);
+			status = { ...status, sessionName: options.session, lastCli: cli };
+			writeStatus(status, cwd);
+		},
 		onIterationComplete: (iterResult: IterationResult) => {
 			options.writer?.writeIterationHeader({
 				iteration: iterResult.iteration,
@@ -97,25 +116,42 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				cli,
 				model: iterResult.model ?? model ?? "default",
 			});
-			const completedAt = new Date().toISOString();
-			const iteration: Iteration = {
-				type: "build",
-				iteration: iterResult.iteration,
+
+			// Determine final state
+			const state: IterationState = iterResult.sentinelDetected ? "complete" : "failed";
+
+			// Update the last iteration record (written by onIterationStart)
+			const specEntry = status.specs[spec.name];
+			const iters = [...specEntry.iterations];
+			iters[iters.length - 1] = {
+				...iters[iters.length - 1],
+				state,
 				sessionId: iterResult.sessionId,
-				cli,
-				model: iterResult.model ?? model,
-				startedAt: iterationStartTime,
-				completedAt,
+				completedAt: new Date().toISOString(),
 				exitCode: iterResult.exitCode,
-				taskCompleted: null,
 				tokensUsed: iterResult.tokensUsed,
 			};
-			iterationStartTime = new Date().toISOString();
-			status = addIteration(status, spec.name, iteration);
+			status = {
+				...status,
+				specs: {
+					...status.specs,
+					[spec.name]: { ...specEntry, iterations: iters },
+				},
+			};
 			writeStatus(status, cwd);
 			callbacks.onIteration?.(iterResult.iteration + 1, iterations);
 		},
 	});
+
+	// Persist stopReason on spec entry
+	const specEntryAfterLoop = status.specs[spec.name] ?? { status: "building", plannedAt: null, iterations: [] };
+	status = {
+		...status,
+		specs: {
+			...status.specs,
+			[spec.name]: { ...specEntryAfterLoop, stopReason: loopResult.stopReason },
+		},
+	};
 
 	if (loopResult.stopReason === "aborted") {
 		status = updateSpecStatus(status, spec.name, "building");
