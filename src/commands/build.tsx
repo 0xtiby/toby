@@ -240,13 +240,10 @@ export async function executeBuild(
 		: undefined;
 
 	if (isCrashResume) {
-		callbacks.onOutput?.(
-			`⚠ Previous build interrupted (iteration ${lastIteration.iteration} was in progress). Resuming...`,
-		);
+		const resumeType = isSameCli ? "continuing session" : `switching from ${status.lastCli} to ${commandConfig.cli}`;
+		callbacks.onOutput?.(`Resuming session "${session}" (${resumeType})`);
 	} else if (isExhaustedResume) {
-		callbacks.onOutput?.(
-			`⚠ Previous build exhausted iterations without completing. Resuming in same worktree...`,
-		);
+		callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
 	}
 
 	return withTranscript(

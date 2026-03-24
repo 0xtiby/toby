@@ -912,6 +912,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 	it("detects crash when last iteration state is in_progress", async () => {
 		mockReadStatus.mockReturnValue({
+			lastCli: "claude",
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -927,10 +928,10 @@ describe("executeBuild crash/exhaustion detection", () => {
 		const result = await executeBuild(defaultFlags, callbacks, "/project");
 
 		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("Previous build interrupted"),
+			expect.stringContaining("Resuming session"),
 		);
 		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("iteration 1 was in progress"),
+			expect.stringContaining("continuing session"),
 		);
 		expect(result.needsResume).toBe(true);
 	});
@@ -958,32 +959,33 @@ describe("executeBuild crash/exhaustion detection", () => {
 		expect(result.needsResume).toBe(true);
 	});
 
-	it("crash message includes correct iteration number", async () => {
+	it("crash resume with cross-CLI shows switching message", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
 			specs: {
 				"01-auth": {
 					status: "building",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:00:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: "2026-03-20T00:01:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-						{ type: "build", iteration: 3, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:02:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
 					],
 				},
 			},
 		});
 
 		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
+		await executeBuild({ ...defaultFlags, cli: "opencode" }, callbacks, "/project");
 
 		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			"⚠ Previous build interrupted (iteration 3 was in progress). Resuming...",
+			'Resuming session "warm-lynx-52" (switching from claude to opencode)',
 		);
-		expect(result.needsResume).toBe(true);
 	});
 
 	it("crash takes priority over exhaustion when both conditions are true", async () => {
 		mockReadStatus.mockReturnValue({
+			lastCli: "claude",
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1001,7 +1003,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		expect(callbacks.onOutput).toHaveBeenCalledTimes(1);
 		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("Previous build interrupted"),
+			expect.stringContaining("Resuming session"),
 		);
 		expect(callbacks.onOutput).not.toHaveBeenCalledWith(
 			expect.stringContaining("exhausted iterations"),
