@@ -943,7 +943,7 @@ describe("executeBuildAll", () => {
 		).rejects.toThrow("No planned specs found. Run 'toby plan' first.");
 	});
 
-	it("returns per-spec results and skipped list", async () => {
+	it("returns per-spec results", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
 			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const },
@@ -955,6 +955,5 @@ describe("executeBuildAll", () => {
 
 		expect(result.built).toHaveLength(1);
 		expect(result.built[0].specName).toBe("01-auth");
-		expect(result.skipped).toEqual(["02-api"]);
 	});
 });

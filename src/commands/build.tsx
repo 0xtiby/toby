@@ -202,7 +202,6 @@ export interface BuildAllCallbacks {
 
 export interface BuildAllResult {
 	built: BuildResult[];
-	skipped: string[];
 }
 
 /**
@@ -221,12 +220,10 @@ export async function executeBuildAll(
 
 	const config = loadConfig(cwd);
 	let planned: Spec[];
-	let skipped: string[];
 
 	if (specs) {
 		// Pre-resolved specs (from multi-spec mode) — use directly
 		planned = specs;
-		skipped = [];
 	} else {
 		// Discovery mode — find and filter planned/building specs
 		const discovered = discoverSpecs(cwd, config);
@@ -239,8 +236,6 @@ export async function executeBuildAll(
 		if (planned.length === 0) {
 			throw new Error("No planned specs found. Run 'toby plan' first.");
 		}
-
-		skipped = discovered.filter((s) => s.status !== "planned" && s.status !== "building").map((s) => s.name);
 	}
 
 	const built: BuildResult[] = [];
@@ -282,7 +277,7 @@ export async function executeBuildAll(
 		callbacks.onSpecComplete?.(result);
 	}
 
-	return { built, skipped };
+	return { built };
 }
 
 export default function Build(flags: BuildFlags) {
@@ -360,14 +355,11 @@ export default function Build(flags: BuildFlags) {
 		const totalTok = allResult.built.reduce((s, r) => s + r.totalTokens, 0);
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ All specs built (${allResult.built.length} built, ${allResult.skipped.length} skipped)`}</Text>
+				<Text color="green">{`✓ All specs built (${allResult.built.length} built)`}</Text>
 				{allResult.built.map((r) => (
 					<Text key={r.specName}>{`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
 				))}
 				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
-				{allResult.skipped.length > 0 && (
-					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
-				)}
 			</Box>
 		);
 	}
