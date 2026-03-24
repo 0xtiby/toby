@@ -51,6 +51,7 @@ interface RunSpecBuildOptions {
 	templateVars: TemplateVars;
 	specsDir: string;
 	session: string;
+	sessionId?: string;
 	specIndex: number;
 	specCount: number;
 	specs: string[];
@@ -86,6 +87,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 		cli,
 		model,
 		cwd,
+		sessionId: options.sessionId,
 		continueSession: true,
 		abortSignal: options.abortSignal,
 		onEvent: (event) => {
@@ -261,6 +263,7 @@ export async function executeBuild(
 				templateVars: config.templateVars,
 				specsDir: config.specsDir,
 				session,
+				sessionId,
 				specIndex: 1,
 				specCount: 1,
 				specs: [found.name],

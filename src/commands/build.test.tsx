@@ -1157,9 +1157,10 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		await executeBuild(defaultFlags, {}, "/project");
 
-		// sessionId is computed but not yet wired to runSpecBuild (toby-6hu)
-		// Verify session name is reused
-		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		// Verify session name is reused and sessionId is passed to runLoop
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBe("crash-session-id");
+		const getPrompt = opts.getPrompt;
 		getPrompt(1);
 		expect(mockComputeCliVars).toHaveBeenCalledWith(
 			expect.objectContaining({ session: "warm-lynx-52" }),
@@ -1185,7 +1186,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
 
 		// Session name is still reused (same worktree), but sessionId should not be passed
-		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
+		const getPrompt = opts.getPrompt;
 		getPrompt(1);
 		expect(mockComputeCliVars).toHaveBeenCalledWith(
 			expect.objectContaining({ session: "warm-lynx-52" }),
@@ -1212,7 +1215,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		await executeBuild(defaultFlags, {}, "/project");
 
 		// Session name reused but sessionId should NOT be passed (exhaustion = clean exit)
-		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
+		const getPrompt = opts.getPrompt;
 		getPrompt(1);
 		expect(mockComputeCliVars).toHaveBeenCalledWith(
 			expect.objectContaining({ session: "warm-lynx-52" }),
