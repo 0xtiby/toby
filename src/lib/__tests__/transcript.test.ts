@@ -149,6 +149,57 @@ describe("transcript", () => {
 		expect(path.basename(w3.filePath)).toMatch(/^all-build-/);
 	});
 
+	it("close flushes stream without error", async () => {
+		const writer = openTranscript({ command: "plan", verbose: false });
+		writer.writeEvent(textEvent("before close"));
+		await flush(writer);
+
+		const content = fs.readFileSync(writer.filePath, "utf-8");
+		expect(content).toContain("before close");
+		// Calling close again should not throw
+		expect(() => writer.close()).not.toThrow();
+	});
+
+	it("metadata header contains all fields", async () => {
+		const writer = openTranscript({
+			command: "build",
+			specName: "01-auth",
+			session: "warm-lynx-52",
+			verbose: true,
+		});
+		await flush(writer);
+
+		const content = fs.readFileSync(writer.filePath, "utf-8");
+		expect(content).toContain("command: build");
+		expect(content).toContain("session: warm-lynx-52");
+		expect(content).toContain("spec: 01-auth");
+		expect(content).toContain("verbose: true");
+		expect(content).toContain("created:");
+	});
+
+	it("non-verbose text events have no prefix", async () => {
+		const writer = openTranscript({ command: "build", verbose: false });
+		writer.writeEvent(textEvent("plain text output"));
+		await flush(writer);
+
+		const content = fs.readFileSync(writer.filePath, "utf-8");
+		expect(content).toContain("plain text output");
+		expect(content).not.toContain("[text]");
+	});
+
+	it("tool_result content is truncated to 200 chars in verbose mode", async () => {
+		const longContent = "x".repeat(300);
+		const writer = openTranscript({ command: "build", verbose: true });
+		writer.writeEvent(toolResultEvent(longContent));
+		await flush(writer);
+
+		const content = fs.readFileSync(writer.filePath, "utf-8");
+		const toolResultLine = content.split("\n").find((l: string) => l.includes("[tool_result]"));
+		expect(toolResultLine).toBeDefined();
+		// [tool_result] + space + 200 chars = total content after prefix
+		expect(toolResultLine!.length).toBeLessThan(250);
+	});
+
 	it("write error caught and logged to stderr", async () => {
 		const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const writer = openTranscript({ command: "build", verbose: false });
