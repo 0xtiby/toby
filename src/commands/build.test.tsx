@@ -1478,6 +1478,137 @@ describe("executeBuildAll", () => {
 		);
 	});
 
+	it("buildAll with crashed spec → session equals status.sessionName", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "warm-lynx-52" }),
+		);
+	});
+
+	it("buildAll with crashed spec + same CLI → per-spec sessionId passed", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "crash-sess-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		expect(mockRunLoop.mock.calls[0][0].sessionId).toBe("crash-sess-id");
+	});
+
+	it("buildAll with crashed spec + different CLI → per-spec sessionId undefined", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "crash-sess-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false, cli: "opencode" }, {}, "/p");
+
+		expect(mockRunLoop.mock.calls[0][0].sessionId).toBeUndefined();
+	});
+
+	it("buildAll with no resume needed → session is newly generated", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "bold-hawk-42" }),
+		);
+	});
+
+	it("buildAll flags.session overrides status.sessionName", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			sessionName: "warm-lynx-52",
+			lastCli: "claude",
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false, session: "my-override" }, {}, "/p");
+
+		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
+		getPrompt(1);
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ session: "my-override" }),
+		);
+	});
+
 	it("no warnings when all specs are clean", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },

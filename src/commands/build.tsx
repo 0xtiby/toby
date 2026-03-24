@@ -326,9 +326,16 @@ export async function executeBuildAll(
 	}
 
 	const built: BuildResult[] = [];
-	const session = flags.session || generateSessionName();
 	const specNames = planned.map((s) => s.name);
 	const status = readStatus(cwd);
+
+	// Check if any spec needs resume → reuse session name for worktree continuity
+	const anyNeedsResume = planned.some((spec) => {
+		const entry = status.specs[spec.name];
+		const last = entry?.iterations.at(-1);
+		return last?.state === "in_progress" || entry?.stopReason === "max_iterations";
+	});
+	const session = flags.session || (anyNeedsResume ? status.sessionName : null) || generateSessionName();
 
 	return withTranscript(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
@@ -361,6 +368,12 @@ export async function executeBuildAll(
 					iterations: flags.iterations,
 				});
 
+				// Per-spec sessionId: only for crash + same CLI
+				const isSameCli = commandConfig.cli === status.lastCli;
+				const specSessionId = (isSameCli && isCrashResume)
+					? lastIteration?.sessionId
+					: undefined;
+
 				const { result } = await runSpecBuild({
 					spec,
 					promptName: "PROMPT_BUILD",
@@ -371,6 +384,7 @@ export async function executeBuildAll(
 					templateVars: config.templateVars,
 					specsDir: config.specsDir,
 					session,
+					sessionId: specSessionId,
 					specIndex: i + 1,
 					specCount: planned.length,
 					specs: specNames,
