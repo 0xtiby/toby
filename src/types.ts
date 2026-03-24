@@ -25,6 +25,7 @@ export const ConfigSchema = z.object({
 	specsDir: z.string().default("specs"),
 	excludeSpecs: z.array(z.string()).default(["README.md"]),
 	verbose: z.boolean().default(false),
+	transcript: z.boolean().default(false),
 	templateVars: z.record(z.string(), z.string()).default({}),
 });
 

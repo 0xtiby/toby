@@ -22,6 +22,7 @@ export interface InitFlags {
 	buildCli?: string;
 	buildModel?: string;
 	specsDir?: string;
+	verbose?: boolean;
 }
 
 interface CliDetection {
@@ -41,6 +42,7 @@ type Phase =
 	| "build_cli"
 	| "build_model"
 	| "specs_dir"
+	| "verbose"
 	| "done";
 
 export interface InitSelections {
@@ -49,6 +51,7 @@ export interface InitSelections {
 	buildCli: CliName;
 	buildModel: string;
 	specsDir: string;
+	verbose: boolean;
 }
 
 export interface InitResult {
@@ -91,6 +94,7 @@ export function createProject(
 				iterations: 10,
 			},
 			specsDir: selections.specsDir,
+			verbose: selections.verbose,
 			templateVars: {
 				PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json",
 			},
@@ -229,6 +233,7 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 				buildCli: buildCli as CliName,
 				buildModel: flags.buildModel!,
 				specsDir: flags.specsDir!,
+				verbose: flags.verbose ?? false,
 			};
 
 			try {
@@ -283,6 +288,7 @@ function InteractiveInit({ version }: { version: string }) {
 		buildCli: "claude",
 		buildModel: "default",
 		specsDir: DEFAULT_SPECS_DIR,
+		verbose: false,
 	});
 	const [specsDirInput, setSpecsDirInput] = useState(DEFAULT_SPECS_DIR);
 	const [result, setResult] = useState<InitResult | null>(null);
@@ -333,17 +339,25 @@ function InteractiveInit({ version }: { version: string }) {
 
 	function handleSpecsDirSubmit(value: string) {
 		const dir = value.trim() || DEFAULT_SPECS_DIR;
-		const final = { ...selections, specsDir: dir };
-		setSelections(final);
-		try {
-			const res = createProject(final);
-			setResult(res);
-			setPhase("done");
-		} catch (err) {
-			setError((err as Error).message);
-			setPhase("done");
-		}
-		exit();
+		setSelections((s) => ({ ...s, specsDir: dir }));
+		setPhase("verbose");
+	}
+
+	function handleVerboseSelect(item: { value: string }) {
+		const verbose = item.value === "true";
+		setSelections((s) => {
+			const final = { ...s, verbose };
+			try {
+				const res = createProject(final);
+				setResult(res);
+				setPhase("done");
+			} catch (err) {
+				setError((err as Error).message);
+				setPhase("done");
+			}
+			exit();
+			return final;
+		});
 	}
 
 	if (phase === "detecting") {
@@ -425,6 +439,20 @@ function InteractiveInit({ version }: { version: string }) {
 							onSubmit={handleSpecsDirSubmit}
 						/>
 					</Box>
+				</Box>
+			)}
+
+			{phase === "verbose" && (
+				<Box flexDirection="column">
+					<Text bold>Verbose output:</Text>
+					<Text dimColor>  Show full CLI output including tool use and system events</Text>
+					<SelectInput
+						items={[
+							{ label: "false", value: "false" },
+							{ label: "true", value: "true" },
+						]}
+						onSelect={handleVerboseSelect}
+					/>
 				</Box>
 			)}
 

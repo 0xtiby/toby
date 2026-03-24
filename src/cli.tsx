@@ -61,6 +61,7 @@ Plan Options
   --all              Plan all pending specs
   --iterations=<n>   Override iteration count
   --verbose          Show full CLI output
+  --transcript       Save session transcript to file
   --cli=<name>       Override AI CLI (claude, codex, opencode)
   --session=<name>   Name the session for branch/PR naming
 
@@ -70,6 +71,7 @@ Build Options
   --all              Build all planned specs in order
   --iterations=<n>   Override max iteration count
   --verbose          Show full CLI output
+  --transcript       Save session transcript to file
   --cli=<name>       Override AI CLI (claude, codex, opencode)
   --session=<name>   Name the session for branch/PR naming
 
@@ -82,6 +84,7 @@ Init Options
   --build-cli=<name>   Set build CLI (claude, codex, opencode)
   --build-model=<id>   Set build model
   --specs-dir=<path>   Set specs directory
+  --verbose            Enable verbose output in config
 
 Config Subcommands
   config             Interactive config editor
@@ -97,6 +100,7 @@ Config Subcommands
 			all: { type: "boolean", default: false },
 			iterations: { type: "number" },
 			verbose: { type: "boolean", default: false },
+			transcript: { type: "boolean" },
 			cli: { type: "string" },
 			planCli: { type: "string" },
 			planModel: { type: "string" },
@@ -159,6 +163,7 @@ const commands: Record<string, CommandEntry> = {
 				buildCli={flags.buildCli}
 				buildModel={flags.buildModel}
 				specsDir={flags.specsDir}
+				verbose={flags.verbose}
 			/>
 		),
 		waitForExit: true,

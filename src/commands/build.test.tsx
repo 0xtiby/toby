@@ -48,12 +48,38 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
+vi.mock("../lib/transcript.js", () => {
+	const openTranscript = vi.fn();
+	return {
+		openTranscript,
+		withTranscript: async (options: Record<string, unknown>, externalWriter: unknown, fn: (w: unknown) => Promise<unknown>) => {
+			const owns = externalWriter === undefined;
+			const writer = externalWriter !== undefined
+				? externalWriter
+				: ((options.flags as Record<string, unknown>).transcript ?? (options.config as Record<string, unknown>).transcript)
+					? openTranscript({
+						command: options.command,
+						specName: options.specName,
+						session: (options.flags as Record<string, unknown>).session,
+						verbose: (options.flags as Record<string, unknown>).verbose || (options.config as Record<string, unknown>).verbose,
+					})
+					: null;
+			try {
+				return await fn(writer);
+			} finally {
+				if (owns) (writer as { close?: () => void })?.close?.();
+			}
+		},
+	};
+});
+
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
+import { openTranscript } from "../lib/transcript.js";
 import { executeBuild, executeBuildAll } from "./build.js";
 import { AbortError } from "../lib/errors.js";
 import Build from "./build.js";
@@ -76,6 +102,7 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockOpenTranscript = vi.mocked(openTranscript);
 const defaultFlags: BuildFlags = {
 	spec: "auth",
 	all: false,
@@ -91,6 +118,7 @@ function setupDefaults() {
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
+		transcript: false,
 		templateVars: {},
 	});
 
@@ -943,7 +971,7 @@ describe("executeBuildAll", () => {
 		).rejects.toThrow("No planned specs found. Run 'toby plan' first.");
 	});
 
-	it("returns per-spec results and skipped list", async () => {
+	it("returns per-spec results", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
 			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const },
@@ -955,6 +983,98 @@ describe("executeBuildAll", () => {
 
 		expect(result.built).toHaveLength(1);
 		expect(result.built[0].specName).toBe("01-auth");
-		expect(result.skipped).toEqual(["02-api"]);
+	});
+});
+
+describe("executeBuild transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuild with transcript:true creates transcript file with build in filename", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/auth-build-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		await executeBuild({ ...defaultFlags, transcript: true }, {}, "/project");
+
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "build", specName: "01-auth" }),
+		);
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		expect(mockWriter.close).toHaveBeenCalled();
+	});
+
+	it("executeBuild with transcript:false creates no transcript file", async () => {
+		await executeBuild({ ...defaultFlags, transcript: false }, {}, "/project");
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
+	});
+
+	it("executeBuild with external writer does not close it", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/test.md",
+		};
+
+		await executeBuild(defaultFlags, {}, "/project", undefined, mockWriter);
+
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		expect(mockWriter.close).not.toHaveBeenCalled();
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
+	});
+});
+
+describe("executeBuildAll transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuildAll with transcript:true creates one writer with spec headers", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/bold-hawk-42-build-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockSortSpecs.mockImplementation((specs) => [...specs]);
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		});
+
+		await executeBuildAll(
+			{ all: true, verbose: false, transcript: true },
+			{},
+			"/project",
+		);
+
+		expect(mockOpenTranscript).toHaveBeenCalledTimes(1);
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "build" }),
+		);
+
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledTimes(2);
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(1, 2, "01-auth");
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
+
+		expect(mockWriter.close).toHaveBeenCalledTimes(1);
 	});
 });

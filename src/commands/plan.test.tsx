@@ -36,12 +36,38 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
+vi.mock("../lib/transcript.js", () => {
+	const openTranscript = vi.fn();
+	return {
+		openTranscript,
+		withTranscript: async (options: Record<string, unknown>, externalWriter: unknown, fn: (w: unknown) => Promise<unknown>) => {
+			const owns = externalWriter === undefined;
+			const writer = externalWriter !== undefined
+				? externalWriter
+				: ((options.flags as Record<string, unknown>).transcript ?? (options.config as Record<string, unknown>).transcript)
+					? openTranscript({
+						command: options.command,
+						specName: options.specName,
+						session: (options.flags as Record<string, unknown>).session,
+						verbose: (options.flags as Record<string, unknown>).verbose || (options.config as Record<string, unknown>).verbose,
+					})
+					: null;
+			try {
+				return await fn(writer);
+			} finally {
+				if (owns) (writer as { close?: () => void })?.close?.();
+			}
+		},
+	};
+});
+
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
+import { openTranscript } from "../lib/transcript.js";
 import { executePlan, executePlanAll } from "./plan.js";
 import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
@@ -58,6 +84,7 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockOpenTranscript = vi.mocked(openTranscript);
 const defaultFlags: PlanFlags = {
 	spec: "auth",
 	all: false,
@@ -73,6 +100,7 @@ function setupDefaults() {
 		specsDir: "specs",
 		excludeSpecs: ["README.md"],
 		verbose: false,
+		transcript: false,
 		templateVars: {},
 	});
 
@@ -271,6 +299,7 @@ describe("executePlan", () => {
 			specsDir: "specs",
 			excludeSpecs: ["README.md"],
 			verbose: false,
+			transcript: false,
 			templateVars: { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
 		});
 
@@ -354,6 +383,118 @@ describe("executePlan", () => {
 		});
 	});
 
+	describe("transcript", () => {
+		it("executePlan with transcript:true creates transcript writer", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+
+			expect(mockOpenTranscript).toHaveBeenCalledWith(
+				expect.objectContaining({ command: "plan", specName: "01-auth" }),
+			);
+			expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+			expect(mockWriter.close).toHaveBeenCalled();
+		});
+
+		it("executePlan with transcript:false creates no transcript writer", async () => {
+			await executePlan({ ...defaultFlags, transcript: false }, {}, "/project");
+			expect(mockOpenTranscript).not.toHaveBeenCalled();
+		});
+
+		it("--transcript flag overrides config false", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			// config.transcript is false (default), but flag is true
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+			expect(mockOpenTranscript).toHaveBeenCalled();
+		});
+
+		it("--no-transcript flag overrides config true", async () => {
+			mockLoadConfig.mockReturnValue({
+				plan: { cli: "claude", model: "default", iterations: 2 },
+				build: { cli: "claude", model: "default", iterations: 10 },
+				specsDir: "specs",
+				excludeSpecs: ["README.md"],
+				verbose: false,
+				transcript: true,
+				templateVars: {},
+			});
+
+			await executePlan({ ...defaultFlags, transcript: false }, {}, "/project");
+			expect(mockOpenTranscript).not.toHaveBeenCalled();
+		});
+
+		it("transcript file contains iteration headers and text events", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+				options.onEvent?.({ type: "text", timestamp: 1, content: "hello" } as never);
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			});
+
+			await executePlan({ ...defaultFlags, transcript: true }, {}, "/project");
+
+			expect(mockWriter.writeEvent).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "text", content: "hello" }),
+			);
+			expect(mockWriter.writeIterationHeader).toHaveBeenCalledWith(
+				expect.objectContaining({ iteration: 1, total: 2, cli: "claude" }),
+			);
+		});
+
+		it("abort mid-session still calls close() via finally", async () => {
+			const mockWriter = {
+				writeEvent: vi.fn(),
+				writeIterationHeader: vi.fn(),
+				writeSpecHeader: vi.fn(),
+				close: vi.fn(),
+				filePath: "/tmp/.toby/transcripts/test.md",
+			};
+			mockOpenTranscript.mockReturnValue(mockWriter);
+
+			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "aborted" as const };
+			});
+
+			await expect(
+				executePlan({ ...defaultFlags, transcript: true }, {}, "/project"),
+			).rejects.toThrow(AbortError);
+
+			expect(mockWriter.close).toHaveBeenCalled();
+		});
+	});
+
 	describe("verbose mode", () => {
 		it("passes all events to onEvent callback regardless of verbose flag", async () => {
 			const events: Array<{ type: string; content?: string }> = [];
@@ -415,13 +556,12 @@ describe("executePlanAll", () => {
 		expect(result.planned).toHaveLength(2);
 		expect(result.planned[0].specName).toBe("01-auth");
 		expect(result.planned[1].specName).toBe("02-api");
-		expect(result.skipped).toHaveLength(0);
 		expect(onSpecStart).toHaveBeenCalledTimes(2);
 		expect(onSpecStart).toHaveBeenCalledWith("01-auth", 0, 2);
 		expect(onSpecStart).toHaveBeenCalledWith("02-api", 1, 2);
 	});
 
-	it("skips already-planned specs", async () => {
+	it("only plans pending specs", async () => {
 		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
 		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
@@ -435,7 +575,6 @@ describe("executePlanAll", () => {
 
 		expect(result.planned).toHaveLength(1);
 		expect(result.planned[0].specName).toBe("02-api");
-		expect(result.skipped).toEqual(["01-auth"]);
 	});
 
 	it("stops on first failure", async () => {
@@ -468,7 +607,6 @@ describe("executePlanAll", () => {
 		);
 
 		expect(result.planned).toHaveLength(0);
-		expect(result.skipped).toEqual(["01-auth", "02-api"]);
 		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 
@@ -478,6 +616,68 @@ describe("executePlanAll", () => {
 		await expect(
 			executePlanAll({ all: true, verbose: false }, {}, "/project"),
 		).rejects.toThrow("No specs found in specs/");
+	});
+});
+
+describe("executePlanAll transcript", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executePlanAll with transcript:true creates one writer with spec headers", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/all-plan-20260324.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
+		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		await executePlanAll(
+			{ all: true, verbose: false, transcript: true },
+			{},
+			"/project",
+		);
+
+		// One writer opened for all specs
+		expect(mockOpenTranscript).toHaveBeenCalledTimes(1);
+		expect(mockOpenTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ command: "plan" }),
+		);
+
+		// Spec headers written for each spec
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledTimes(2);
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(1, 2, "01-auth");
+		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
+
+		// Close called once at the end
+		expect(mockWriter.close).toHaveBeenCalledTimes(1);
+	});
+
+	it("executePlan with external writer does not close it", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/test.md",
+		};
+
+		await executePlan(defaultFlags, {}, "/project", undefined, mockWriter);
+
+		// Writer used for events/headers
+		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
+		// But NOT closed (caller's responsibility)
+		expect(mockWriter.close).not.toHaveBeenCalled();
+		// And openTranscript NOT called (external writer provided)
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
 	});
 });
 
