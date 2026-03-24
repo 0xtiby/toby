@@ -148,12 +148,10 @@ export interface PlanAllCallbacks {
 
 export interface PlanAllResult {
 	planned: PlanResult[];
-	skipped: string[];
 }
 
 /**
  * Plan all pending specs in NN- order.
- * Specs with status 'planned' or later are skipped.
  * Stops on first failure.
  */
 export async function executePlanAll(
@@ -166,12 +164,10 @@ export async function executePlanAll(
 	ensureLocalDir(cwd);
 
 	let pending: Spec[];
-	let skipped: string[];
 
 	if (specs) {
 		// Pre-resolved specs (from multi-spec mode) — use directly
 		pending = specs;
-		skipped = [];
 	} else {
 		// Discovery mode — find and filter pending specs
 		const config = loadConfig(cwd);
@@ -182,7 +178,6 @@ export async function executePlanAll(
 		}
 
 		pending = filterByStatus(discovered, "pending");
-		skipped = discovered.filter((s) => s.status !== "pending").map((s) => s.name);
 	}
 
 	const planned: PlanResult[] = [];
@@ -208,7 +203,7 @@ export async function executePlanAll(
 		callbacks.onSpecComplete?.(result);
 	}
 
-	return { planned, skipped };
+	return { planned };
 }
 
 export default function Plan(flags: PlanFlags) {
@@ -279,13 +274,10 @@ export default function Plan(flags: PlanFlags) {
 	if (runner.phase === "done" && allResult) {
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned, ${allResult.skipped.length} skipped)`}</Text>
+				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned)`}</Text>
 				{allResult.planned.map((r) => (
 					<Text key={r.specName}>{`  ${r.specName}`}</Text>
 				))}
-				{allResult.skipped.length > 0 && (
-					<Text dimColor>{`  Skipped: ${allResult.skipped.join(", ")}`}</Text>
-				)}
 			</Box>
 		);
 	}

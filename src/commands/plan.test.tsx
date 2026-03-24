@@ -415,13 +415,12 @@ describe("executePlanAll", () => {
 		expect(result.planned).toHaveLength(2);
 		expect(result.planned[0].specName).toBe("01-auth");
 		expect(result.planned[1].specName).toBe("02-api");
-		expect(result.skipped).toHaveLength(0);
 		expect(onSpecStart).toHaveBeenCalledTimes(2);
 		expect(onSpecStart).toHaveBeenCalledWith("01-auth", 0, 2);
 		expect(onSpecStart).toHaveBeenCalledWith("02-api", 1, 2);
 	});
 
-	it("skips already-planned specs", async () => {
+	it("only plans pending specs", async () => {
 		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
 		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "pending" as const };
 		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
@@ -435,7 +434,6 @@ describe("executePlanAll", () => {
 
 		expect(result.planned).toHaveLength(1);
 		expect(result.planned[0].specName).toBe("02-api");
-		expect(result.skipped).toEqual(["01-auth"]);
 	});
 
 	it("stops on first failure", async () => {
@@ -468,7 +466,6 @@ describe("executePlanAll", () => {
 		);
 
 		expect(result.planned).toHaveLength(0);
-		expect(result.skipped).toEqual(["01-auth", "02-api"]);
 		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 
