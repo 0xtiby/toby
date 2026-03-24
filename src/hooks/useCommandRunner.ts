@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig } from "../lib/config.js";
-import { discoverSpecs } from "../lib/specs.js";
+import { discoverSpecs, findSpecs } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { AbortError } from "../lib/errors.js";
 
@@ -15,7 +15,7 @@ export interface CommandFlags {
 	session?: string;
 }
 
-export type Phase = "init" | "all" | "selecting" | "running" | "done" | "interrupted" | "error";
+export type Phase = "init" | "all" | "multi" | "selecting" | "running" | "done" | "interrupted" | "error";
 
 const MAX_EVENTS = 100;
 
@@ -30,9 +30,11 @@ export function useCommandRunner(options: {
 
 	const [phase, setPhase] = useState<Phase>(() => {
 		if (flags.all) return "all";
+		if (flags.spec && flags.spec.includes(",")) return "multi";
 		if (flags.spec) return "init";
 		return "selecting";
 	});
+	const [selectedSpecs, setSelectedSpecs] = useState<Spec[]>([]);
 	const [currentIteration, setCurrentIteration] = useState(0);
 	const [maxIterations, setMaxIterations] = useState(0);
 	const [specName, setSpecName] = useState("");
@@ -77,6 +79,22 @@ export function useCommandRunner(options: {
 		}
 	}, [phase]);
 
+	// Resolve specs for multi-spec mode (comma-separated --spec)
+	useEffect(() => {
+		if (phase !== "multi" || selectedSpecs.length > 0) return;
+		if (!flags.spec) return;
+		try {
+			const config = loadConfig();
+			const discovered = discoverSpecs(process.cwd(), config);
+			const resolved = findSpecs(discovered, flags.spec);
+			setSelectedSpecs(resolved);
+		} catch (err) {
+			setErrorMessage((err as Error).message);
+			setPhase("error");
+			exit(new Error((err as Error).message));
+		}
+	}, [phase, selectedSpecs.length]);
+
 	// Bounded event buffer
 	function addEvent(event: CliEvent) {
 		setEvents((prev) =>
@@ -89,6 +107,16 @@ export function useCommandRunner(options: {
 	function handleSpecSelect(spec: Spec) {
 		setActiveFlags({ ...flags, spec: spec.name });
 		setPhase("init");
+	}
+
+	function handleMultiSpecConfirm(specs: Spec[]) {
+		if (specs.length === 1) {
+			setActiveFlags({ ...flags, spec: specs[0].name });
+			setPhase("init");
+		} else {
+			setSelectedSpecs(specs);
+			setPhase("multi");
+		}
 	}
 
 	function handleError(err: unknown) {
@@ -132,10 +160,12 @@ export function useCommandRunner(options: {
 		specs,
 		activeFlags,
 		allProgress,
+		selectedSpecs,
 		interruptInfo,
 		abortSignal: abortControllerRef.current.signal,
 		resolvedVerbose,
 		handleSpecSelect,
+		handleMultiSpecConfirm,
 		handleError,
 		handleDone,
 		onPhaseCallback,

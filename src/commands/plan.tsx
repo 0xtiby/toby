@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Text, Box } from "ink";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
-import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
+import type { Spec } from "../lib/specs.js";
+import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { IterationResult } from "../lib/loop.js";
 import {
@@ -17,7 +18,7 @@ import type { Iteration } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
-import SpecSelector from "../components/SpecSelector.js";
+import MultiSpecSelector from "../components/MultiSpecSelector.js";
 import StreamOutput from "../components/StreamOutput.js";
 
 export type PlanFlags = CommandFlags;
@@ -160,26 +161,39 @@ export async function executePlanAll(
 	callbacks: PlanAllCallbacks = {},
 	cwd: string = process.cwd(),
 	abortSignal?: AbortSignal,
+	specs?: Spec[],
 ): Promise<PlanAllResult> {
 	ensureLocalDir(cwd);
 
-	const config = loadConfig(cwd);
-	const specs = discoverSpecs(cwd, config);
+	let pending: Spec[];
+	let skipped: string[];
 
-	if (specs.length === 0) {
-		throw new Error("No specs found in specs/");
+	if (specs) {
+		// Pre-resolved specs (from multi-spec mode) — use directly
+		pending = specs;
+		skipped = [];
+	} else {
+		// Discovery mode — find and filter pending specs
+		const config = loadConfig(cwd);
+		const discovered = discoverSpecs(cwd, config);
+
+		if (discovered.length === 0) {
+			throw new Error("No specs found in specs/");
+		}
+
+		pending = filterByStatus(discovered, "pending");
+		skipped = discovered.filter((s) => s.status !== "pending").map((s) => s.name);
 	}
 
-	const pending = filterByStatus(specs, "pending");
-	const skipped = specs.filter((s) => s.status !== "pending").map((s) => s.name);
 	const planned: PlanResult[] = [];
+	const session = flags.session || generateSessionName();
 
 	for (let i = 0; i < pending.length; i++) {
 		const spec = pending[i];
 		callbacks.onSpecStart?.(spec.name, i, pending.length);
 
 		const result = await executePlan(
-			{ ...flags, spec: spec.name, all: false },
+			{ ...flags, spec: spec.name, all: false, session },
 			{
 				onPhase: callbacks.onPhase,
 				onIteration: callbacks.onIteration,
@@ -207,17 +221,27 @@ export default function Plan(flags: PlanFlags) {
 	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
 	const [refinementInfo, setRefinementInfo] = useState<{ specName: string } | null>(null);
 
+	const allCallbacks: PlanAllCallbacks = useMemo(() => ({
+		onSpecStart: runner.onSpecStartCallback,
+		onSpecComplete: () => {},
+		onPhase: runner.onPhaseCallback,
+		onRefinement: (name: string) => { setRefinementInfo({ specName: name }); },
+		onIteration: runner.onIterationCallback,
+		onEvent: runner.addEvent,
+	}), [runner.onSpecStartCallback, runner.onPhaseCallback, runner.onIterationCallback, runner.addEvent]);
+
+	// Run multi-spec mode (specs resolved by useCommandRunner)
+	useEffect(() => {
+		if (runner.phase !== "multi" || runner.selectedSpecs.length === 0) return;
+		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal, runner.selectedSpecs)
+			.then((r) => { setAllResult(r); runner.handleDone(); })
+			.catch(runner.handleError);
+	}, [runner.phase, runner.selectedSpecs]);
+
 	// Run --all mode
 	useEffect(() => {
 		if (runner.phase !== "all") return;
-		executePlanAll(flags, {
-			onSpecStart: runner.onSpecStartCallback,
-			onSpecComplete: () => {},
-			onPhase: runner.onPhaseCallback,
-			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
-			onIteration: runner.onIterationCallback,
-			onEvent: runner.addEvent,
-		}, undefined, runner.abortSignal)
+		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal)
 			.then((r) => { setAllResult(r); runner.handleDone(); })
 			.catch(runner.handleError);
 	}, [runner.phase]);
@@ -249,7 +273,7 @@ export default function Plan(flags: PlanFlags) {
 	}
 
 	if (runner.phase === "selecting") {
-		return <SpecSelector specs={runner.specs} onSelect={runner.handleSpecSelect} />;
+		return <MultiSpecSelector specs={runner.specs} onConfirm={runner.handleMultiSpecConfirm} />;
 	}
 
 	if (runner.phase === "done" && allResult) {

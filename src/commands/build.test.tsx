@@ -468,7 +468,7 @@ describe("Build component", () => {
 
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
-			expect(output).toContain("Select a spec to build");
+			expect(output).toContain("Select specs to build");
 			expect(output).toContain("01-auth");
 		});
 	});
