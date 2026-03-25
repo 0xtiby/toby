@@ -55,6 +55,7 @@ describe("useModels", () => {
 
 		expect(captured).not.toBeNull();
 		expect(captured!.loading).toBe(false);
+		expect(captured!.error).toBeNull();
 		expect(captured!.items.length).toBe(3); // default + 2 models
 	});
 
@@ -101,7 +102,7 @@ describe("useModels", () => {
 		expect(captured!.loading).toBe(false);
 	});
 
-	it("returns [DEFAULT_ITEM] when listModels rejects", async () => {
+	it("returns [DEFAULT_ITEM] with error when listModels rejects", async () => {
 		mockListModels.mockImplementation(async () => {
 			throw new Error("network error");
 		});
@@ -120,6 +121,7 @@ describe("useModels", () => {
 
 		expect(captured!.items).toEqual([DEFAULT_ITEM]);
 		expect(captured!.loading).toBe(false);
+		expect(captured!.error).toBe("network error");
 	});
 
 	it("calls listModels with correct cli parameter", async () => {

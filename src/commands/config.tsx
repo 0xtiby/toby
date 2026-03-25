@@ -4,9 +4,9 @@ import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import fs from "node:fs";
 import path from "node:path";
-import Spinner from "ink-spinner";
 import { detectAll } from "@0xtiby/spawner";
 import { useModels } from "../hooks/useModels.js";
+import { LoadingSpinner } from "../components/LoadingSpinner.js";
 import { loadConfig, writeConfig } from "../lib/config.js";
 import { getLocalDir, CONFIG_FILE } from "../lib/paths.js";
 import { ConfigSchema } from "../types.js";
@@ -252,8 +252,8 @@ export function ConfigEditor({ version }: { version: string }) {
 	const [iterInput, setIterInput] = useState("");
 	const [specsDirInput, setSpecsDirInput] = useState("");
 	const [saveError, setSaveError] = useState<string | null>(null);
-	const planModels = useModels(values.planCli);
-	const buildModels = useModels(values.buildCli);
+	const planModels = useModels(values.planCli, { enabled: phase === "plan_model" });
+	const buildModels = useModels(values.buildCli, { enabled: phase === "build_model" });
 
 	useEffect(() => {
 		if (phase !== "loading") return;
@@ -339,10 +339,7 @@ export function ConfigEditor({ version }: { version: string }) {
 			)}
 
 			{phase === "plan_model" && planModels.loading && (
-				<Box>
-					<Spinner type="dots" />
-					<Text> Loading models...</Text>
-				</Box>
+				<LoadingSpinner message="Loading models..." />
 			)}
 
 			{phase === "plan_model" && !planModels.loading && (
@@ -412,10 +409,7 @@ export function ConfigEditor({ version }: { version: string }) {
 			)}
 
 			{phase === "build_model" && buildModels.loading && (
-				<Box>
-					<Spinner type="dots" />
-					<Text> Loading models...</Text>
-				</Box>
+				<LoadingSpinner message="Loading models..." />
 			)}
 
 			{phase === "build_model" && !buildModels.loading && (
