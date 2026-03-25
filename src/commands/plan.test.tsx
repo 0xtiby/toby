@@ -862,6 +862,28 @@ describe("Plan component", () => {
 		expect(output).not.toContain("Select specs to plan");
 	});
 
+	it("only shows pending specs in selector", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "building" as const },
+			{ name: "04-done", path: "/p/specs/04-done.md", order: { num: 4, suffix: null }, status: "done" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		const { lastFrame } = render(
+			<Plan all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("01-auth");
+			expect(output).not.toContain("02-api");
+			expect(output).not.toContain("03-ui");
+			expect(output).not.toContain("04-done");
+		});
+	});
+
 	it("shows error when spec not found", async () => {
 		mockFindSpec.mockReturnValue(undefined);
 
