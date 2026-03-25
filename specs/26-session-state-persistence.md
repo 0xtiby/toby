@@ -98,8 +98,8 @@ export const SpecStatusEntrySchema = z.object({
 // Extended: StatusSchema gets session-level tracking
 export const StatusSchema = z.object({
   specs: z.record(z.string(), SpecStatusEntrySchema),
-  sessionName: z.string().nullable().optional(),  // NEW: current session name
-  lastCli: z.string().nullable().optional(),       // NEW: last CLI used
+  sessionName: z.string().optional(),  // NEW: current session name
+  lastCli: z.string().optional(),       // NEW: last CLI used
 });
 ```
 

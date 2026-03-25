@@ -10,7 +10,6 @@
     "iterations": 10
   },
   "specsDir": "specs",
-  "verbose": false,
   "templateVars": {
     "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
   }

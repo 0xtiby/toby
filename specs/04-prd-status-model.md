@@ -1,5 +1,7 @@
 # PRD & Status Data Model
 
+> **Note:** The PRD sections of this spec (prd.json schema, Task types, prd.ts API) were **superseded by spec 12 (Decouple PRD from Code)**. PRD tracking is now entirely prompt-driven — toby no longer has PRD types or a prd.ts module. Only the **status.json** sections below remain accurate. See also spec 26 for additional status.json fields added later (iteration state, stopReason, sessionName, lastCli).
+
 ## Overview
 
 Define the data structures for `prd.json` (per-spec task tracking) and `status.json` (spec-level iteration/session tracking). The AI agent writes `prd.json` during planning; toby reads and updates `status.json` during both plan and build.

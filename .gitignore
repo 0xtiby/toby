@@ -2,6 +2,9 @@ node_modules
 dist
 coverage
 
+# Transcripts
+.toby/transcripts/
+
 # AI CLI config files
 .eni/
 .claude/

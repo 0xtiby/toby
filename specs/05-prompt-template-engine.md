@@ -1,5 +1,7 @@
 # Prompt Template Engine
 
+> **Note:** The `TemplateVars` interface, `PromptName` type (including `PROMPT_BUILD_ALL`), and variable list in this spec were **superseded by specs 16 (Template Variable System) and 17 (Prompt Simplification)**. The current implementation uses `Record<string, string>` for vars, only `"PROMPT_PLAN" | "PROMPT_BUILD"` for prompt names, and a different set of 8 CLI variables. The 3-level override chain and substitution mechanics described here remain accurate.
+
 ## Overview
 
 Load prompt files following the 3-level override chain (local > global > shipped) and substitute template variables like `{{SPEC_NAME}}`, `{{ITERATION}}`, etc. before passing to spawner.

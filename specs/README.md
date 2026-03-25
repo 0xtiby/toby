@@ -42,3 +42,6 @@
 | [Session State Persistence](./26-session-state-persistence.md) | `src/lib/status.ts`, `src/types.ts` | Save sessionName and sessionId to status.json on iteration complete or error/abort |
 | [Crash Detection](./27-crash-detection.md) | `src/lib/loop.ts`, `src/types.ts` | Detect when build crashed vs stopped intentionally via iteration state tracking |
 | [Session Resume](./28-session-resume.md) | `src/commands/build.tsx`, `src/lib/loop.ts` | Auto-resume from last session; cross-CLI resume preserves worktree context |
+| [Filter Plan Selector](./29-filter-plan-selector.md) | `src/commands/plan.tsx` | Filter interactive plan selector to only show pending specs |
+| [Documentation Gaps](./30-documentation-gaps.md) | `docs/`, `README.md` | Close gaps between implemented features and user-facing documentation |
+| [Transcript CLI Wiring](./31-transcript-cli-wiring.md) | `src/cli.tsx`, `src/commands/plan.tsx`, `src/commands/build.tsx`, `src/commands/config.tsx` | Wire --transcript flag to commands and add transcript to config VALID_KEYS |

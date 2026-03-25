@@ -1,5 +1,7 @@
 # 13 — Dynamic Template Variables
 
+> **Note:** This spec was **superseded by spec 16 (Template Variable System)**. The `Record<string, string>` change was implemented, but the frontmatter parsing, `BUILTIN_VARS` constant, `PromptFrontmatter` interface, and per-command `templateVars` were NOT implemented. Spec 16 replaced this approach with a simpler model: root-level `templateVars` in config (not per-command), no frontmatter, and 8 well-defined CLI variables. See spec 16 for the current implementation.
+
 ## Overview
 
 Replace the fixed `TemplateVars` interface with a dynamic `Record<string, string>` system. Prompts can declare required/optional variables via YAML frontmatter. Users can define extra variables per-command in `config.json`. This makes prompts self-describing and allows custom tracker integrations without code changes.

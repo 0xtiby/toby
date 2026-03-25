@@ -58,6 +58,7 @@ $ toby init
 - **Specs directory:** Text input with default "specs". Creates directory if it doesn't exist.
 - **Idempotent:** Running init twice overwrites config.json but preserves status.json if it exists.
 - **Creates:** `.toby/config.json`, `.toby/status.json` (if missing), specs directory (if missing).
+- **Default templateVars:** Init writes `templateVars: { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" }` to config.json. This provides the shipped prompts' expected `{{PRD_PATH}}` variable out of the box.
 - **Does NOT create** global `~/.toby/` — that's created on first plan/build run.
 
 ### Acceptance Criteria
@@ -183,6 +184,7 @@ $ toby config set build.iterations 20
 - **`get <key>`:** Print the resolved value (after merge). Dot-notation for nested keys.
 - **`set <key> <value>`:** Write to LOCAL config only (`.toby/config.json`). Create the file if missing.
 - **Key format:** Dot-notation matching config structure (e.g., `plan.cli`, `build.model`, `specsDir`, `verbose`).
+- **Valid keys whitelist:** Only keys in VALID_KEYS can be set via CLI: `plan.cli`, `plan.model`, `plan.iterations`, `build.cli`, `build.model`, `build.iterations`, `specsDir`, `verbose`, `transcript`. Other config fields (`templateVars`, `excludeSpecs`) must be edited in config.json directly.
 - **Validation:** Values are validated against Zod schema before writing. Invalid values show error.
 
 ### Acceptance Criteria

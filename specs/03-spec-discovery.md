@@ -24,15 +24,28 @@ Users write specs as markdown files. Toby needs to discover them, respect orderi
 ## Data Model
 
 ```typescript
-interface Spec {
+/** Base file reference (defined in src/types.ts) */
+interface SpecFile {
   /** Filename without extension, e.g. "01-auth" */
   name: string;
-  /** Original filename, e.g. "01-auth.md" */
-  filename: string;
   /** Full path to the spec file */
   path: string;
-  /** Numeric prefix for ordering, null if unnumbered */
-  order: number | null;
+  /** Raw markdown content (optional, loaded on demand) */
+  content?: string;
+}
+
+/** Parsed order prefix */
+interface SpecOrder {
+  /** Numeric part of the prefix */
+  num: number;
+  /** Optional letter suffix, e.g. "a" in "15a-" */
+  suffix: string | null;
+}
+
+/** Extended spec with ordering and status (defined in src/lib/specs.ts) */
+interface Spec extends SpecFile {
+  /** Parsed prefix for ordering, null if unnumbered */
+  order: SpecOrder | null;
   /** Current status from status.json */
   status: SpecStatus;
 }
@@ -54,8 +67,8 @@ export function filterByStatus(specs: Spec[], status: SpecStatus): Spec[];
 /** Find a spec by name (with or without NN- prefix, with or without .md) */
 export function findSpec(specs: Spec[], name: string): Spec | undefined;
 
-/** Parse the numeric prefix from a filename */
-export function parseSpecOrder(filename: string): number | null;
+/** Parse the numeric prefix from a filename (supports alphanumeric: "15a-") */
+export function parseSpecOrder(filename: string): SpecOrder | null;
 
 /** Sort specs by order (numbered first ascending, unnumbered last alphabetical) */
 export function sortSpecs(specs: Spec[]): Spec[];

@@ -1,5 +1,7 @@
 # Default Prompt Files
 
+> **Note:** `PROMPT_BUILD_ALL.md` was **removed by spec 17 (Prompt Simplification)**. Toby now ships only two prompts: `PROMPT_PLAN.md` and `PROMPT_BUILD.md`. The build prompt handles both single-spec and multi-spec modes using `SPEC_INDEX`, `SPEC_COUNT`, and `SPECS` variables.
+
 ## Overview
 
 The three prompt files shipped with toby: `PROMPT_PLAN.md`, `PROMPT_BUILD.md`, and `PROMPT_BUILD_ALL.md`. These are generic, opinionated prompts that work for any project. Users can override them at global (`~/.toby/`) or local (`.toby/`) level.
