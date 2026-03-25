@@ -3,6 +3,7 @@ import path from "node:path";
 import { ConfigSchema, CLI_NAMES } from "../types.js";
 import type { TobyConfig, CommandConfig } from "../types.js";
 import { getGlobalDir, getLocalDir, CONFIG_FILE } from "./paths.js";
+import { formatErrorWithHint } from "./help.js";
 
 /**
  * Read and parse a JSON config file, returning a partial config.
@@ -89,7 +90,13 @@ export interface CommandFlags {
  */
 export function validateCliName(cli: string | undefined): void {
 	if (cli && !(CLI_NAMES as readonly string[]).includes(cli)) {
-		throw new Error(`Unknown CLI: ${cli}. Must be one of: ${CLI_NAMES.join(", ")}`);
+		throw new Error(
+			formatErrorWithHint(
+				`Unknown CLI: ${cli}`,
+				[...CLI_NAMES],
+				"toby plan --cli=claude --spec=auth",
+			),
+		);
 	}
 }
 

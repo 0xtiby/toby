@@ -314,11 +314,11 @@ describe("config", () => {
 			expect(result.iterations).toBe(10);
 		});
 
-		it("throws on invalid --cli value", () => {
+		it("throws on invalid --cli value with hint", () => {
 			const config = loadConfig("/tmp/proj");
 			expect(() =>
 				resolveCommandConfig(config, "plan", { cli: "nonexistent" as never }),
-			).toThrow("Unknown CLI: nonexistent. Must be one of: claude, codex, opencode");
+			).toThrow("Unknown CLI: nonexistent");
 		});
 
 		it("accepts valid --cli values without throwing", () => {
@@ -340,9 +340,13 @@ describe("config", () => {
 			expect(() => validateCliName(undefined)).not.toThrow();
 		});
 
-		it("throws for invalid CLI name", () => {
+		it("throws for invalid CLI name with hint", () => {
+			expect(() => validateCliName("invalid")).toThrow("Unknown CLI: invalid");
 			expect(() => validateCliName("invalid")).toThrow(
-				"Unknown CLI: invalid. Must be one of: claude, codex, opencode",
+				"Valid options: claude, codex, opencode",
+			);
+			expect(() => validateCliName("invalid")).toThrow(
+				"toby plan --cli=claude --spec=auth",
 			);
 		});
 	});
