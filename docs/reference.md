@@ -6,6 +6,8 @@
 toby <command> [options]
 ```
 
+Running `toby` without arguments shows an interactive menu to select a command.
+
 ## Global Options
 
 | Flag | Description |
@@ -25,17 +27,18 @@ toby plan [options]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--spec=<name>` | string | — | Plan a specific spec |
+| `--spec=<name>` | string | — | Plan a specific spec. Supports comma-separated values and matching by exact name, filename, slug, or numeric prefix |
 | `--all` | boolean | `false` | Plan all pending specs |
 | `--iterations=<n>` | number | — | Override iteration count |
 | `--verbose` | boolean | `false` | Show full CLI output |
 | `--cli=<name>` | string | — | Override AI CLI (`claude`, `codex`, `opencode`) |
 | `--session=<name>` | string | — | Name the session for branch/PR naming |
 
-**Example:**
+**Examples:**
 
 ```
 toby plan --spec=auth --iterations=3 --verbose
+toby plan --spec=auth,dashboard,15a
 ```
 
 ---
@@ -50,17 +53,18 @@ toby build [options]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--spec=<name>` | string | — | Build a specific planned spec |
+| `--spec=<name>` | string | — | Build a specific planned spec. Supports comma-separated values and matching by exact name, filename, slug, or numeric prefix |
 | `--all` | boolean | `false` | Build all planned specs in order |
 | `--iterations=<n>` | number | — | Override max iteration count |
 | `--verbose` | boolean | `false` | Show full CLI output |
 | `--cli=<name>` | string | — | Override AI CLI (`claude`, `codex`, `opencode`) |
 | `--session=<name>` | string | — | Name the session for branch/PR naming |
 
-**Example:**
+**Examples:**
 
 ```
 toby build --spec=auth --all --cli=codex
+toby build --spec=01,02,03
 ```
 
 ---
@@ -80,6 +84,7 @@ toby init [options]
 | `--build-cli=<name>` | string | — | Set build CLI (`claude`, `codex`, `opencode`) |
 | `--build-model=<id>` | string | — | Set build model |
 | `--specs-dir=<path>` | string | — | Set specs directory |
+| `--verbose` | boolean | `false` | Show full CLI output |
 
 **Example:**
 
@@ -161,6 +166,7 @@ toby config set plan.cli=claude build.cli=codex  # batch set
 | `specsDir` | string | `"specs"` | Directory containing spec markdown files |
 | `excludeSpecs` | string[] | `["README.md"]` | Filenames to skip during spec discovery |
 | `verbose` | boolean | `false` | Show full CLI output during runs |
+| `transcript` | boolean | `false` | Record session output to `.toby/transcripts/` |
 | `templateVars` | Record\<string, string\> | `{}` | Custom variables injected into prompt templates |
 
 ### Full Example
@@ -180,6 +186,7 @@ toby config set plan.cli=claude build.cli=codex  # batch set
   "specsDir": "specs",
   "excludeSpecs": ["README.md"],
   "verbose": false,
+  "transcript": false,
   "templateVars": {}
 }
 ```
