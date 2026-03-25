@@ -45,3 +45,9 @@
 | [Filter Plan Selector](./29-filter-plan-selector.md) | `src/commands/plan.tsx` | Filter interactive plan selector to only show pending specs |
 | [Documentation Gaps](./30-documentation-gaps.md) | `docs/`, `README.md` | Close gaps between implemented features and user-facing documentation |
 | [Transcript CLI Wiring](./31-transcript-cli-wiring.md) | `src/cli.tsx`, `src/commands/plan.tsx`, `src/commands/build.tsx`, `src/commands/config.tsx` | Wire --transcript flag to commands and add transcript to config VALID_KEYS |
+| [Hamster Palette & Sprites](./32-hamster-palette-sprites.md) | `src/components/hamster/palette.ts`, `src/components/hamster/sprites.ts` | Color palette and pixel-art sprite data for the animated hamster mascot |
+| [Wheel Renderer](./33-hamster-wheel-renderer.md) | `src/components/hamster/wheel.ts` | Circle geometry, spoke generation, and rotation math for the spinning wheel |
+| [HamsterWheel Component](./34-hamster-wheel-component.md) | `src/components/hamster/HamsterWheel.tsx` | Main Ink component: grid buffer, animation loop, half-block Unicode rendering |
+| [Welcome Screen Redesign](./35-welcome-screen-redesign.md) | `src/components/Welcome.tsx`, `src/components/InfoPanel.tsx`, `src/lib/stats.ts` | Two-column layout with animated hamster + info panel, replacing robot mascot |
+| [Async Models API Migration](./36-async-models-api-migration.md) | `src/hooks/useModels.ts`, `src/commands/init.tsx`, `src/commands/config.tsx` | Replace sync `getKnownModels()` with async `listModels()` via shared React hook with cache & fallback |
+| [Spawner Dependency Upgrade](./38-spawner-dependency-upgrade.md) | `package.json`, `pnpm-lock.yaml` | Bump @0xtiby/spawner to ^1.1.0, pin version, adapt to type changes |
