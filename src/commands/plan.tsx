@@ -234,6 +234,8 @@ export default function Plan(flags: PlanFlags) {
 	const runner = useCommandRunner({
 		flags,
 		runPhase: "planning",
+		filterSpecs: (specs) => filterByStatus(specs, "pending"),
+		emptyMessage: "No pending specs to plan. All specs have been planned.",
 	});
 
 	const [result, setResult] = useState<PlanResult | null>(null);

@@ -129,6 +129,67 @@ describe("Config", () => {
 		);
 		expect(lastFrame()).toContain("Missing value");
 	});
+
+	it("set transcript true writes boolean true to config.json", () => {
+		const { lastFrame } = render(
+			<Config
+				version="0.1.0"
+				subcommand="set"
+				configKey="transcript"
+				value="true"
+			/>,
+		);
+		expect(lastFrame()).toContain("Set transcript = true");
+
+		const configPath = path.join(tmpDir, ".toby", "config.json");
+		const written = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+		expect(written.transcript).toBe(true);
+	});
+
+	it("set transcript false writes boolean false to config.json", () => {
+		const { lastFrame } = render(
+			<Config
+				version="0.1.0"
+				subcommand="set"
+				configKey="transcript"
+				value="false"
+			/>,
+		);
+		expect(lastFrame()).toContain("Set transcript = false");
+
+		const configPath = path.join(tmpDir, ".toby", "config.json");
+		const written = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+		expect(written.transcript).toBe(false);
+	});
+
+	it("get transcript returns current value", () => {
+		// First set transcript to true
+		render(
+			<Config
+				version="0.1.0"
+				subcommand="set"
+				configKey="transcript"
+				value="true"
+			/>,
+		);
+
+		const { lastFrame } = render(
+			<Config version="0.1.0" subcommand="get" configKey="transcript" />,
+		);
+		expect(lastFrame()).toContain("true");
+	});
+
+	it("set transcript with invalid value fails validation", () => {
+		const { lastFrame } = render(
+			<Config
+				version="0.1.0"
+				subcommand="set"
+				configKey="transcript"
+				value="notabool"
+			/>,
+		);
+		expect(lastFrame()).toContain("Invalid value");
+	});
 });
 
 describe("ConfigSetBatch", () => {

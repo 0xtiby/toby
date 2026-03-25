@@ -27,6 +27,7 @@ const VALID_KEYS: Record<string, "string" | "number" | "boolean" | "string[]"> =
 	"build.iterations": "number",
 	specsDir: "string",
 	verbose: "boolean",
+	transcript: "boolean",
 };
 
 function getNestedValue(obj: Record<string, unknown>, key: string): unknown {
