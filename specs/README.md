@@ -51,3 +51,4 @@
 | [Welcome Screen Redesign](./35-welcome-screen-redesign.md) | `src/components/Welcome.tsx`, `src/components/InfoPanel.tsx`, `src/lib/stats.ts` | Two-column layout with animated hamster + info panel, replacing robot mascot |
 | [Async Models API Migration](./36-async-models-api-migration.md) | `src/hooks/useModels.ts`, `src/commands/init.tsx`, `src/commands/config.tsx` | Replace sync `getKnownModels()` with async `listModels()` via shared React hook with cache & fallback |
 | [Spawner Dependency Upgrade](./38-spawner-dependency-upgrade.md) | `package.json`, `pnpm-lock.yaml` | Bump @0xtiby/spawner to ^1.1.0, pin version, adapt to type changes |
+| [Clean Transcripts Command](./39-clean-transcripts-command.md) | `src/lib/clean.ts`, `src/commands/clean.tsx`, `src/cli.tsx` | Delete all transcript files from .toby/transcripts/ with confirmation prompt |
