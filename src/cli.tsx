@@ -135,6 +135,7 @@ const commands: Record<string, CommandEntry> = {
 				all={flags.all}
 				iterations={flags.iterations}
 				verbose={flags.verbose}
+				transcript={flags.transcript}
 				cli={flags.cli}
 				session={flags.session}
 			/>
@@ -148,6 +149,7 @@ const commands: Record<string, CommandEntry> = {
 				all={flags.all}
 				iterations={flags.iterations}
 				verbose={flags.verbose}
+				transcript={flags.transcript}
 				cli={flags.cli}
 				session={flags.session}
 			/>
