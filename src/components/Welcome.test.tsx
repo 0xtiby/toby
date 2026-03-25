@@ -1,7 +1,24 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import React from "react";
 import { render, cleanup } from "ink-testing-library";
+
+let mockColumns = 100;
+vi.mock("ink", async () => {
+	const actual = await vi.importActual<typeof import("ink")>("ink");
+	return {
+		...actual,
+		useStdout: () => ({
+			stdout: { columns: mockColumns } as unknown as NodeJS.WriteStream,
+			write: () => {},
+		}),
+	};
+});
+
 import Welcome from "./Welcome.js";
+
+beforeEach(() => {
+	mockColumns = 100;
+});
 
 afterEach(() => {
 	cleanup();
@@ -48,5 +65,27 @@ describe("Welcome", () => {
 		await delay();
 		const output = lastFrame()!;
 		expect(output).not.toContain("toby v1.0.0");
+	});
+
+	it("renders narrow fallback when terminal < 60 columns", () => {
+		mockColumns = 50;
+		const { lastFrame } = render(<Welcome version="1.0.0" />);
+		const output = lastFrame()!;
+		expect(output).toContain("🐹 toby v1.0.0");
+		expect(output).toContain("Specs:");
+		expect(output).toContain("Planned:");
+		expect(output).toContain("Done:");
+		expect(output).toContain("Tokens:");
+		// Menu still renders
+		expect(output).toContain("plan");
+	});
+
+	it("renders two-column layout when terminal >= 60 columns", () => {
+		mockColumns = 80;
+		const { lastFrame } = render(<Welcome version="1.0.0" />);
+		const output = lastFrame()!;
+		expect(output).toContain("toby v1.0.0");
+		// Should NOT have the narrow emoji prefix
+		expect(output).not.toContain("🐹");
 	});
 });
