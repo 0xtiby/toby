@@ -1,6 +1,6 @@
 import meow from "meow";
 import React from "react";
-import { render, Text } from "ink";
+import { render } from "ink";
 import Plan from "./commands/plan.js";
 import Build from "./commands/build.js";
 import Init from "./commands/init.js";
@@ -15,12 +15,18 @@ import {
 	commandHelp,
 } from "./lib/help.js";
 
-function UnknownCommand({ command }: { command: string }) {
-	return (
-		<Text color="red">
-			{`Unknown command: ${command}\nRun "toby --help" for available commands.`}
-		</Text>
-	);
+const COMMAND_NAMES = ["plan", "build", "init", "status", "config", "clean"];
+
+function writeUnknownCommandError(command: string): void {
+	const lines = [
+		`✗ Unknown command: ${command}`,
+		"",
+		`Available commands: ${COMMAND_NAMES.join(", ")}`,
+		"",
+		"Run toby --help for details.",
+		"",
+	];
+	process.stderr.write(lines.join("\n"));
 }
 
 const cli = meow(
@@ -200,7 +206,7 @@ if (cli.flags.help) {
 		}
 		process.exitCode = 0;
 	} else {
-		render(<UnknownCommand command={command} />).unmount();
+		writeUnknownCommandError(command);
 		process.exitCode = 1;
 	}
 } else if (!command) {
@@ -219,6 +225,6 @@ if (cli.flags.help) {
 		app.unmount();
 	}
 } else {
-	render(<UnknownCommand command={command} />).unmount();
+	writeUnknownCommandError(command);
 	process.exitCode = 1;
 }
