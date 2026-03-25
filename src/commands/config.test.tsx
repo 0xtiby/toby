@@ -108,7 +108,7 @@ describe("Config", () => {
 				value="notanumber"
 			/>,
 		);
-		expect(lastFrame()).toContain("Invalid value");
+		expect(lastFrame()).toContain("Invalid value for build.iterations");
 	});
 
 	it("set shows error for unknown key", () => {
