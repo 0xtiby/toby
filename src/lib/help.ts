@@ -176,6 +176,53 @@ export const commandHelp: Record<string, CommandHelp> = {
 			},
 		],
 	},
+	config: {
+		summary: "Manage configuration",
+		usage: [
+			"$ toby config                           Interactive config editor",
+			"$ toby config get <key>                 Show a config value (dot-notation)",
+			"$ toby config set <key> <value>         Set a config value",
+			"$ toby config set <k>=<v> [<k>=<v>...]  Batch set values",
+		],
+		flags: [],
+		examples: [
+			{
+				command: "toby config",
+				description: "Open the interactive config editor",
+			},
+			{
+				command: "toby config get plan.cli",
+				description: "Show the configured plan CLI",
+			},
+			{
+				command: "toby config set plan.cli=claude build.iterations=5",
+				description:
+					"Batch set plan CLI to claude and build iterations to 5",
+			},
+		],
+	},
+	clean: {
+		summary: "Delete session transcripts",
+		usage: ["$ toby clean [options]"],
+		flags: [
+			{
+				name: "--force",
+				description: "Skip confirmation prompt (required in non-TTY)",
+			},
+		],
+		examples: [
+			{
+				command: "toby clean",
+				description:
+					"Delete all transcripts with confirmation prompt",
+			},
+			{
+				command: "toby clean --force",
+				description:
+					"Delete all transcripts without confirmation (for CI/agents)",
+			},
+		],
+	},
 };
 
 /** Render per-command help with examples */
