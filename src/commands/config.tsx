@@ -4,7 +4,9 @@ import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import fs from "node:fs";
 import path from "node:path";
-import { detectAll, getKnownModels } from "@0xtiby/spawner";
+import { detectAll } from "@0xtiby/spawner";
+import { useModels } from "../hooks/useModels.js";
+import { LoadingSpinner } from "../components/LoadingSpinner.js";
 import { loadConfig, writeConfig } from "../lib/config.js";
 import { getLocalDir, CONFIG_FILE } from "../lib/paths.js";
 import { ConfigSchema } from "../types.js";
@@ -174,14 +176,6 @@ interface EditorValues {
 	verbose: boolean;
 }
 
-function modelItems(cli: CliName) {
-	const models = getKnownModels(cli);
-	return [
-		{ label: "default", value: "default" },
-		...models.map((m) => ({ label: `${m.name} (${m.id})`, value: m.id })),
-	];
-}
-
 /** Build EditorValues from a loaded TobyConfig */
 export function configToEditorValues(config: TobyConfig): EditorValues {
 	return {
@@ -258,6 +252,8 @@ export function ConfigEditor({ version }: { version: string }) {
 	const [iterInput, setIterInput] = useState("");
 	const [specsDirInput, setSpecsDirInput] = useState("");
 	const [saveError, setSaveError] = useState<string | null>(null);
+	const planModels = useModels(values.planCli, { enabled: phase === "plan_model" });
+	const buildModels = useModels(values.buildCli, { enabled: phase === "build_model" });
 
 	useEffect(() => {
 		if (phase !== "loading") return;
@@ -342,12 +338,16 @@ export function ConfigEditor({ version }: { version: string }) {
 				<CompletedField label="cli" value={values.planCli} />
 			)}
 
-			{phase === "plan_model" && (
+			{phase === "plan_model" && planModels.loading && (
+				<LoadingSpinner message="Loading models..." />
+			)}
+
+			{phase === "plan_model" && !planModels.loading && (
 				<Box flexDirection="column">
 					<Text>  model:</Text>
 					<SelectInput
-						items={modelItems(values.planCli)}
-						initialIndex={initialIndex(modelItems(values.planCli), values.planModel)}
+						items={planModels.items}
+						initialIndex={initialIndex(planModels.items, values.planModel)}
 						onSelect={(item) => {
 							setValues((v) => ({ ...v, planModel: item.value }));
 							setIterInput(String(values.planIterations));
@@ -408,12 +408,16 @@ export function ConfigEditor({ version }: { version: string }) {
 				<CompletedField label="cli" value={values.buildCli} />
 			)}
 
-			{phase === "build_model" && (
+			{phase === "build_model" && buildModels.loading && (
+				<LoadingSpinner message="Loading models..." />
+			)}
+
+			{phase === "build_model" && !buildModels.loading && (
 				<Box flexDirection="column">
 					<Text>  model:</Text>
 					<SelectInput
-						items={modelItems(values.buildCli)}
-						initialIndex={initialIndex(modelItems(values.buildCli), values.buildModel)}
+						items={buildModels.items}
+						initialIndex={initialIndex(buildModels.items, values.buildModel)}
 						onSelect={(item) => {
 							setValues((v) => ({ ...v, buildModel: item.value }));
 							setIterInput(String(values.buildIterations));

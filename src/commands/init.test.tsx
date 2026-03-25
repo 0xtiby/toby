@@ -10,8 +10,8 @@ import type { InitSelections, InitFlags } from "./init.js";
 // Mock spawner
 vi.mock("@0xtiby/spawner", () => ({
 	detectAll: vi.fn(),
-	getKnownModels: vi.fn(() => [
-		{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+	listModels: vi.fn(async () => [
+		{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "anthropic" },
 	]),
 }));
 

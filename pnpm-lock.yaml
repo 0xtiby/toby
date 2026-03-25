@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@0xtiby/spawner':
-        specifier: latest
-        version: 1.0.2
+        specifier: ^1.1.0
+        version: 1.1.0
       ink:
         specifier: ^5.0.1
         version: 5.2.1(@types/react@18.3.28)(react@18.3.1)
@@ -51,8 +51,8 @@ importers:
 
 packages:
 
-  '@0xtiby/spawner@1.0.2':
-    resolution: {integrity: sha512-6XhpjZLDSlunLU10JxE+FtazPT9uV6zggiG/G3FyxQP7X+EqqwUAinO4zMp1F0oP/p2s2NW9lVVE7/dt/4fDJA==}
+  '@0xtiby/spawner@1.1.0':
+    resolution: {integrity: sha512-5w26Mu0E2Lr48aX2Md2PsAkF4bXbXPDzS2PFWaUGR/bum1MhL0CCxfXDGDJNJRr8dwNE4gChdkVtwjSFit33gA==}
 
   '@alcalzone/ansi-tokenize@0.1.3':
     resolution: {integrity: sha512-3yWxPTq3UQ/FY9p1ErPxIyfT64elWaMvM9lIHnaqpyft63tkxodF5aUElYHrdisWve5cETkh1+KBw1yJuW0aRw==}
@@ -1104,7 +1104,7 @@ packages:
 
 snapshots:
 
-  '@0xtiby/spawner@1.0.2': {}
+  '@0xtiby/spawner@1.1.0': {}
 
   '@alcalzone/ansi-tokenize@0.1.3':
     dependencies:
