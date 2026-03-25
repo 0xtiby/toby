@@ -1,5 +1,7 @@
 # 21 — Welcome Screen & Menu
 
+> **Note:** The mascot and layout portions of this spec were **superseded by spec 35 (Welcome Screen Redesign)**. The two-column layout (HamsterWheel + InfoPanel) replaces the ASCII robot mascot. Menu behavior is unchanged.
+
 ## Overview
 
 When the user runs bare `toby` (no command), render an interactive welcome screen with an ASCII robot mascot, version string, project status summary, and a navigable menu. Selecting a menu item transitions inline to that command's UI within the same Ink app. `toby --help` retains the existing static text help for scripting/piping.
