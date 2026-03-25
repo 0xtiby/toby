@@ -78,13 +78,13 @@ export const SpecStatusEntrySchema = z.object({
 	status: z.enum(["pending", "planned", "building", "done"]),
 	plannedAt: z.string().datetime().nullable(),
 	iterations: z.array(IterationSchema),
-	stopReason: StopReasonSchema.nullable().optional(),
+	stopReason: StopReasonSchema.optional(),
 });
 
 export const StatusSchema = z.object({
 	specs: z.record(z.string(), SpecStatusEntrySchema),
-	sessionName: z.string().nullable().optional(),
-	lastCli: z.string().nullable().optional(),
+	sessionName: z.string().optional(),
+	lastCli: z.string().optional(),
 });
 
 export type StatusData = z.infer<typeof StatusSchema>;

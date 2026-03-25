@@ -408,7 +408,7 @@ describe("executeBuild", () => {
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
+				options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -744,7 +744,7 @@ describe("integration: full build flow with mocked spawner", () => {
 					sentinelDetected: i === 4,
 				};
 				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
+				options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "sentinel" as const };
@@ -823,7 +823,7 @@ describe("integration: full build flow with mocked spawner", () => {
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
+				options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -870,7 +870,7 @@ describe("integration: full build flow with mocked spawner", () => {
 					sentinelDetected: false,
 				};
 				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
+				options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
 			return { iterations, stopReason: "max_iterations" as const };
@@ -1300,9 +1300,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("status.sessionName is null → falls through to computeSpecSlug", async () => {
+	it("status.sessionName is undefined → falls through to computeSpecSlug", async () => {
 		mockReadStatus.mockReturnValue({
-			sessionName: null,
+			sessionName: undefined,
 			lastCli: "claude",
 			specs: {
 				"01-auth": {

@@ -158,12 +158,12 @@ describe("SpecStatusEntrySchema", () => {
 		}
 	});
 
-	it("accepts null stopReason", () => {
+	it("accepts explicit stopReason value", () => {
 		const result = SpecStatusEntrySchema.parse({
 			...validEntry,
-			stopReason: null,
+			stopReason: "sentinel",
 		});
-		expect(result.stopReason).toBeNull();
+		expect(result.stopReason).toBe("sentinel");
 	});
 
 	it("defaults stopReason to undefined when omitted", () => {
@@ -215,14 +215,14 @@ describe("StatusSchema", () => {
 		expect(result.lastCli).toBeUndefined();
 	});
 
-	it("accepts null sessionName and lastCli", () => {
+	it("accepts explicit sessionName and lastCli values", () => {
 		const result = StatusSchema.parse({
 			...validStatus,
-			sessionName: null,
-			lastCli: null,
+			sessionName: "my-session",
+			lastCli: "claude",
 		});
-		expect(result.sessionName).toBeNull();
-		expect(result.lastCli).toBeNull();
+		expect(result.sessionName).toBe("my-session");
+		expect(result.lastCli).toBe("claude");
 	});
 
 	it("rejects missing specs field", () => {

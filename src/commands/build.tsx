@@ -14,7 +14,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
+import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -59,6 +59,29 @@ interface RunSpecBuildOptions {
 	abortSignal?: AbortSignal;
 	callbacks: BuildCallbacks;
 	writer?: TranscriptWriter | null;
+}
+
+interface ResumeDetection {
+	isCrashResume: boolean;
+	isExhaustedResume: boolean;
+	needsResume: boolean;
+	sessionId: string | undefined;
+}
+
+function detectResume(
+	specEntry: SpecStatusEntry | undefined,
+	currentCli: string,
+	lastCli: string | undefined,
+): ResumeDetection {
+	const lastIteration = specEntry?.iterations.at(-1);
+	const isCrashResume = !!(specEntry?.status !== "done" && lastIteration?.state === "in_progress");
+	const isExhaustedResume = !!(specEntry?.status !== "done" && specEntry?.stopReason === "max_iterations");
+	const needsResume = isCrashResume || isExhaustedResume;
+	const isSameCli = currentCli === lastCli;
+	const sessionId = (isSameCli && isCrashResume)
+		? lastIteration?.sessionId ?? undefined
+		: undefined;
+	return { isCrashResume, isExhaustedResume, needsResume, sessionId };
 }
 
 async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
@@ -131,6 +154,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				...iters[iters.length - 1],
 				state,
 				sessionId: iterResult.sessionId,
+				model: iterResult.model ?? iters[iters.length - 1].model,
 				completedAt: new Date().toISOString(),
 				exitCode: iterResult.exitCode,
 				tokensUsed: iterResult.tokensUsed,
@@ -147,7 +171,9 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 		},
 	});
 
-	// Persist stopReason on spec entry
+	// Persist stopReason on spec entry.
+	// Note: if aborted, the last iteration remains "in_progress" (since onIterationComplete never ran),
+	// so isCrashResume will correctly fire on next run — abort detection relies on iteration state, not stopReason.
 	const specEntryAfterLoop = status.specs[spec.name] ?? { status: "building", plannedAt: null, iterations: [] };
 	status = {
 		...status,
@@ -222,27 +248,16 @@ export async function executeBuild(
 	const existingIterations = specEntry.iterations.length;
 
 	// Resume detection: check for crash or exhaustion from previous run
-	const lastIteration = specEntry.iterations.at(-1);
-	const isCrashResume = specEntry.status !== "done" && lastIteration?.state === "in_progress";
-	const isExhaustedResume = specEntry.status !== "done" && specEntry.stopReason === "max_iterations";
-	const needsResume = (isCrashResume || isExhaustedResume) ?? false;
+	const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
 
 	// Session name reuse: reuse status.sessionName on resume so CLI finds existing worktree
-	const session = flags.session || (needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
+	const session = flags.session || (resume.needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
 
-	// Session ID reuse: ONLY for crash resume with same CLI
-	// - Crash + same CLI: pass sessionId → AI continues mid-conversation
-	// - Crash + cross CLI: no sessionId → fresh AI session, same worktree
-	// - Exhaustion: no sessionId → previous session ended cleanly, start fresh
-	const isSameCli = commandConfig.cli === status.lastCli;
-	const sessionId = (isSameCli && isCrashResume)
-		? lastIteration?.sessionId
-		: undefined;
-
-	if (isCrashResume) {
+	if (resume.isCrashResume) {
+		const isSameCli = commandConfig.cli === status.lastCli;
 		const resumeType = isSameCli ? "continuing session" : `switching from ${status.lastCli} to ${commandConfig.cli}`;
 		callbacks.onOutput?.(`Resuming session "${session}" (${resumeType})`);
-	} else if (isExhaustedResume) {
+	} else if (resume.isExhaustedResume) {
 		callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
 	}
 
@@ -260,7 +275,7 @@ export async function executeBuild(
 				templateVars: config.templateVars,
 				specsDir: config.specsDir,
 				session,
-				sessionId,
+				sessionId: resume.sessionId,
 				specIndex: 1,
 				specCount: 1,
 				specs: [found.name],
@@ -270,7 +285,7 @@ export async function executeBuild(
 				writer,
 			});
 
-			return { ...result, needsResume };
+			return { ...result, needsResume: resume.needsResume };
 		},
 	);
 }
@@ -327,10 +342,12 @@ export async function executeBuildAll(
 	const status = readStatus(cwd);
 
 	// Check if any spec needs resume → reuse session name for worktree continuity
+	const commandConfig = resolveCommandConfig(config, "build", {
+		cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
+		iterations: flags.iterations,
+	});
 	const anyNeedsResume = planned.some((spec) => {
-		const entry = status.specs[spec.name];
-		const last = entry?.iterations.at(-1);
-		return last?.state === "in_progress" || entry?.stopReason === "max_iterations";
+		return detectResume(status.specs[spec.name], commandConfig.cli, status.lastCli).needsResume;
 	});
 	const session = flags.session || (anyNeedsResume ? status.sessionName : null) || generateSessionName();
 
@@ -345,43 +362,31 @@ export async function executeBuildAll(
 
 				// Per-spec resume detection
 				const specEntry = status.specs[spec.name];
-				const lastIteration = specEntry?.iterations.at(-1);
-				const isCrashResume = specEntry?.status !== "done" && lastIteration?.state === "in_progress";
-				const isExhaustedResume = specEntry?.status !== "done" && specEntry?.stopReason === "max_iterations";
-				const needsResume = (isCrashResume || isExhaustedResume) ?? false;
+				const existingIterations = specEntry?.iterations.length ?? 0;
+				const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
 
-				if (isCrashResume) {
+				if (resume.isCrashResume) {
+					const lastIteration = specEntry?.iterations.at(-1);
 					callbacks.onOutput?.(
-						`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration.iteration} was in progress). Resuming...`,
+						`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration?.iteration} was in progress). Resuming...`,
 					);
-				} else if (isExhaustedResume) {
+				} else if (resume.isExhaustedResume) {
 					callbacks.onOutput?.(
 						`⚠ [${spec.name}] Previous build exhausted iterations without completing. Resuming in same worktree...`,
 					);
 				}
 
-				const commandConfig = resolveCommandConfig(config, "build", {
-					cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
-					iterations: flags.iterations,
-				});
-
-				// Per-spec sessionId: only for crash + same CLI
-				const isSameCli = commandConfig.cli === status.lastCli;
-				const specSessionId = (isSameCli && isCrashResume)
-					? lastIteration?.sessionId
-					: undefined;
-
 				const { result } = await runSpecBuild({
 					spec,
 					promptName: "PROMPT_BUILD",
-					existingIterations: 0,
+					existingIterations,
 					iterations: commandConfig.iterations,
 					cli: commandConfig.cli,
 					model: commandConfig.model,
 					templateVars: config.templateVars,
 					specsDir: config.specsDir,
 					session,
-					sessionId: specSessionId,
+					sessionId: resume.sessionId,
 					specIndex: i + 1,
 					specCount: planned.length,
 					specs: specNames,
@@ -396,8 +401,8 @@ export async function executeBuildAll(
 					writer,
 				});
 
-				built.push({ ...result, needsResume });
-				callbacks.onSpecComplete?.({ ...result, needsResume });
+				built.push({ ...result, needsResume: resume.needsResume });
+				callbacks.onSpecComplete?.({ ...result, needsResume: resume.needsResume });
 			}
 
 			return { built };
