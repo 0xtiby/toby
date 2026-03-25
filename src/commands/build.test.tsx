@@ -1821,6 +1821,36 @@ describe("executeBuild transcript", () => {
 		expect(mockOpenTranscript).not.toHaveBeenCalled();
 	});
 
+	it("--transcript flag overrides config false", async () => {
+		const mockWriter = {
+			writeEvent: vi.fn(),
+			writeIterationHeader: vi.fn(),
+			writeSpecHeader: vi.fn(),
+			close: vi.fn(),
+			filePath: "/tmp/.toby/transcripts/test.md",
+		};
+		mockOpenTranscript.mockReturnValue(mockWriter);
+
+		// config.transcript is false (default), but flag is true
+		await executeBuild({ ...defaultFlags, transcript: true }, {}, "/project");
+		expect(mockOpenTranscript).toHaveBeenCalled();
+	});
+
+	it("--no-transcript flag overrides config true", async () => {
+		mockLoadConfig.mockReturnValue({
+			plan: { cli: "claude", model: "default", iterations: 2 },
+			build: { cli: "claude", model: "default", iterations: 10 },
+			specsDir: "specs",
+			excludeSpecs: ["README.md"],
+			verbose: false,
+			transcript: true,
+			templateVars: {},
+		});
+
+		await executeBuild({ ...defaultFlags, transcript: false }, {}, "/project");
+		expect(mockOpenTranscript).not.toHaveBeenCalled();
+	});
+
 	it("executeBuild with external writer does not close it", async () => {
 		const mockWriter = {
 			writeEvent: vi.fn(),
