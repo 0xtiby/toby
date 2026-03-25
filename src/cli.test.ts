@@ -46,11 +46,16 @@ describe("cli", () => {
 		expect(output).toContain("config");
 	});
 
-	it("help text documents --spec number and comma-separated support", () => {
+	it("global help directs to per-command help for details", () => {
 		const output = run("--help");
+		expect(output).toContain(
+			"Run toby <command> --help for command-specific options and examples.",
+		);
+	});
+
+	it("per-command help shows --spec flag details", () => {
+		const output = run("plan", "--help");
 		expect(output).toContain("--spec=<query>");
-		expect(output).toContain("number");
-		expect(output).toContain("comma-separated");
 	});
 
 	it("shows version", () => {

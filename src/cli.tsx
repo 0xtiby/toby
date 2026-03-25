@@ -9,33 +9,11 @@ import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import Clean from "./commands/clean.js";
 import Welcome from "./components/Welcome.js";
 import { ensureGlobalDir } from "./lib/paths.js";
-
-function Help({ version }: { version: string }) {
-	return (
-		<Text>
-			{`toby v${version} — AI-assisted development loop engine
-
-Usage
-  $ toby <command> [options]
-
-Commands
-  plan     Plan specs with AI loop engine
-  build    Build tasks one-per-spawn with AI
-  init     Initialize toby in current project
-  status   Show project status
-  config   Manage configuration
-  clean    Delete all transcript files
-
-Options
-  --help       Show this help
-  --version    Show version
-
-Spec Selection
-  --spec=<name>       Single spec or comma-separated (e.g. --spec=auth,payments)
-  --specs=<names>     Alias for --spec`}
-		</Text>
-	);
-}
+import {
+	formatGlobalHelp,
+	formatCommandHelp,
+	commandHelp,
+} from "./lib/help.js";
 
 function UnknownCommand({ command }: { command: string }) {
 	return (
@@ -100,7 +78,9 @@ Clean Options
 `,
 	{
 		importMeta: import.meta,
+		autoHelp: false,
 		flags: {
+			help: { type: "boolean", default: false },
 			spec: { type: "string" },
 			specs: { type: "string" },
 			all: { type: "boolean", default: false },
@@ -210,12 +190,25 @@ const commands: Record<string, CommandEntry> = {
 const version = cli.pkg.version ?? "0.0.0";
 const [command] = cli.input;
 
-if (!command) {
+// --help takes precedence over everything
+if (cli.flags.help) {
+	if (!command || command in commands) {
+		if (command && command in commandHelp) {
+			process.stdout.write(formatCommandHelp(command, commandHelp[command]));
+		} else {
+			process.stdout.write(formatGlobalHelp(version));
+		}
+		process.exitCode = 0;
+	} else {
+		render(<UnknownCommand command={command} />).unmount();
+		process.exitCode = 1;
+	}
+} else if (!command) {
 	if (process.stdin.isTTY) {
 		const app = render(<Welcome version={version} />);
 		await app.waitUntilExit();
 	} else {
-		render(<Help version={version} />).unmount();
+		process.stdout.write(formatGlobalHelp(version));
 	}
 } else if (command in commands) {
 	const entry = commands[command];
