@@ -10,7 +10,7 @@ Toby ships two prompt templates.
 
 The planning prompt translates a spec into a structured PRD (Product Requirements Document) with actionable tasks. It reads the spec file, explores the codebase to validate assumptions, then outputs a JSON PRD with granular tasks, dependencies, and acceptance criteria.
 
-Key variables used: `SPECS_DIR`, `SPEC_NAME`, `PRD_PATH`, `ITERATION`.
+Key variables used: `SPECS_DIR`, `SPEC_NAME`, `ITERATION`. Also commonly used with the config var `PRD_PATH` (see Config Variables below).
 
 ### PROMPT_BUILD
 
