@@ -1,24 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Text, useApp, useInput } from "ink";
-import { listTranscripts, deleteTranscripts } from "../lib/clean.js";
+import { listTranscripts, executeClean } from "../lib/clean.js";
+import type { CleanResult } from "../lib/clean.js";
 
 interface CleanProps {
 	force?: boolean;
-}
-
-export interface CleanResult {
-	deleted: number;
-	failed: number;
-	total: number;
-}
-
-export function executeClean(cwd?: string): CleanResult {
-	const files = listTranscripts(cwd);
-	if (files.length === 0) {
-		return { deleted: 0, failed: 0, total: 0 };
-	}
-	const deleted = deleteTranscripts(files);
-	return { deleted, failed: files.length - deleted, total: files.length };
 }
 
 type CleanPhase = "empty" | "error" | "confirming" | "done" | "cancelled";
@@ -30,7 +16,6 @@ function computeInitial(force?: boolean): { phase: CleanPhase; fileCount: number
 	}
 
 	if (!process.stdin.isTTY && !force) {
-		process.exitCode = 1;
 		return { phase: "error", fileCount: files.length, result: null };
 	}
 
@@ -45,6 +30,12 @@ function computeInitial(force?: boolean): { phase: CleanPhase; fileCount: number
 export default function Clean({ force }: CleanProps) {
 	const { exit } = useApp();
 	const initial = useMemo(() => computeInitial(force), [force]);
+
+	useEffect(() => {
+		if (initial.phase === "error") {
+			process.exitCode = 1;
+		}
+	}, [initial.phase]);
 	const [phase, setPhase] = useState<CleanPhase>(initial.phase);
 	const [result, setResult] = useState<CleanResult | null>(initial.result);
 

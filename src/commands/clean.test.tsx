@@ -4,7 +4,8 @@ import { render } from "ink-testing-library";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import Clean, { executeClean } from "./clean.js";
+import Clean from "./clean.js";
+import { executeClean } from "../lib/clean.js";
 
 function delay(ms = 100): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));

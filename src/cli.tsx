@@ -32,10 +32,7 @@ Options
 
 Spec Selection
   --spec=<name>       Single spec or comma-separated (e.g. --spec=auth,payments)
-  --specs=<names>     Alias for --spec
-
-Clean Options
-  --force    Skip confirmation prompt`}
+  --specs=<names>     Alias for --spec`}
 		</Text>
 	);
 }

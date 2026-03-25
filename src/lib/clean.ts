@@ -2,10 +2,12 @@ import path from "node:path";
 import fs from "node:fs";
 import { getLocalDir, TRANSCRIPTS_DIR } from "./paths.js";
 
-/**
- * List all transcript files in .toby/transcripts/.
- * Returns absolute paths. Returns empty array if directory doesn't exist.
- */
+export interface CleanResult {
+	deleted: number;
+	failed: number;
+	total: number;
+}
+
 export function listTranscripts(cwd?: string): string[] {
 	const dir = path.join(getLocalDir(cwd), TRANSCRIPTS_DIR);
 
@@ -21,11 +23,6 @@ export function listTranscripts(cwd?: string): string[] {
 		.map((e) => path.join(dir, e.name));
 }
 
-/**
- * Delete the given transcript files.
- * Returns the number of successfully deleted files.
- * Continues on individual file errors.
- */
 export function deleteTranscripts(files: string[]): number {
 	let deleted = 0;
 	for (const file of files) {
@@ -33,8 +30,17 @@ export function deleteTranscripts(files: string[]): number {
 			fs.unlinkSync(file);
 			deleted++;
 		} catch {
-			// continue on individual file errors
+			// intentionally empty — skip individual file errors
 		}
 	}
 	return deleted;
+}
+
+export function executeClean(cwd?: string): CleanResult {
+	const files = listTranscripts(cwd);
+	if (files.length === 0) {
+		return { deleted: 0, failed: 0, total: 0 };
+	}
+	const deleted = deleteTranscripts(files);
+	return { deleted, failed: files.length - deleted, total: files.length };
 }
