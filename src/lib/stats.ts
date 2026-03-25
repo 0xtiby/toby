@@ -12,6 +12,7 @@ export interface ProjectStats {
 	building: number;
 	done: number;
 	totalIterations: number;
+	totalTokens: number;
 }
 
 /**
@@ -47,8 +48,12 @@ export function computeProjectStats(cwd?: string): ProjectStats | null {
 	}
 
 	let totalIterations = 0;
+	let totalTokens = 0;
 	for (const entry of Object.values(statusData.specs)) {
 		totalIterations += entry.iterations.length;
+		for (const iter of entry.iterations) {
+			totalTokens += iter.tokensUsed ?? 0;
+		}
 	}
 
 	return {
@@ -58,5 +63,6 @@ export function computeProjectStats(cwd?: string): ProjectStats | null {
 		building: counts.building,
 		done: counts.done,
 		totalIterations,
+		totalTokens,
 	};
 }

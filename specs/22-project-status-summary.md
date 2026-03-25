@@ -1,5 +1,7 @@
 # 22 — Project Status Summary
 
+> **Note:** The `StatusSummary` component in this spec was **superseded by spec 35 (Welcome Screen Redesign)**. Stats are now displayed in `InfoPanel`. The `computeProjectStats` function in `stats.ts` is retained and extended with `totalTokens`.
+
 ## Overview
 
 A data aggregation module and presentational component that computes and displays project-level statistics (spec counts by status, total iterations) in a compact inline format. Used by the Welcome Screen (spec 21) but designed as a reusable building block for any command that needs project stats.
