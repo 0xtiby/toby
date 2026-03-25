@@ -70,6 +70,7 @@ export function useCommandRunner(options: {
 			if (filtered.length === 0) {
 				setErrorMessage(emptyMessage ?? "No specs found.");
 				setPhase("error");
+				exit();
 				return;
 			}
 			setSpecs(filtered);
