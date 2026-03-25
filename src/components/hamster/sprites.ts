@@ -1,4 +1,10 @@
-import type { SpriteFrame } from "./palette.js";
+import type { ColorToken } from "./palette.js";
+
+/** A single pixel: [column offset, row offset, color token] */
+export type SpritePixel = [col: number, row: number, color: ColorToken];
+
+/** Complete sprite frame */
+export type SpriteFrame = SpritePixel[];
 
 /** Shared head + body pixels (used by both frames) */
 export const HAMSTER_BODY: SpriteFrame = [

@@ -7,7 +7,6 @@ export type ColorToken =
 	| "ear"
 	| "earInner"
 	| "eye"
-	| "eyeShine"
 	| "cheek"
 	| "feet"
 	| "tail"
@@ -27,7 +26,6 @@ export const PALETTE: Record<ColorToken, string> = {
 	ear: "#ff8899",
 	earInner: "#ff6680",
 	eye: "#1a1a2e",
-	eyeShine: "#ffffff",
 	cheek: "#ff9977",
 	feet: "#c47830",
 	tail: "#b06828",
@@ -38,9 +36,3 @@ export const PALETTE: Record<ColorToken, string> = {
 	wheelSpoke: "#3a3a55",
 	wheelHub: "#7777aa",
 };
-
-/** A single pixel: [column offset, row offset, color token] */
-export type SpritePixel = [col: number, row: number, color: ColorToken];
-
-/** Complete sprite frame */
-export type SpriteFrame = SpritePixel[];

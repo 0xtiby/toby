@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useStdout } from "ink";
 import { PALETTE } from "./palette.js";
-import type { ColorToken } from "./palette.js";
 import { HAMSTER_FRAMES } from "./sprites.js";
 import {
 	generateWheelPixels,
@@ -105,6 +104,23 @@ function computeInterval(baseInterval: number, speed: number): number {
 	return Math.max(MIN_INTERVAL, Math.round(baseInterval / speed));
 }
 
+function resolveDimensions(
+	widthProp: number | undefined,
+	heightProp: number | undefined,
+	columns: number,
+): { width: number; height: number; isStatic: boolean } {
+	if (widthProp !== undefined && heightProp !== undefined) {
+		return { width: widthProp, height: heightProp, isStatic: widthProp < MIN_VIABLE_WIDTH };
+	}
+	const tier = getSizeTier(columns);
+	if (tier === "static") return { width: 0, height: 0, isStatic: true };
+	return {
+		width: widthProp ?? SIZE_TIERS[tier].width,
+		height: heightProp ?? SIZE_TIERS[tier].height,
+		isStatic: false,
+	};
+}
+
 export default function HamsterWheel({
 	width: widthProp,
 	height: heightProp,
@@ -113,27 +129,11 @@ export default function HamsterWheel({
 	const { stdout } = useStdout();
 	const columns = stdout?.columns ?? 80;
 
-	// Resolve dimensions: explicit props override adaptive sizing
-	let resolvedWidth: number;
-	let resolvedHeight: number;
-	let isStatic: boolean;
-
-	if (widthProp !== undefined && heightProp !== undefined) {
-		resolvedWidth = widthProp;
-		resolvedHeight = heightProp;
-		isStatic = widthProp < MIN_VIABLE_WIDTH;
-	} else {
-		const tier = getSizeTier(columns);
-		if (tier === "static") {
-			isStatic = true;
-			resolvedWidth = 0;
-			resolvedHeight = 0;
-		} else {
-			isStatic = false;
-			resolvedWidth = widthProp ?? SIZE_TIERS[tier].width;
-			resolvedHeight = heightProp ?? SIZE_TIERS[tier].height;
-		}
-	}
+	const { width: resolvedWidth, height: resolvedHeight, isStatic } = resolveDimensions(
+		widthProp,
+		heightProp,
+		columns,
+	);
 
 	const [frame, setFrame] = useState(0);
 	const [spokeAngle, setSpokeAngle] = useState(0);
@@ -153,16 +153,14 @@ export default function HamsterWheel({
 		if (speed === 0 || isStatic) return;
 		const interval = computeInterval(WHEEL_BASE_INTERVAL, speed);
 		const id = setInterval(() => {
-			setSpokeAngle((a) => a + 0.15);
+			setSpokeAngle((a) => (a + 0.15) % (2 * Math.PI));
 		}, interval);
 		return () => clearInterval(id);
 	}, [speed, isStatic]);
 
-	if (isStatic) {
-		return <Text>  🐹 toby</Text>;
-	}
-
 	const renderedRows = useMemo(() => {
+		if (isStatic) return [];
+
 		const grid = buildGrid(resolvedWidth, resolvedHeight);
 
 		// Compute wheel geometry and stamp wheel pixels
@@ -196,12 +194,16 @@ export default function HamsterWheel({
 			const px = hamsterOriginX + col;
 			const py = hamsterOriginY + row;
 			if (px >= 0 && px < resolvedWidth && py >= 0 && py < resolvedHeight) {
-				grid[py]![px] = PALETTE[colorToken as ColorToken];
+				grid[py]![px] = PALETTE[colorToken];
 			}
 		}
 
 		return buildColorRuns(grid, resolvedWidth, resolvedHeight);
-	}, [resolvedWidth, resolvedHeight, frame, spokeAngle]);
+	}, [resolvedWidth, resolvedHeight, frame, spokeAngle, isStatic]);
+
+	if (isStatic) {
+		return <Text>  🐹 toby</Text>;
+	}
 
 	return (
 		<Box flexDirection="column">

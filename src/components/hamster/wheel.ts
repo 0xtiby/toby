@@ -56,15 +56,13 @@ export function generateWheelPixels(
 
 	// Inner rim — scaled angle steps, every 3rd plotted
 	const innerSteps = Math.max(12, innerRadius * 6);
-	for (let i = 0; i < innerSteps; i++) {
-		if (i % 3 === 0) {
-			const angle = (i / innerSteps) * 2 * Math.PI;
-			const x = Math.round(
-				cx + Math.cos(angle) * innerRadius * aspectRatio,
-			);
-			const y = Math.round(cy + Math.sin(angle) * innerRadius);
-			pixels.push({ x, y, color: PALETTE.wheelInner });
-		}
+	for (let i = 0; i < innerSteps; i += 3) {
+		const angle = (i / innerSteps) * 2 * Math.PI;
+		const x = Math.round(
+			cx + Math.cos(angle) * innerRadius * aspectRatio,
+		);
+		const y = Math.round(cy + Math.sin(angle) * innerRadius);
+		pixels.push({ x, y, color: PALETTE.wheelInner });
 	}
 
 	// 8 radial spokes, rotated by spokeAngle

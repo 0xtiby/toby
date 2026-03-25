@@ -8,9 +8,9 @@ import Build from "../commands/build.js";
 import Status from "../commands/status.js";
 import { ConfigEditor } from "../commands/config.js";
 import { computeProjectStats } from "../lib/stats.js";
+import { formatTokens } from "./InfoPanel.js";
 
 const NARROW_THRESHOLD = 60;
-const formatTokens = (n: number): string => new Intl.NumberFormat().format(n);
 
 export interface WelcomeProps {
 	version: string;

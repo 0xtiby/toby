@@ -7,13 +7,13 @@ export interface InfoPanelProps {
 	stats: ProjectStats | null;
 }
 
-const formatTokens = (n: number): string => new Intl.NumberFormat().format(n);
+export const formatTokens = (n: number): string => new Intl.NumberFormat().format(n);
 
 function StatRow({ label, value }: { label: string; value: number | string }) {
 	return (
 		<Box>
 			<Text dimColor>{String(label).padStart(9)}  </Text>
-			<Text>{String(value)}</Text>
+			<Text>{value}</Text>
 		</Box>
 	);
 }
