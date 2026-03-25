@@ -90,6 +90,7 @@ describe("computeProjectStats", () => {
 			building: 0,
 			done: 0,
 			totalIterations: 0,
+			totalTokens: 0,
 		});
 	});
 
@@ -121,6 +122,7 @@ describe("computeProjectStats", () => {
 			building: 1,
 			done: 1,
 			totalIterations: 3,
+			totalTokens: 15000,
 		});
 	});
 
@@ -153,6 +155,7 @@ describe("computeProjectStats", () => {
 		expect(stats).not.toBeNull();
 		expect(stats!.totalSpecs).toBe(1);
 		expect(stats!.totalIterations).toBe(4);
+		expect(stats!.totalTokens).toBe(20000);
 	});
 
 	it("returns totalSpecs 0 with iterations when .toby/ exists but no specs dir", () => {
@@ -167,6 +170,36 @@ describe("computeProjectStats", () => {
 		expect(stats).not.toBeNull();
 		expect(stats!.totalSpecs).toBe(0);
 		expect(stats!.totalIterations).toBe(2);
+		expect(stats!.totalTokens).toBe(10000);
+	});
+
+	it("sums totalTokens treating null tokensUsed as 0", () => {
+		writeSpecFile("01-auth.md");
+		writeStatusJson({
+			"01-auth": {
+				status: "done",
+				iterations: [
+					makeIteration({ tokensUsed: 100 }),
+					makeIteration({ iteration: 2, tokensUsed: null }),
+					makeIteration({ iteration: 3, tokensUsed: 250 }),
+				],
+			},
+		});
+
+		const stats = computeProjectStats(tmpDir);
+		expect(stats).not.toBeNull();
+		expect(stats!.totalTokens).toBe(350);
+	});
+
+	it("returns totalTokens 0 when no iterations exist", () => {
+		writeSpecFile("01-auth.md");
+		writeStatusJson({
+			"01-auth": { status: "planned" },
+		});
+
+		const stats = computeProjectStats(tmpDir);
+		expect(stats).not.toBeNull();
+		expect(stats!.totalTokens).toBe(0);
 	});
 
 	it("defaults undiscovered spec statuses to pending", () => {
@@ -182,6 +215,7 @@ describe("computeProjectStats", () => {
 			building: 0,
 			done: 0,
 			totalIterations: 0,
+			totalTokens: 0,
 		});
 	});
 });
