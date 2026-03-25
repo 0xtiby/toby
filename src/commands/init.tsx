@@ -4,7 +4,9 @@ import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import fs from "node:fs";
 import path from "node:path";
-import { detectAll, getKnownModels } from "@0xtiby/spawner";
+import Spinner from "ink-spinner";
+import { detectAll } from "@0xtiby/spawner";
+import { useModels } from "../hooks/useModels.js";
 import { writeConfig } from "../lib/config.js";
 import {
 	getLocalDir,
@@ -169,14 +171,6 @@ function CliTable({ clis }: { clis: DetectAllResult }) {
 	);
 }
 
-function modelItems(cli: CliName) {
-	const models = getKnownModels(cli);
-	return [
-		{ label: "default", value: "default" },
-		...models.map((m) => ({ label: `${m.name} (${m.id})`, value: m.id })),
-	];
-}
-
 /** Returns true when all 5 optional init flags are present (non-interactive mode). */
 export function hasAllInitFlags(flags: InitFlags): boolean {
 	return (
@@ -293,6 +287,8 @@ function InteractiveInit({ version }: { version: string }) {
 	const [specsDirInput, setSpecsDirInput] = useState(DEFAULT_SPECS_DIR);
 	const [result, setResult] = useState<InitResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const planModels = useModels(selections.planCli);
+	const buildModels = useModels(selections.buildCli);
 
 	useEffect(() => {
 		if (phase !== "detecting") return;
@@ -397,13 +393,20 @@ function InteractiveInit({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{phase === "plan_model" && (
+			{phase === "plan_model" && planModels.loading && (
+				<Box>
+					<Spinner type="dots" />
+					<Text> Loading models...</Text>
+				</Box>
+			)}
+
+			{phase === "plan_model" && !planModels.loading && (
 				<Box flexDirection="column">
 					<Text bold>
 						Select model for planning ({selections.planCli}):
 					</Text>
 					<SelectInput
-						items={modelItems(selections.planCli)}
+						items={planModels.items}
 						onSelect={handlePlanModelSelect}
 					/>
 				</Box>
@@ -416,13 +419,20 @@ function InteractiveInit({ version }: { version: string }) {
 				</Box>
 			)}
 
-			{phase === "build_model" && (
+			{phase === "build_model" && buildModels.loading && (
+				<Box>
+					<Spinner type="dots" />
+					<Text> Loading models...</Text>
+				</Box>
+			)}
+
+			{phase === "build_model" && !buildModels.loading && (
 				<Box flexDirection="column">
 					<Text bold>
 						Select model for building ({selections.buildCli}):
 					</Text>
 					<SelectInput
-						items={modelItems(selections.buildCli)}
+						items={buildModels.items}
 						onSelect={handleBuildModelSelect}
 					/>
 				</Box>
