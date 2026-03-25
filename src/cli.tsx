@@ -6,6 +6,7 @@ import Build from "./commands/build.js";
 import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
+import Clean from "./commands/clean.js";
 import Welcome from "./components/Welcome.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 
@@ -23,6 +24,7 @@ Commands
   init     Initialize toby in current project
   status   Show project status
   config   Manage configuration
+  clean    Delete all transcript files
 
 Options
   --help       Show this help
@@ -30,7 +32,10 @@ Options
 
 Spec Selection
   --spec=<name>       Single spec or comma-separated (e.g. --spec=auth,payments)
-  --specs=<names>     Alias for --spec`}
+  --specs=<names>     Alias for --spec
+
+Clean Options
+  --force    Skip confirmation prompt`}
 		</Text>
 	);
 }
@@ -54,6 +59,7 @@ Commands
   init     Initialize toby in current project
   status   Show project status
   config   Manage configuration
+  clean    Delete all transcript files
 
 Plan Options
   --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
@@ -91,6 +97,9 @@ Config Subcommands
   config get <key>   Show a config value (dot-notation)
   config set <key> <value>  Set a config value
   config set <k>=<v> [<k>=<v>...]  Batch set config values
+
+Clean Options
+  --force    Skip confirmation prompt
 `,
 	{
 		importMeta: import.meta,
@@ -108,6 +117,7 @@ Config Subcommands
 			buildModel: { type: "string" },
 			specsDir: { type: "string" },
 			session: { type: "string" },
+			force: { type: "boolean", default: false },
 		},
 	},
 );
@@ -174,6 +184,10 @@ const commands: Record<string, CommandEntry> = {
 		render: (flags, _input, version) => (
 			<Status spec={flags.spec} version={version} />
 		),
+	},
+	clean: {
+		render: (flags) => <Clean force={flags.force} />,
+		waitForExit: true,
 	},
 	config: {
 		render: (_flags, input, version) => {
