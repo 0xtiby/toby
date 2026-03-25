@@ -3,6 +3,7 @@
   "version": "0.0.0-development",
   "description": "AI-assisted development loop engine CLI",
   "type": "module",
+  "packageManager": "pnpm@10.28.1",
   "bin": {
     "toby": "./dist/cli.js"
   },
