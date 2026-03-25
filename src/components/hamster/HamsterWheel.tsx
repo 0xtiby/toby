@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text } from "ink";
 import { PALETTE } from "./palette.js";
 import type { ColorToken } from "./palette.js";
@@ -82,12 +82,41 @@ function buildColorRuns(
 	return rows;
 }
 
+const HAMSTER_BASE_INTERVAL = 140;
+const WHEEL_BASE_INTERVAL = 100;
+const MIN_INTERVAL = 16;
+
+function computeInterval(baseInterval: number, speed: number): number {
+	return Math.max(MIN_INTERVAL, Math.round(baseInterval / speed));
+}
+
 export default function HamsterWheel({
 	width = 25,
 	height = 13,
+	speed = 1,
 }: HamsterWheelProps): React.ReactElement {
-	const [frame] = useState(0);
-	const [spokeAngle] = useState(0);
+	const [frame, setFrame] = useState(0);
+	const [spokeAngle, setSpokeAngle] = useState(0);
+
+	// Hamster leg animation timer
+	useEffect(() => {
+		if (speed === 0) return;
+		const interval = computeInterval(HAMSTER_BASE_INTERVAL, speed);
+		const id = setInterval(() => {
+			setFrame((f) => (f + 1) % 2);
+		}, interval);
+		return () => clearInterval(id);
+	}, [speed]);
+
+	// Wheel spoke rotation timer
+	useEffect(() => {
+		if (speed === 0) return;
+		const interval = computeInterval(WHEEL_BASE_INTERVAL, speed);
+		const id = setInterval(() => {
+			setSpokeAngle((a) => a + 0.15);
+		}, interval);
+		return () => clearInterval(id);
+	}, [speed]);
 
 	const renderedRows = useMemo(() => {
 		const grid = buildGrid(width, height);
