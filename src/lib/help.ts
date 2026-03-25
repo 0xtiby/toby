@@ -263,6 +263,30 @@ export function formatCommandHelp(
 	return lines.join("\n");
 }
 
+/** Render error with valid values and example invocation */
+export function formatErrorWithHint(
+	message: string,
+	validValues?: string[],
+	example?: string,
+): string {
+	const lines: string[] = [];
+
+	if (validValues) {
+		lines.push(`✗ ${message}. Valid options: ${validValues.join(", ")}`);
+	} else {
+		lines.push(`✗ ${message}`);
+	}
+
+	if (example) {
+		lines.push("");
+		lines.push("Example:");
+		lines.push(`  $ ${example}`);
+	}
+
+	lines.push("");
+	return lines.join("\n");
+}
+
 /** Render global help (lean overview) */
 export function formatGlobalHelp(version: string): string {
 	return `toby v${version} — AI-assisted development loop engine
