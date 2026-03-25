@@ -884,6 +884,23 @@ describe("Plan component", () => {
 		});
 	});
 
+	it("shows error when no pending specs exist", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "done" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		const { lastFrame } = render(
+			<Plan all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("No pending specs to plan");
+		});
+	});
+
 	it("shows error when spec not found", async () => {
 		mockFindSpec.mockReturnValue(undefined);
 
