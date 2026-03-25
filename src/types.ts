@@ -45,10 +45,18 @@ export interface SpecFile {
 
 // ── Status (spec 04) ──────────────────────────────────────────────
 
+export const IterationStateSchema = z.enum([
+	"in_progress",
+	"complete",
+	"failed",
+]);
+export type IterationState = z.infer<typeof IterationStateSchema>;
+
 export const IterationSchema = z.object({
 	type: z.enum(["plan", "build"]),
 	iteration: z.number().int().positive(),
 	sessionId: z.string().nullable(),
+	state: IterationStateSchema.default("in_progress"),
 	cli: z.string(),
 	model: z.string(),
 	startedAt: z.string().datetime(),
@@ -58,14 +66,25 @@ export const IterationSchema = z.object({
 	tokensUsed: z.number().int().nullable(),
 });
 
+export const StopReasonSchema = z.enum([
+	"sentinel",
+	"max_iterations",
+	"error",
+	"aborted",
+]);
+export type StopReason = z.infer<typeof StopReasonSchema>;
+
 export const SpecStatusEntrySchema = z.object({
 	status: z.enum(["pending", "planned", "building", "done"]),
 	plannedAt: z.string().datetime().nullable(),
 	iterations: z.array(IterationSchema),
+	stopReason: StopReasonSchema.optional(),
 });
 
 export const StatusSchema = z.object({
 	specs: z.record(z.string(), SpecStatusEntrySchema),
+	sessionName: z.string().optional(),
+	lastCli: z.string().optional(),
 });
 
 export type StatusData = z.infer<typeof StatusSchema>;

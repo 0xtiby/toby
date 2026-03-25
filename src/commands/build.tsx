@@ -14,7 +14,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, TemplateVars, PromptName, StatusData, SpecFile } from "../types.js";
+import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -29,6 +29,7 @@ export interface BuildCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
+	onOutput?: (message: string) => void;
 }
 
 export interface BuildResult {
@@ -36,6 +37,7 @@ export interface BuildResult {
 	totalIterations: number;
 	totalTokens: number;
 	specDone: boolean;
+	needsResume?: boolean;
 	error?: string;
 }
 
@@ -49,6 +51,7 @@ interface RunSpecBuildOptions {
 	templateVars: TemplateVars;
 	specsDir: string;
 	session: string;
+	sessionId?: string;
 	specIndex: number;
 	specCount: number;
 	specs: string[];
@@ -56,6 +59,29 @@ interface RunSpecBuildOptions {
 	abortSignal?: AbortSignal;
 	callbacks: BuildCallbacks;
 	writer?: TranscriptWriter | null;
+}
+
+interface ResumeDetection {
+	isCrashResume: boolean;
+	isExhaustedResume: boolean;
+	needsResume: boolean;
+	sessionId: string | undefined;
+}
+
+function detectResume(
+	specEntry: SpecStatusEntry | undefined,
+	currentCli: string,
+	lastCli: string | undefined,
+): ResumeDetection {
+	const lastIteration = specEntry?.iterations.at(-1);
+	const isCrashResume = !!(specEntry?.status !== "done" && lastIteration?.state === "in_progress");
+	const isExhaustedResume = !!(specEntry?.status !== "done" && specEntry?.stopReason === "max_iterations");
+	const needsResume = isCrashResume || isExhaustedResume;
+	const isSameCli = currentCli === lastCli;
+	const sessionId = (isSameCli && isCrashResume)
+		? lastIteration?.sessionId ?? undefined
+		: undefined;
+	return { isCrashResume, isExhaustedResume, needsResume, sessionId };
 }
 
 async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: BuildResult; status: StatusData }> {
@@ -84,11 +110,31 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 		cli,
 		model,
 		cwd,
+		sessionId: options.sessionId,
 		continueSession: true,
 		abortSignal: options.abortSignal,
 		onEvent: (event) => {
 			options.writer?.writeEvent(event);
 			callbacks.onEvent?.(event);
+		},
+		onIterationStart: (iteration: number, sessionId: string | null) => {
+			iterationStartTime = new Date().toISOString();
+			const iterationRecord: Iteration = {
+				type: "build",
+				iteration: iteration + options.existingIterations,
+				sessionId,
+				state: "in_progress" as IterationState,
+				cli,
+				model: model ?? "default",
+				startedAt: iterationStartTime,
+				completedAt: null,
+				exitCode: null,
+				taskCompleted: null,
+				tokensUsed: null,
+			};
+			status = addIteration(status, spec.name, iterationRecord);
+			status = { ...status, sessionName: options.session, lastCli: cli };
+			writeStatus(status, cwd);
 		},
 		onIterationComplete: (iterResult: IterationResult) => {
 			options.writer?.writeIterationHeader({
@@ -97,25 +143,45 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				cli,
 				model: iterResult.model ?? model ?? "default",
 			});
-			const completedAt = new Date().toISOString();
-			const iteration: Iteration = {
-				type: "build",
-				iteration: iterResult.iteration,
+
+			// Determine final state
+			const state: IterationState = iterResult.sentinelDetected ? "complete" : "failed";
+
+			// Update the last iteration record (written by onIterationStart)
+			const specEntry = status.specs[spec.name];
+			const iters = [...specEntry.iterations];
+			iters[iters.length - 1] = {
+				...iters[iters.length - 1],
+				state,
 				sessionId: iterResult.sessionId,
-				cli,
-				model: iterResult.model ?? model,
-				startedAt: iterationStartTime,
-				completedAt,
+				model: iterResult.model ?? iters[iters.length - 1].model,
+				completedAt: new Date().toISOString(),
 				exitCode: iterResult.exitCode,
-				taskCompleted: null,
 				tokensUsed: iterResult.tokensUsed,
 			};
-			iterationStartTime = new Date().toISOString();
-			status = addIteration(status, spec.name, iteration);
+			status = {
+				...status,
+				specs: {
+					...status.specs,
+					[spec.name]: { ...specEntry, iterations: iters },
+				},
+			};
 			writeStatus(status, cwd);
 			callbacks.onIteration?.(iterResult.iteration + 1, iterations);
 		},
 	});
+
+	// Persist stopReason on spec entry.
+	// Note: if aborted, the last iteration remains "in_progress" (since onIterationComplete never ran),
+	// so isCrashResume will correctly fire on next run — abort detection relies on iteration state, not stopReason.
+	const specEntryAfterLoop = status.specs[spec.name] ?? { status: "building", plannedAt: null, iterations: [] };
+	status = {
+		...status,
+		specs: {
+			...status.specs,
+			[spec.name]: { ...specEntryAfterLoop, stopReason: loopResult.stopReason },
+		},
+	};
 
 	if (loopResult.stopReason === "aborted") {
 		status = updateSpecStatus(status, spec.name, "building");
@@ -180,7 +246,20 @@ export async function executeBuild(
 	}
 
 	const existingIterations = specEntry.iterations.length;
-	const session = flags.session || computeSpecSlug(found.name);
+
+	// Resume detection: check for crash or exhaustion from previous run
+	const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
+
+	// Session name reuse: reuse status.sessionName on resume so CLI finds existing worktree
+	const session = flags.session || (resume.needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
+
+	if (resume.isCrashResume) {
+		const isSameCli = commandConfig.cli === status.lastCli;
+		const resumeType = isSameCli ? "continuing session" : `switching from ${status.lastCli} to ${commandConfig.cli}`;
+		callbacks.onOutput?.(`Resuming session "${session}" (${resumeType})`);
+	} else if (resume.isExhaustedResume) {
+		callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
+	}
 
 	return withTranscript(
 		{ flags, config, command: "build", specName: found.name },
@@ -196,6 +275,7 @@ export async function executeBuild(
 				templateVars: config.templateVars,
 				specsDir: config.specsDir,
 				session,
+				sessionId: resume.sessionId,
 				specIndex: 1,
 				specCount: 1,
 				specs: [found.name],
@@ -205,7 +285,7 @@ export async function executeBuild(
 				writer,
 			});
 
-			return result;
+			return { ...result, needsResume: resume.needsResume };
 		},
 	);
 }
@@ -216,6 +296,7 @@ export interface BuildAllCallbacks {
 	onPhase?: (phase: string) => void;
 	onIteration?: (current: number, max: number) => void;
 	onEvent?: (event: CliEvent) => void;
+	onOutput?: (message: string) => void;
 }
 
 export interface BuildAllResult {
@@ -257,8 +338,18 @@ export async function executeBuildAll(
 	}
 
 	const built: BuildResult[] = [];
-	const session = flags.session || generateSessionName();
 	const specNames = planned.map((s) => s.name);
+	const status = readStatus(cwd);
+
+	// Check if any spec needs resume → reuse session name for worktree continuity
+	const commandConfig = resolveCommandConfig(config, "build", {
+		cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
+		iterations: flags.iterations,
+	});
+	const anyNeedsResume = planned.some((spec) => {
+		return detectResume(status.specs[spec.name], commandConfig.cli, status.lastCli).needsResume;
+	});
+	const session = flags.session || (anyNeedsResume ? status.sessionName : null) || generateSessionName();
 
 	return withTranscript(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
@@ -269,21 +360,33 @@ export async function executeBuildAll(
 				writer?.writeSpecHeader(i + 1, planned.length, spec.name);
 				callbacks.onSpecStart?.(spec.name, i, planned.length);
 
-				const commandConfig = resolveCommandConfig(config, "build", {
-					cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
-					iterations: flags.iterations,
-				});
+				// Per-spec resume detection
+				const specEntry = status.specs[spec.name];
+				const existingIterations = specEntry?.iterations.length ?? 0;
+				const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
+
+				if (resume.isCrashResume) {
+					const lastIteration = specEntry?.iterations.at(-1);
+					callbacks.onOutput?.(
+						`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration?.iteration} was in progress). Resuming...`,
+					);
+				} else if (resume.isExhaustedResume) {
+					callbacks.onOutput?.(
+						`⚠ [${spec.name}] Previous build exhausted iterations without completing. Resuming in same worktree...`,
+					);
+				}
 
 				const { result } = await runSpecBuild({
 					spec,
 					promptName: "PROMPT_BUILD",
-					existingIterations: 0,
+					existingIterations,
 					iterations: commandConfig.iterations,
 					cli: commandConfig.cli,
 					model: commandConfig.model,
 					templateVars: config.templateVars,
 					specsDir: config.specsDir,
 					session,
+					sessionId: resume.sessionId,
 					specIndex: i + 1,
 					specCount: planned.length,
 					specs: specNames,
@@ -293,12 +396,13 @@ export async function executeBuildAll(
 						onPhase: callbacks.onPhase,
 						onIteration: callbacks.onIteration,
 						onEvent: callbacks.onEvent,
+						onOutput: callbacks.onOutput,
 					},
 					writer,
 				});
 
-				built.push(result);
-				callbacks.onSpecComplete?.(result);
+				built.push({ ...result, needsResume: resume.needsResume });
+				callbacks.onSpecComplete?.({ ...result, needsResume: resume.needsResume });
 			}
 
 			return { built };
