@@ -2,6 +2,10 @@
   "name": "@0xtiby/toby",
   "version": "0.0.0-development",
   "description": "AI-assisted development loop engine CLI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xtiby/toby.git"
+  },
   "type": "module",
   "packageManager": "pnpm@10.28.1",
   "bin": {
