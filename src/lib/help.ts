@@ -69,6 +69,113 @@ export const commandHelp: Record<string, CommandHelp> = {
 			},
 		],
 	},
+	build: {
+		summary: "Build tasks one-per-spawn with AI",
+		usage: ["$ toby build [options]"],
+		flags: [
+			{
+				name: "--spec=<query>",
+				description: "Target spec(s) by name, slug, number, or list",
+			},
+			{ name: "--specs=<names>", description: "Alias for --spec" },
+			{ name: "--all", description: "Build all planned specs in order" },
+			{
+				name: "--iterations=<n>",
+				description: "Override max iteration count",
+			},
+			{ name: "--verbose", description: "Show full CLI output" },
+			{
+				name: "--transcript",
+				description: "Save session transcript to file",
+			},
+			{
+				name: "--cli=<name>",
+				description: "Override AI CLI (claude, codex, opencode)",
+			},
+			{
+				name: "--session=<name>",
+				description: "Name the session for branch/PR naming",
+			},
+		],
+		examples: [
+			{
+				command:
+					"toby build --spec=auth --cli=claude --session=auth-feature",
+				description:
+					'Build the auth spec using Claude, resuming "auth-feature"',
+			},
+			{
+				command: "toby build --all --iterations=5 --transcript",
+				description:
+					"Build all planned specs with up to 5 iterations, saving transcripts",
+			},
+			{
+				command: "toby build --spec=2 --verbose",
+				description: "Build spec #2 with full CLI output visible",
+			},
+		],
+	},
+	init: {
+		summary: "Initialize toby in current project",
+		usage: ["$ toby init [options]"],
+		flags: [
+			{
+				name: "--plan-cli=<name>",
+				description: "Set plan CLI (claude, codex, opencode)",
+			},
+			{ name: "--plan-model=<id>", description: "Set plan model" },
+			{
+				name: "--build-cli=<name>",
+				description: "Set build CLI (claude, codex, opencode)",
+			},
+			{ name: "--build-model=<id>", description: "Set build model" },
+			{ name: "--specs-dir=<path>", description: "Set specs directory" },
+			{
+				name: "--verbose",
+				description: "Enable verbose output in config",
+			},
+		],
+		examples: [
+			{
+				command: "toby init",
+				description: "Launch the interactive setup wizard",
+			},
+			{
+				command:
+					"toby init --plan-cli=claude --build-cli=claude --specs-dir=specs",
+				description:
+					"Non-interactive init with required flags (for CI/agents)",
+			},
+			{
+				command:
+					"toby init --plan-cli=codex --build-cli=codex --specs-dir=specs --verbose",
+				description:
+					"Initialize with Codex for both phases, verbose enabled",
+			},
+		],
+	},
+	status: {
+		summary: "Show project status",
+		usage: ["$ toby status [options]"],
+		flags: [
+			{
+				name: "--spec=<query>",
+				description:
+					"Show status for a specific spec by name, slug, or number",
+			},
+		],
+		examples: [
+			{
+				command: "toby status",
+				description:
+					"Show status overview for all specs in the project",
+			},
+			{
+				command: "toby status --spec=auth",
+				description: "Show detailed status for the auth spec",
+			},
+		],
+	},
 };
 
 /** Render per-command help with examples */
