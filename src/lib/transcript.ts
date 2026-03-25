@@ -1,9 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CliEvent } from "@0xtiby/spawner";
-import { getLocalDir } from "./paths.js";
-
-const TRANSCRIPTS_DIR = "transcripts";
+import { getLocalDir, TRANSCRIPTS_DIR } from "./paths.js";
 
 export interface TranscriptOptions {
 	command: string;

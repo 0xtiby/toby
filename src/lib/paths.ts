@@ -18,6 +18,9 @@ export const STATUS_FILE = "status.json";
 /** Config file name */
 export const CONFIG_FILE = "config.json";
 
+/** Transcripts subdirectory name inside .toby/ */
+export const TRANSCRIPTS_DIR = "transcripts";
+
 /** Returns absolute path to ~/.toby */
 export function getGlobalDir(): string {
 	return path.join(os.homedir(), GLOBAL_TOBY_DIR);
