@@ -64,6 +64,8 @@ pnpm unlink --global @0xtiby/toby
 
 - [CLI & Config Reference](docs/reference.md) — all commands, flags, and config.json options
 - [Prompt Authoring Guide](docs/prompts.md) — how to write and customize prompt templates
+- [Writing Specs](docs/specs.md) — spec file format, naming conventions, and ordering
+- [Sessions & Transcripts](docs/sessions.md) — session naming, crash recovery, and transcript recording
 
 ## License
 
