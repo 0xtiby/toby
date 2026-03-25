@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { PALETTE } from "./palette.js";
 import type { ColorToken } from "./palette.js";
 import { HAMSTER_FRAMES } from "./sprites.js";
@@ -82,6 +82,21 @@ function buildColorRuns(
 	return rows;
 }
 
+type SizeTier = "static" | "compact" | "full";
+
+const SIZE_TIERS: Record<Exclude<SizeTier, "static">, { width: number; height: number }> = {
+	compact: { width: 25, height: 13 },
+	full: { width: 35, height: 18 },
+};
+
+const MIN_VIABLE_WIDTH = 15;
+
+export function getSizeTier(columns: number): SizeTier {
+	if (columns < 60) return "static";
+	if (columns < 100) return "compact";
+	return "full";
+}
+
 const HAMSTER_BASE_INTERVAL = 140;
 const WHEEL_BASE_INTERVAL = 100;
 const MIN_INTERVAL = 16;
@@ -91,40 +106,69 @@ function computeInterval(baseInterval: number, speed: number): number {
 }
 
 export default function HamsterWheel({
-	width = 25,
-	height = 13,
+	width: widthProp,
+	height: heightProp,
 	speed = 1,
 }: HamsterWheelProps): React.ReactElement {
+	const { stdout } = useStdout();
+	const columns = stdout?.columns ?? 80;
+
+	// Resolve dimensions: explicit props override adaptive sizing
+	let resolvedWidth: number;
+	let resolvedHeight: number;
+	let isStatic: boolean;
+
+	if (widthProp !== undefined && heightProp !== undefined) {
+		resolvedWidth = widthProp;
+		resolvedHeight = heightProp;
+		isStatic = widthProp < MIN_VIABLE_WIDTH;
+	} else {
+		const tier = getSizeTier(columns);
+		if (tier === "static") {
+			isStatic = true;
+			resolvedWidth = 0;
+			resolvedHeight = 0;
+		} else {
+			isStatic = false;
+			resolvedWidth = widthProp ?? SIZE_TIERS[tier].width;
+			resolvedHeight = heightProp ?? SIZE_TIERS[tier].height;
+		}
+	}
+
 	const [frame, setFrame] = useState(0);
 	const [spokeAngle, setSpokeAngle] = useState(0);
 
-	// Hamster leg animation timer
+	// Hamster leg animation timer — guarded by static mode
 	useEffect(() => {
-		if (speed === 0) return;
+		if (speed === 0 || isStatic) return;
 		const interval = computeInterval(HAMSTER_BASE_INTERVAL, speed);
 		const id = setInterval(() => {
 			setFrame((f) => (f + 1) % 2);
 		}, interval);
 		return () => clearInterval(id);
-	}, [speed]);
+	}, [speed, isStatic]);
 
-	// Wheel spoke rotation timer
+	// Wheel spoke rotation timer — guarded by static mode
 	useEffect(() => {
-		if (speed === 0) return;
+		if (speed === 0 || isStatic) return;
 		const interval = computeInterval(WHEEL_BASE_INTERVAL, speed);
 		const id = setInterval(() => {
 			setSpokeAngle((a) => a + 0.15);
 		}, interval);
 		return () => clearInterval(id);
-	}, [speed]);
+	}, [speed, isStatic]);
+
+	if (isStatic) {
+		return <Text>  🐹 toby</Text>;
+	}
 
 	const renderedRows = useMemo(() => {
-		const grid = buildGrid(width, height);
+		const grid = buildGrid(resolvedWidth, resolvedHeight);
 
 		// Compute wheel geometry and stamp wheel pixels
 		const { cx, cy, outerRadius, innerRadius } = computeWheelGeometry(
-			width,
-			height,
+			resolvedWidth,
+			resolvedHeight,
 		);
 		const wheelPixels = generateWheelPixels(
 			cx,
@@ -136,9 +180,9 @@ export default function HamsterWheel({
 		for (const pixel of wheelPixels) {
 			if (
 				pixel.x >= 0 &&
-				pixel.x < width &&
+				pixel.x < resolvedWidth &&
 				pixel.y >= 0 &&
-				pixel.y < height
+				pixel.y < resolvedHeight
 			) {
 				grid[pixel.y]![pixel.x] = pixel.color;
 			}
@@ -151,13 +195,13 @@ export default function HamsterWheel({
 		for (const [col, row, colorToken] of spriteFrame) {
 			const px = hamsterOriginX + col;
 			const py = hamsterOriginY + row;
-			if (px >= 0 && px < width && py >= 0 && py < height) {
+			if (px >= 0 && px < resolvedWidth && py >= 0 && py < resolvedHeight) {
 				grid[py]![px] = PALETTE[colorToken as ColorToken];
 			}
 		}
 
-		return buildColorRuns(grid, width, height);
-	}, [width, height, frame, spokeAngle]);
+		return buildColorRuns(grid, resolvedWidth, resolvedHeight);
+	}, [resolvedWidth, resolvedHeight, frame, spokeAngle]);
 
 	return (
 		<Box flexDirection="column">
