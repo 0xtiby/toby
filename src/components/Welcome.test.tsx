@@ -15,12 +15,13 @@ function delay(ms = 100): Promise<void> {
 }
 
 describe("Welcome", () => {
-	it("renders Mascot and MainMenu in initial state", () => {
+	it("renders HamsterWheel, InfoPanel, and MainMenu in initial state", () => {
 		const { lastFrame } = render(<Welcome version="1.0.0" />);
 		const output = lastFrame()!;
-		// Mascot
-		expect(output).toContain("● ●");
+		// InfoPanel version
 		expect(output).toContain("toby v1.0.0");
+		// Robot mascot is gone
+		expect(output).not.toContain("● ●");
 		// MainMenu items
 		expect(output).toContain("plan");
 		expect(output).toContain("build");
@@ -35,7 +36,7 @@ describe("Welcome", () => {
 		await delay();
 		const output = lastFrame()!;
 		// Plan component renders — should no longer show mascot
-		expect(output).not.toContain("● ●");
+		expect(output).not.toContain("toby v1.0.0");
 	});
 
 	it("transitions to Build component on build selection", async () => {
@@ -46,6 +47,6 @@ describe("Welcome", () => {
 		stdin.write(ENTER);
 		await delay();
 		const output = lastFrame()!;
-		expect(output).not.toContain("● ●");
+		expect(output).not.toContain("toby v1.0.0");
 	});
 });

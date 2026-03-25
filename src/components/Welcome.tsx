@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, useApp } from "ink";
-import Mascot from "./Mascot.js";
+import HamsterWheel from "./hamster/HamsterWheel.js";
+import InfoPanel from "./InfoPanel.js";
 import MainMenu from "./MainMenu.js";
 import Plan from "../commands/plan.js";
 import Build from "../commands/build.js";
 import Status from "../commands/status.js";
 import { ConfigEditor } from "../commands/config.js";
+import { computeProjectStats } from "../lib/stats.js";
 
 export interface WelcomeProps {
 	version: string;
@@ -14,6 +16,7 @@ export interface WelcomeProps {
 export default function Welcome({ version }: WelcomeProps) {
 	const { exit } = useApp();
 	const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
+	const stats = useMemo(() => computeProjectStats(), []);
 
 	// Status renders synchronously (no async work / no own exit lifecycle),
 	// so we defer exit() to the next tick to let Ink flush the final render.
@@ -39,7 +42,10 @@ export default function Welcome({ version }: WelcomeProps) {
 
 	return (
 		<Box flexDirection="column" gap={1}>
-			<Mascot version={version} />
+			<Box flexDirection="row" gap={2}>
+				<HamsterWheel />
+				<InfoPanel version={version} stats={stats} />
+			</Box>
 			<MainMenu onSelect={setSelectedCommand} />
 		</Box>
 	);
