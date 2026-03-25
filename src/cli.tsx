@@ -14,8 +14,7 @@ import {
 	formatCommandHelp,
 	commandHelp,
 } from "./lib/help.js";
-
-const COMMAND_NAMES = ["plan", "build", "init", "status", "config", "clean"];
+import { COMMAND_NAMES } from "./lib/cli-meta.js";
 
 function writeUnknownCommandError(command: string): void {
 	const lines = [

@@ -5,6 +5,7 @@ import {
 	formatErrorWithHint,
 	commandHelp,
 } from "../help.js";
+import { COMMAND_NAMES, MEOW_FLAG_NAMES } from "../cli-meta.js";
 
 const EXPECTED_COMMANDS = ["plan", "build", "init", "status", "config", "clean"];
 
@@ -158,5 +159,60 @@ describe("formatErrorWithHint", () => {
 				"toby plan --cli=claude --spec=auth",
 			),
 		);
+	});
+});
+
+/**
+ * Convert a help flag name like "--plan-cli=<name>" to a camelCase meow flag name like "planCli".
+ */
+function helpFlagToMeowName(flagName: string): string {
+	const raw = flagName.replace(/^--/, "").replace(/=.*$/, "");
+	return raw.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+describe("regression: help registry stays in sync with CLI", () => {
+	it("commandHelp has an entry for every command in COMMAND_NAMES", () => {
+		const helpKeys = Object.keys(commandHelp).sort();
+		const commandNames = [...COMMAND_NAMES].sort();
+		expect(helpKeys).toEqual(commandNames);
+	});
+
+	it("COMMAND_NAMES matches the hardcoded EXPECTED_COMMANDS list", () => {
+		expect([...COMMAND_NAMES].sort()).toEqual(
+			[...EXPECTED_COMMANDS].sort(),
+		);
+	});
+
+	it("every flag in commandHelp maps to a valid meow flag", () => {
+		const meowFlags = new Set(MEOW_FLAG_NAMES);
+		for (const cmd of COMMAND_NAMES) {
+			const help = commandHelp[cmd];
+			for (const flag of help.flags) {
+				const meowName = helpFlagToMeowName(flag.name);
+				expect(
+					meowFlags.has(meowName),
+					`commandHelp["${cmd}"] has flag "${flag.name}" (→ "${meowName}") which is not in meow flags`,
+				).toBe(true);
+			}
+		}
+	});
+
+	it("fails loudly if a command is added to COMMAND_NAMES without help entry", () => {
+		for (const cmd of COMMAND_NAMES) {
+			expect(
+				commandHelp[cmd],
+				`Missing commandHelp entry for command "${cmd}"`,
+			).toBeDefined();
+		}
+	});
+
+	it("fails loudly if a help entry exists for a non-existent command", () => {
+		const commandSet = new Set<string>(COMMAND_NAMES);
+		for (const key of Object.keys(commandHelp)) {
+			expect(
+				commandSet.has(key),
+				`commandHelp has entry "${key}" which is not in COMMAND_NAMES`,
+			).toBe(true);
+		}
 	});
 });
