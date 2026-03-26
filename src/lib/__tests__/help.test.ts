@@ -171,16 +171,12 @@ function helpFlagToMeowName(flagName: string): string {
 }
 
 describe("regression: help registry stays in sync with CLI", () => {
-	it("commandHelp has an entry for every command in COMMAND_NAMES", () => {
+	it("COMMAND_NAMES and commandHelp keys match EXPECTED_COMMANDS bidirectionally", () => {
 		const helpKeys = Object.keys(commandHelp).sort();
 		const commandNames = [...COMMAND_NAMES].sort();
-		expect(helpKeys).toEqual(commandNames);
-	});
-
-	it("COMMAND_NAMES matches the hardcoded EXPECTED_COMMANDS list", () => {
-		expect([...COMMAND_NAMES].sort()).toEqual(
-			[...EXPECTED_COMMANDS].sort(),
-		);
+		const expected = [...EXPECTED_COMMANDS].sort();
+		expect(helpKeys).toEqual(expected);
+		expect(commandNames).toEqual(expected);
 	});
 
 	it("every flag in commandHelp maps to a valid meow flag", () => {
@@ -194,25 +190,6 @@ describe("regression: help registry stays in sync with CLI", () => {
 					`commandHelp["${cmd}"] has flag "${flag.name}" (→ "${meowName}") which is not in meow flags`,
 				).toBe(true);
 			}
-		}
-	});
-
-	it("fails loudly if a command is added to COMMAND_NAMES without help entry", () => {
-		for (const cmd of COMMAND_NAMES) {
-			expect(
-				commandHelp[cmd],
-				`Missing commandHelp entry for command "${cmd}"`,
-			).toBeDefined();
-		}
-	});
-
-	it("fails loudly if a help entry exists for a non-existent command", () => {
-		const commandSet = new Set<string>(COMMAND_NAMES);
-		for (const key of Object.keys(commandHelp)) {
-			expect(
-				commandSet.has(key),
-				`commandHelp has entry "${key}" which is not in COMMAND_NAMES`,
-			).toBe(true);
 		}
 	});
 });

@@ -69,12 +69,12 @@ describe("help integration", () => {
 	});
 
 	describe("error hints", () => {
-		it("unknown command exits 1 with available commands", () => {
+		it("unknown command exits 1 with valid options and example", () => {
 			const result = run("deploy");
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).toContain("Unknown command: deploy");
-			expect(result.stderr).toContain("Available commands:");
-			expect(result.stderr).toContain("Run toby --help for details.");
+			expect(result.stderr).toContain("Valid options:");
+			expect(result.stderr).toContain("$ toby --help");
 		});
 
 		it("unknown command with --help also exits 1", () => {

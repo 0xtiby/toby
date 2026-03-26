@@ -12,97 +12,26 @@ import { ensureGlobalDir } from "./lib/paths.js";
 import {
 	formatGlobalHelp,
 	formatCommandHelp,
+	formatErrorWithHint,
 	commandHelp,
 } from "./lib/help.js";
-import { COMMAND_NAMES } from "./lib/cli-meta.js";
+import { COMMAND_NAMES, MEOW_FLAGS } from "./lib/cli-meta.js";
 
 function writeUnknownCommandError(command: string): void {
-	const lines = [
-		`✗ Unknown command: ${command}`,
-		"",
-		`Available commands: ${COMMAND_NAMES.join(", ")}`,
-		"",
-		"Run toby --help for details.",
-		"",
-	];
-	process.stderr.write(lines.join("\n"));
+	process.stderr.write(
+		formatErrorWithHint(
+			`Unknown command: ${command}`,
+			COMMAND_NAMES,
+			"toby --help",
+		),
+	);
 }
 
-const cli = meow(
-	`
-Usage
-  $ toby <command> [options]
-
-Commands
-  plan     Plan specs with AI loop engine
-  build    Build tasks one-per-spawn with AI
-  init     Initialize toby in current project
-  status   Show project status
-  config   Manage configuration
-  clean    Delete all transcript files
-
-Plan Options
-  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
-  --specs=<names>    Alias for --spec with comma-separated specs
-  --all              Plan all pending specs
-  --iterations=<n>   Override iteration count
-  --verbose          Show full CLI output
-  --transcript       Save session transcript to file
-  --cli=<name>       Override AI CLI (claude, codex, opencode)
-  --session=<name>   Name the session for branch/PR naming
-
-Build Options
-  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
-  --specs=<names>    Alias for --spec with comma-separated specs
-  --all              Build all planned specs in order
-  --iterations=<n>   Override max iteration count
-  --verbose          Show full CLI output
-  --transcript       Save session transcript to file
-  --cli=<name>       Override AI CLI (claude, codex, opencode)
-  --session=<name>   Name the session for branch/PR naming
-
-Status Options
-  --spec=<query>     Show status for a spec by name, slug, or number
-
-Init Options
-  --plan-cli=<name>    Set plan CLI (claude, codex, opencode)
-  --plan-model=<id>    Set plan model
-  --build-cli=<name>   Set build CLI (claude, codex, opencode)
-  --build-model=<id>   Set build model
-  --specs-dir=<path>   Set specs directory
-  --verbose            Enable verbose output in config
-
-Config Subcommands
-  config             Interactive config editor
-  config get <key>   Show a config value (dot-notation)
-  config set <key> <value>  Set a config value
-  config set <k>=<v> [<k>=<v>...]  Batch set config values
-
-Clean Options
-  --force    Skip confirmation prompt
-`,
-	{
-		importMeta: import.meta,
-		autoHelp: false,
-		flags: {
-			help: { type: "boolean", default: false },
-			spec: { type: "string" },
-			specs: { type: "string" },
-			all: { type: "boolean", default: false },
-			iterations: { type: "number" },
-			verbose: { type: "boolean", default: false },
-			transcript: { type: "boolean" },
-			cli: { type: "string" },
-			planCli: { type: "string" },
-			planModel: { type: "string" },
-			buildCli: { type: "string" },
-			buildModel: { type: "string" },
-			specsDir: { type: "string" },
-			session: { type: "string" },
-			force: { type: "boolean", default: false },
-		},
-	},
-);
+const cli = meow("", {
+	importMeta: import.meta,
+	autoHelp: false,
+	flags: MEOW_FLAGS,
+});
 
 ensureGlobalDir();
 
