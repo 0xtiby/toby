@@ -1099,8 +1099,8 @@ describe("executeBuild crash/exhaustion detection", () => {
 			},
 		});
 
-		// executeBuild throws for non-planned/building status, so this tests that done specs aren't buildable
-		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
+		// executeBuild throws for done specs with a specific done guard message
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("already done");
 	});
 
 	it("no resume when stopReason is max_iterations but spec status is done", async () => {
@@ -1117,7 +1117,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 			},
 		});
 
-		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("already done");
 	});
 
 	it("crash + session in status → session equals status.session.name", async () => {
@@ -1901,5 +1901,92 @@ describe("executeBuildAll transcript", () => {
 		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
 
 		expect(mockWriter.close).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("done guard", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuild throws when spec status is done", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await expect(
+			executeBuild(defaultFlags, {}, "/project"),
+		).rejects.toThrow("Spec '01-auth' is already done. Reset its status in .toby/status.json to rebuild.");
+
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("executeBuildAll filters out done specs and only builds non-done specs", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+				"02-api": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		const specOrder: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { specOrder.push(name); } },
+			"/p",
+		);
+
+		expect(specOrder).toEqual(["02-api"]);
+		expect(mockRunLoop).toHaveBeenCalledOnce();
+	});
+
+	it("executeBuildAll outputs message and returns empty when all specs are done", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		const outputs: string[] = [];
+		const result = await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onOutput: (msg) => { outputs.push(msg); } },
+			"/p",
+		);
+
+		expect(outputs).toContain("All specs already done.");
+		expect(result.built).toEqual([]);
+		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 });

@@ -242,6 +242,9 @@ export async function executeBuild(
 
 	const status = readStatus(cwd);
 	const specEntry = status.specs[found.name];
+	if (specEntry?.status === "done") {
+		throw new Error(`Spec '${found.name}' is already done. Reset its status in .toby/status.json to rebuild.`);
+	}
 	if (!specEntry || (specEntry.status !== "planned" && specEntry.status !== "building")) {
 		throw new Error(`No plan found for ${found.name}. Run 'toby plan --spec=${flags.spec}' first.`);
 	}
@@ -338,16 +341,22 @@ export async function executeBuildAll(
 		}
 	}
 
-	const built: BuildResult[] = [];
-	const specNames = planned.map((s) => s.name);
 	const status = readStatus(cwd);
+	const buildable = planned.filter((s) => status.specs[s.name]?.status !== "done");
+	if (buildable.length === 0) {
+		callbacks.onOutput?.("All specs already done.");
+		return { built: [] };
+	}
+
+	const built: BuildResult[] = [];
+	const specNames = buildable.map((s) => s.name);
 
 	// Check if any spec needs resume → reuse session name for worktree continuity
 	const commandConfig = resolveCommandConfig(config, "build", {
 		cli: flags.cli as "claude" | "codex" | "opencode" | undefined,
 		iterations: flags.iterations,
 	});
-	const anyNeedsResume = planned.some((spec) => {
+	const anyNeedsResume = buildable.some((spec) => {
 		return detectResume(status.specs[spec.name], commandConfig.cli, status.session).needsResume;
 	});
 	const session = flags.session || (anyNeedsResume ? status.session?.name : null) || generateSessionName();
@@ -356,10 +365,10 @@ export async function executeBuildAll(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
 		undefined,
 		async (writer) => {
-			for (let i = 0; i < planned.length; i++) {
-				const spec = planned[i];
-				writer?.writeSpecHeader(i + 1, planned.length, spec.name);
-				callbacks.onSpecStart?.(spec.name, i, planned.length);
+			for (let i = 0; i < buildable.length; i++) {
+				const spec = buildable[i];
+				writer?.writeSpecHeader(i + 1, buildable.length, spec.name);
+				callbacks.onSpecStart?.(spec.name, i, buildable.length);
 
 				// Per-spec resume detection
 				const specEntry = status.specs[spec.name];
@@ -389,7 +398,7 @@ export async function executeBuildAll(
 					session,
 					sessionId: resume.sessionId,
 					specIndex: i + 1,
-					specCount: planned.length,
+					specCount: buildable.length,
 					specs: specNames,
 					cwd,
 					abortSignal,
