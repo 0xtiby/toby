@@ -37,12 +37,16 @@ vi.mock("../lib/loop.js", () => ({
 	runLoop: vi.fn(),
 }));
 
-vi.mock("../lib/status.js", () => ({
-	readStatus: vi.fn(),
-	writeStatus: vi.fn(),
-	addIteration: vi.fn(),
-	updateSpecStatus: vi.fn(),
-}));
+vi.mock("../lib/status.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../lib/status.js")>();
+	return {
+		readStatus: vi.fn(),
+		writeStatus: vi.fn(),
+		addIteration: vi.fn(),
+		updateSpecStatus: vi.fn(),
+		createSession: actual.createSession,
+	};
+});
 
 vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
@@ -1330,7 +1334,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		// writeStatus is called by onIterationStart — verify session object is set
 		expect(mockWriteStatus).toHaveBeenCalledWith(
-			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude" }) }),
+			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }) }),
 			"/project",
 		);
 	});
@@ -1357,7 +1361,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		// First writeStatus call (from onIterationStart) should have session object
 		expect(statusAtIterationStart).toEqual(
-			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude" }) }),
+			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }) }),
 		);
 	});
 

@@ -12,6 +12,7 @@ import {
 	writeStatus,
 	addIteration,
 	updateSpecStatus,
+	createSession,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, Session } from "../types.js";
@@ -133,7 +134,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				tokensUsed: null,
 			};
 			status = addIteration(status, spec.name, iterationRecord);
-			status = { ...status, session: { name: options.session, cli, specs: [spec.name], state: "active" as const, startedAt: new Date().toISOString() } };
+			status = { ...status, session: createSession(options.session, cli, options.specs) };
 			writeStatus(status, cwd);
 		},
 		onIterationComplete: (iterResult: IterationResult) => {
