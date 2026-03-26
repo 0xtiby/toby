@@ -93,12 +93,10 @@ export const SessionSchema = z.object({
 });
 export type Session = z.infer<typeof SessionSchema>;
 
-export const StatusSchema = z
-	.object({
-		specs: z.record(z.string(), SpecStatusEntrySchema),
-		session: SessionSchema.optional(),
-	})
-	.strip();
+export const StatusSchema = z.object({
+	specs: z.record(z.string(), SpecStatusEntrySchema),
+	session: SessionSchema.optional(),
+}).strip();
 
 export type StatusData = z.infer<typeof StatusSchema>;
 export type Iteration = z.infer<typeof IterationSchema>;

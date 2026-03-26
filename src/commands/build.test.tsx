@@ -37,18 +37,23 @@ vi.mock("../lib/loop.js", () => ({
 	runLoop: vi.fn(),
 }));
 
-vi.mock("../lib/status.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../lib/status.js")>();
-	return {
-		readStatus: vi.fn(),
-		writeStatus: vi.fn(),
-		addIteration: vi.fn(),
-		updateSpecStatus: vi.fn(),
-		createSession: actual.createSession,
-		clearSession: actual.clearSession,
-		updateSessionState: actual.updateSessionState,
-	};
-});
+vi.mock("../lib/status.js", () => ({
+	readStatus: vi.fn(),
+	writeStatus: vi.fn(),
+	addIteration: vi.fn(),
+	updateSpecStatus: vi.fn(),
+	createSession: vi.fn((name: string, cli: string, specs: string[]) => ({
+		name, cli, specs, state: "active", startedAt: "2026-03-20T00:00:00.000Z",
+	})),
+	clearSession: vi.fn((status: Record<string, unknown>) => {
+		const { session: _, ...rest } = status;
+		return rest;
+	}),
+	updateSessionState: vi.fn((status: Record<string, unknown>, state: string) => {
+		if (!status.session) return status;
+		return { ...status, session: { ...(status.session as Record<string, unknown>), state } };
+	}),
+}));
 
 vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
@@ -84,7 +89,7 @@ import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } f
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
-import { readStatus, writeStatus, addIteration, updateSpecStatus, clearSession, updateSessionState } from "../lib/status.js";
+import { readStatus, writeStatus, addIteration, updateSpecStatus, createSession, clearSession, updateSessionState } from "../lib/status.js";
 import { openTranscript } from "../lib/transcript.js";
 import { executeBuild, executeBuildAll } from "./build.js";
 import { AbortError } from "../lib/errors.js";
@@ -108,6 +113,9 @@ const mockReadStatus = vi.mocked(readStatus);
 const mockWriteStatus = vi.mocked(writeStatus);
 const mockAddIteration = vi.mocked(addIteration);
 const mockUpdateSpecStatus = vi.mocked(updateSpecStatus);
+const mockCreateSession = vi.mocked(createSession);
+const mockClearSession = vi.mocked(clearSession);
+const mockUpdateSessionState = vi.mocked(updateSessionState);
 const mockOpenTranscript = vi.mocked(openTranscript);
 const defaultFlags: BuildFlags = {
 	spec: "auth",
@@ -176,13 +184,13 @@ function setupDefaults() {
 			tokensUsed: 150,
 			model: "claude-sonnet-4-6",
 			durationMs: 1000,
-			sentinelDetected: true,
+			sentinelDetected: false,
 		};
 		options.onIterationStart?.(1, null);
 		options.onIterationComplete?.(iterResult);
 		return {
 			iterations: [iterResult],
-			stopReason: "sentinel" as const,
+			stopReason: "max_iterations" as const,
 		};
 	});
 }
@@ -301,7 +309,7 @@ describe("executeBuild", () => {
 					status: "building",
 					plannedAt: null,
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
 					],
 				},
 			},
@@ -345,20 +353,10 @@ describe("executeBuild", () => {
 				cli: "claude",
 			}),
 		);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 1 session create + 1 onIterationStart + 1 onIterationComplete + 1 final + 1 session cleanup
+		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 1 session create + 1 onIterationStart + 1 onIterationComplete + 1 final spec status + 1 session interrupted
 	});
 
-	it("spec status transitions to building on max_iterations", async () => {
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-
+	it("spec status transitions to building on completion", async () => {
 		await executeBuild(defaultFlags, {}, "/project");
 
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
@@ -375,8 +373,8 @@ describe("executeBuild", () => {
 					status: "building",
 					plannedAt: null,
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-						{ type: "build", iteration: 2, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
 					],
 				},
 			},
@@ -708,6 +706,7 @@ describe("Build component", () => {
 			specsDir: "specs",
 			excludeSpecs: ["README.md"],
 			verbose: true,
+			transcript: false,
 			templateVars: {},
 		});
 
@@ -773,7 +772,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(result.specDone).toBe(true);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "done");
 		expect(mockAddIteration).toHaveBeenCalledTimes(4);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(11); // 1 session create + 4 onIterationStart + 4 onIterationComplete + 1 final + 1 session cleanup
+		expect(mockWriteStatus).toHaveBeenCalledTimes(11); // 1 session create + 4 onIterationStart + 4 onIterationComplete + 1 final spec status + 1 session clear
 	});
 
 	it("build --all processes specs in order with correct session vars and collects results", async () => {
@@ -911,7 +910,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(iterationCount).toBe(3);
 		expect(mockAddIteration).toHaveBeenCalledTimes(3);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
-		expect(mockWriteStatus).toHaveBeenCalledTimes(9); // 1 session create + 3 onIterationStart + 3 onIterationComplete + 1 final + 1 session cleanup
+		expect(mockWriteStatus).toHaveBeenCalledTimes(9); // 1 session create + 3 onIterationStart + 3 onIterationComplete + 1 final spec status + 1 session interrupted
 
 		expect(result.specName).toBe("01-auth");
 
@@ -920,221 +919,74 @@ describe("integration: full build flow with mocked spawner", () => {
 	});
 });
 
-describe("executeBuild crash/exhaustion detection", () => {
+describe("resolveResumeSessionId", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		setupDefaults();
 	});
 
-	it("detects crash when last iteration state is in_progress", async () => {
+	it("returns sessionId when CLI matches and last iteration has sessionId", async () => {
+		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			session: { name: "test-session", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
 					],
 				},
 			},
 		});
 
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
+		await executeBuild(defaultFlags, {}, "/project");
 
-		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("Resuming session"),
-		);
-		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("continuing session"),
-		);
-		expect(result.needsResume).toBe(true);
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBe("crash-session-id");
 	});
 
-	it("detects exhaustion when stopReason is max_iterations", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("exhausted iterations"),
-		);
-		expect(result.needsResume).toBe(true);
-	});
-
-	it("crash resume with cross-CLI shows switching message", async () => {
+	it("returns undefined when CLI differs", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
 					],
 				},
 			},
 		});
 
-		const callbacks = { onOutput: vi.fn() };
-		await executeBuild({ ...defaultFlags, cli: "opencode" }, callbacks, "/project");
+		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
 
-		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			'Resuming session "warm-lynx-52" (switching from claude to opencode)',
-		);
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
 	});
 
-	it("crash takes priority over exhaustion when both conditions are true", async () => {
-		mockReadStatus.mockReturnValue({
-			session: { name: "test-session", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).toHaveBeenCalledTimes(1);
-		expect(callbacks.onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("Resuming session"),
-		);
-		expect(callbacks.onOutput).not.toHaveBeenCalledWith(
-			expect.stringContaining("exhausted iterations"),
-		);
-		expect(result.needsResume).toBe(true);
-	});
-
-	it("no resume when stopReason is sentinel", async () => {
+	it("returns undefined when spec has no iterations", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
-					status: "building",
+					status: "planned",
 					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "sentinel",
+					iterations: [],
 				},
 			},
 		});
 
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
+		await executeBuild(defaultFlags, {}, "/project");
 
-		expect(callbacks.onOutput).not.toHaveBeenCalled();
-		expect(result.needsResume).toBe(false);
+		const opts = mockRunLoop.mock.calls[0][0];
+		expect(opts.sessionId).toBeUndefined();
 	});
 
-	it("no resume when stopReason is error", async () => {
+	it("session name reused from session object", async () => {
 		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 1, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "error",
-				},
-			},
-		});
-
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).not.toHaveBeenCalled();
-		expect(result.needsResume).toBe(false);
-	});
-
-	it("no resume when stopReason is aborted", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "aborted",
-				},
-			},
-		});
-
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).not.toHaveBeenCalled();
-		expect(result.needsResume).toBe(false);
-	});
-
-	it("no resume when fresh spec has no iterations", async () => {
-		// Default setupDefaults has empty iterations array
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).not.toHaveBeenCalled();
-		expect(result.needsResume).toBe(false);
-	});
-
-	it("no resume when spec status is done even if last iteration is in_progress", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "done",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-			},
-		});
-
-		// executeBuild throws for done specs with a specific done guard message
-		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("already done");
-	});
-
-	it("no resume when stopReason is max_iterations but spec status is done", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "done",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("already done");
-	});
-
-	it("crash + session in status → session equals status.session.name", async () => {
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1155,91 +1007,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("crash + same CLI → sessionId passed to runSpecBuild", async () => {
-		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
+	it("flags.session overrides session.name", async () => {
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-			},
-		});
-
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// Verify session name is reused and sessionId is passed to runLoop
-		const opts = mockRunLoop.mock.calls[0][0];
-		expect(opts.sessionId).toBe("crash-session-id");
-		const getPrompt = opts.getPrompt;
-		getPrompt(1);
-		expect(mockComputeCliVars).toHaveBeenCalledWith(
-			expect.objectContaining({ session: "warm-lynx-52" }),
-		);
-	});
-
-	it("crash + different CLI → sessionId is undefined", async () => {
-		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "crash-session-id", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-			},
-		});
-
-		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
-
-		// Session name is still reused (same worktree), but sessionId should not be passed
-		const opts = mockRunLoop.mock.calls[0][0];
-		expect(opts.sessionId).toBeUndefined();
-		const getPrompt = opts.getPrompt;
-		getPrompt(1);
-		expect(mockComputeCliVars).toHaveBeenCalledWith(
-			expect.objectContaining({ session: "warm-lynx-52" }),
-		);
-	});
-
-	it("exhaustion + same CLI → sessionId is undefined", async () => {
-		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// Session name reused but sessionId should NOT be passed (exhaustion = clean exit)
-		const opts = mockRunLoop.mock.calls[0][0];
-		expect(opts.sessionId).toBeUndefined();
-		const getPrompt = opts.getPrompt;
-		getPrompt(1);
-		expect(mockComputeCliVars).toHaveBeenCalledWith(
-			expect.objectContaining({ session: "warm-lynx-52" }),
-		);
-	});
-
-	it("flags.session overrides status.session.name", async () => {
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1257,33 +1027,6 @@ describe("executeBuild crash/exhaustion detection", () => {
 		getPrompt(1);
 		expect(mockComputeCliVars).toHaveBeenCalledWith(
 			expect.objectContaining({ session: "my-custom-session" }),
-		);
-	});
-
-	it("exhaustion + cross CLI → session reused, sessionId undefined", async () => {
-		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		await executeBuild({ ...defaultFlags, cli: "opencode" }, {}, "/project");
-
-		const opts = mockRunLoop.mock.calls[0][0];
-		expect(opts.sessionId).toBeUndefined();
-		const getPrompt = opts.getPrompt;
-		getPrompt(1);
-		expect(mockComputeCliVars).toHaveBeenCalledWith(
-			expect.objectContaining({ session: "warm-lynx-52" }),
 		);
 	});
 
@@ -1309,7 +1052,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("status.session is undefined → falls through to computeSpecSlug", async () => {
+	it("no session object → falls through to computeSpecSlug", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
@@ -1331,7 +1074,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("writes session to status on iteration start", async () => {
+	it("runSpecBuild does not write sessionName or lastCli to status", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
@@ -1344,59 +1087,28 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		await executeBuild(defaultFlags, {}, "/project");
 
-		// writeStatus is called by onIterationStart — verify session object is set
-		expect(mockWriteStatus).toHaveBeenCalledWith(
-			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }) }),
-			"/project",
-		);
+		// No writeStatus call should contain sessionName or lastCli
+		for (const call of mockWriteStatus.mock.calls) {
+			const statusArg = call[0] as Record<string, unknown>;
+			expect(statusArg).not.toHaveProperty("sessionName");
+			expect(statusArg).not.toHaveProperty("lastCli");
+		}
 	});
 
-	it("session written before iteration completes", async () => {
-		let statusAtIterationStart: Record<string, unknown> | null = null;
-		mockWriteStatus.mockImplementation((s: Record<string, unknown>) => {
-			if (!statusAtIterationStart) {
-				statusAtIterationStart = { ...s };
-			}
-		});
-
+	it("done spec throws error (not buildable)", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
-					status: "planned",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// First writeStatus call (from onIterationStart) should have session object
-		expect(statusAtIterationStart).toEqual(
-			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }) }),
-		);
-	});
-
-	it("only last iteration matters for crash detection", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
+					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
 						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-						{ type: "build", iteration: 2, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-						{ type: "build", iteration: 3, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:02:00.000Z", completedAt: "2026-03-20T00:02:30.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
 					],
 				},
 			},
 		});
 
-		const callbacks = { onOutput: vi.fn() };
-		const result = await executeBuild(defaultFlags, callbacks, "/project");
-
-		expect(callbacks.onOutput).not.toHaveBeenCalled();
-		expect(result.needsResume).toBe(false);
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("already done");
 	});
 });
 
@@ -1413,6 +1125,21 @@ describe("executeBuildAll", () => {
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		// Use sentinel so all specs complete (stop-on-error won't break the loop)
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
 
 		const specOrder: string[] = [];
 		await executeBuildAll(
@@ -1444,6 +1171,10 @@ describe("executeBuildAll", () => {
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
 
 		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
 
@@ -1505,115 +1236,13 @@ describe("executeBuildAll", () => {
 		expect(result.built[0].specName).toBe("01-auth");
 	});
 
-	it("detects crash per-spec independently in buildAll", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-				"02-api": {
-					status: "planned",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		const onOutput = vi.fn();
-		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
-
-		expect(onOutput).toHaveBeenCalledTimes(1);
-		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("[01-auth] Previous build interrupted"),
-		);
-	});
-
-	it("detects exhaustion per-spec in buildAll", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		const onOutput = vi.fn();
-		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
-
-		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("[01-auth] Previous build exhausted iterations"),
-		);
-	});
-
-	it("handles multiple specs with different resume states independently", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "building" as const },
-			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-				"02-api": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-				"03-ui": {
-					status: "planned",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		const onOutput = vi.fn();
-		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
-
-		expect(onOutput).toHaveBeenCalledTimes(2);
-		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("[01-auth] Previous build interrupted"),
-		);
-		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining("[02-api] Previous build exhausted iterations"),
-		);
-	});
-
-	it("buildAll with crashed spec → session equals status.session.name", async () => {
+	it("buildAll with session object → session name reused from session.name", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1634,42 +1263,14 @@ describe("executeBuildAll", () => {
 		);
 	});
 
-	it("buildAll with exhausted spec → session equals status.session.name", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "failed", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-					],
-					stopReason: "max_iterations",
-				},
-			},
-		});
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		const getPrompt = mockRunLoop.mock.calls[0][0].getPrompt;
-		getPrompt(1);
-		expect(mockComputeCliVars).toHaveBeenCalledWith(
-			expect.objectContaining({ session: "warm-lynx-52" }),
-		);
-	});
-
-	it("buildAll with crashed spec + same CLI → per-spec sessionId passed", async () => {
+	it("buildAll with same CLI → per-spec sessionId passed", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1686,14 +1287,14 @@ describe("executeBuildAll", () => {
 		expect(mockRunLoop.mock.calls[0][0].sessionId).toBe("crash-sess-id");
 	});
 
-	it("buildAll with crashed spec + different CLI → per-spec sessionId undefined", async () => {
+	it("buildAll with different CLI → per-spec sessionId undefined", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1710,13 +1311,12 @@ describe("executeBuildAll", () => {
 		expect(mockRunLoop.mock.calls[0][0].sessionId).toBeUndefined();
 	});
 
-	it("buildAll with no resume needed → session is newly generated", async () => {
+	it("buildAll with no session → session is newly generated", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "planned",
@@ -1735,13 +1335,13 @@ describe("executeBuildAll", () => {
 		);
 	});
 
-	it("buildAll flags.session overrides status.session.name", async () => {
+	it("buildAll flags.session overrides session.name", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1762,12 +1362,152 @@ describe("executeBuildAll", () => {
 		);
 	});
 
+	it("silently skips done specs in executeBuildAll", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		// Use sentinel so remaining specs complete
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "sentinel",
+				},
+				"02-api": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+				"03-ui": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		const specOrder: string[] = [];
+		const result = await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { specOrder.push(name); } },
+			"/p",
+		);
+
+		// 01-auth is done and should be silently skipped
+		expect(specOrder).toEqual(["02-api", "03-ui"]);
+		expect(result.built).toHaveLength(2);
+	});
+
+	it("specIndex/specCount use planned list when done specs are filtered", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "building" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "building" as const },
+			{ name: "04-data", path: "/p/specs/04-data.md", order: { num: 4, suffix: null }, status: "planned" as const },
+			{ name: "05-deploy", path: "/p/specs/05-deploy.md", order: { num: 5, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					stopReason: "sentinel",
+				},
+				"02-api": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					stopReason: "sentinel",
+				},
+				"03-ui": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					stopReason: "sentinel",
+				},
+				"04-data": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+				"05-deploy": {
+					status: "planned",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		// Track getPrompt calls to verify template vars — use sentinel so both specs complete
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// First buildable spec (04-data) should have specIndex=4, specCount=5
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ specIndex: 4, specCount: 5, specName: "04-data" }),
+		);
+		// Second buildable spec (05-deploy) should have specIndex=5, specCount=5
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ specIndex: 5, specCount: 5, specName: "05-deploy" }),
+		);
+	});
+
 	it("no warnings when all specs are clean", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
+		// Use sentinel so all specs complete without interruption summary
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
@@ -1793,6 +1533,373 @@ describe("executeBuildAll", () => {
 	});
 });
 
+describe("session lifecycle", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("executeBuild with done spec throws error with correct message", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "done",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+					stopReason: "sentinel",
+				},
+			},
+		});
+
+		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow(
+			"Spec '01-auth' is already done. Reset its status in .toby/status.json to rebuild.",
+		);
+	});
+
+	it("executeBuild creates session before build starts", async () => {
+		await executeBuild(defaultFlags, {}, "/project");
+
+		expect(mockCreateSession).toHaveBeenCalledWith("auth", "claude", ["01-auth"]);
+		expect(mockWriteStatus).toHaveBeenCalledWith(
+			expect.objectContaining({
+				session: expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }),
+			}),
+			"/project",
+		);
+	});
+
+	it("executeBuild clears session on sentinel success", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		expect(mockClearSession).toHaveBeenCalled();
+	});
+
+	it("executeBuild marks session interrupted on error", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "interrupted");
+	});
+
+	it("executeBuildAll creates session with all spec names", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		expect(mockCreateSession).toHaveBeenCalledWith(
+			"bold-hawk-42", "claude", ["01-auth", "02-api"],
+		);
+	});
+
+	it("multi-spec all sentinel → session cleared", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		// Both specs complete with sentinel
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
+		// readStatus returns done specs after builds complete
+		let callCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			callCount++;
+			// After builds complete, return all done
+			if (callCount > 1) {
+				return {
+					session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth", "02-api"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+					specs: {
+						"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [], stopReason: "sentinel" },
+						"02-api": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [], stopReason: "sentinel" },
+					},
+				};
+			}
+			return {
+				specs: {
+					"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				},
+			};
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		expect(mockClearSession).toHaveBeenCalled();
+	});
+
+	it("multi-spec where b errors → session interrupted, c never started", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			if (specIndex === 2) {
+				// Second spec errors
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationStart?.(1, null);
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "error" as const };
+			}
+			// First spec succeeds
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		const specOrder: string[] = [];
+		const result = await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { specOrder.push(name); } },
+			"/p",
+		);
+
+		// 03-ui should never have been started
+		expect(specOrder).toEqual(["01-auth", "02-api"]);
+		expect(result.built).toHaveLength(2);
+		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "interrupted");
+	});
+
+	it("multi-spec where b hits max_iterations → session interrupted, c never started", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			if (specIndex === 2) {
+				// Second spec hits max_iterations
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationStart?.(1, null);
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			}
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		const specOrder: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { specOrder.push(name); } },
+			"/p",
+		);
+
+		expect(specOrder).toEqual(["01-auth", "02-api"]);
+		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "interrupted");
+	});
+
+	it("interruption output shows completed/remaining counts and toby resume hint", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			if (specIndex === 2) {
+				// Second spec (02-api) errors
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationStart?.(1, null);
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "error" as const };
+			}
+			// First spec (01-auth) succeeds
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		// Initial readStatus: all planned (nothing filtered as done)
+		// Re-reads inside interruption: 01-auth completed
+		let readCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			readCount++;
+			if (readCount === 1) {
+				// Initial read: all planned
+				return {
+					specs: {
+						"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					},
+				};
+			}
+			// Subsequent reads (during/after builds): 01-auth is done
+			return {
+				session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth", "02-api", "03-ui"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+				specs: {
+					"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [], stopReason: "sentinel" },
+					"02-api": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				},
+			};
+		});
+
+		const onOutput = vi.fn();
+		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
+
+		expect(onOutput).toHaveBeenCalledWith(
+			expect.stringContaining('interrupted at 02-api'),
+		);
+		expect(onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("1/3"),
+		);
+		expect(onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("toby resume"),
+		);
+	});
+
+	it("Ctrl+C sets session.state to interrupted", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockRunLoop.mockImplementation(async () => {
+			throw new AbortError("01-auth", 1);
+		});
+
+		await expect(
+			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
+		).rejects.toThrow(AbortError);
+
+		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "interrupted");
+	});
+
+	it("executeBuildAll resumes existing session without recreating", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockReadStatus.mockReturnValue({
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [],
+				},
+			},
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// Should NOT create a new session
+		expect(mockCreateSession).not.toHaveBeenCalled();
+		// Should update state to active
+		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "active");
+	});
+
+	it("existingIterations computed from specEntry.iterations.length", async () => {
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: "2026-03-20T00:02:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+				},
+			},
+		});
+
+		// Capture the iteration number passed to computeCliVars
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			options.getPrompt(1);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// iteration 1 + existingIterations 2 = 3
+		expect(mockComputeCliVars).toHaveBeenCalledWith(
+			expect.objectContaining({ iteration: 3 }),
+		);
+	});
+});
+
 describe("executeBuild transcript", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -1806,8 +1913,10 @@ describe("executeBuild transcript", () => {
 			writeSpecHeader: vi.fn(),
 			close: vi.fn(),
 			filePath: "/tmp/.toby/transcripts/auth-build-20260324.md",
+			stream: {} as any,
+			verbose: false,
 		};
-		mockOpenTranscript.mockReturnValue(mockWriter);
+		mockOpenTranscript.mockReturnValue(mockWriter as any);
 
 		await executeBuild({ ...defaultFlags, transcript: true }, {}, "/project");
 
@@ -1830,8 +1939,10 @@ describe("executeBuild transcript", () => {
 			writeSpecHeader: vi.fn(),
 			close: vi.fn(),
 			filePath: "/tmp/.toby/transcripts/test.md",
+			stream: {} as any,
+			verbose: false,
 		};
-		mockOpenTranscript.mockReturnValue(mockWriter);
+		mockOpenTranscript.mockReturnValue(mockWriter as any);
 
 		// config.transcript is false (default), but flag is true
 		await executeBuild({ ...defaultFlags, transcript: true }, {}, "/project");
@@ -1860,9 +1971,11 @@ describe("executeBuild transcript", () => {
 			writeSpecHeader: vi.fn(),
 			close: vi.fn(),
 			filePath: "/tmp/.toby/transcripts/test.md",
+			stream: {} as any,
+			verbose: false,
 		};
 
-		await executeBuild(defaultFlags, {}, "/project", undefined, mockWriter);
+		await executeBuild(defaultFlags, {}, "/project", undefined, mockWriter as any);
 
 		expect(mockWriter.writeIterationHeader).toHaveBeenCalled();
 		expect(mockWriter.close).not.toHaveBeenCalled();
@@ -1883,8 +1996,10 @@ describe("executeBuildAll transcript", () => {
 			writeSpecHeader: vi.fn(),
 			close: vi.fn(),
 			filePath: "/tmp/.toby/transcripts/bold-hawk-42-build-20260324.md",
+			stream: {} as any,
+			verbose: false,
 		};
-		mockOpenTranscript.mockReturnValue(mockWriter);
+		mockOpenTranscript.mockReturnValue(mockWriter as any);
 
 		const spec1 = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
 		const spec2 = { name: "02-api", path: "/project/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const };
@@ -1896,6 +2011,20 @@ describe("executeBuildAll transcript", () => {
 				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
 			},
 		});
+		// Use sentinel so both specs run
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status, specName) => ({
+			...status,
+			specs: { ...status.specs, [specName]: { ...status.specs[specName], status: "done" } },
+		}));
 
 		await executeBuildAll(
 			{ all: true, verbose: false, transcript: true },
@@ -1913,581 +2042,5 @@ describe("executeBuildAll transcript", () => {
 		expect(mockWriter.writeSpecHeader).toHaveBeenCalledWith(2, 2, "02-api");
 
 		expect(mockWriter.close).toHaveBeenCalledTimes(1);
-	});
-});
-
-describe("done guard", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	it("executeBuild throws when spec status is done", async () => {
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "done",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		await expect(
-			executeBuild(defaultFlags, {}, "/project"),
-		).rejects.toThrow("Spec '01-auth' is already done. Reset its status in .toby/status.json to rebuild.");
-
-		expect(mockRunLoop).not.toHaveBeenCalled();
-	});
-
-	it("executeBuildAll filters out done specs and only builds non-done specs", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "done",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-				"02-api": {
-					status: "planned",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		const specOrder: string[] = [];
-		await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onSpecStart: (name) => { specOrder.push(name); } },
-			"/p",
-		);
-
-		expect(specOrder).toEqual(["02-api"]);
-		expect(mockRunLoop).toHaveBeenCalledOnce();
-	});
-
-	it("executeBuildAll outputs message and returns empty when all specs are done", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "done",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [],
-				},
-			},
-		});
-
-		const outputs: string[] = [];
-		const result = await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onOutput: (msg) => { outputs.push(msg); } },
-			"/p",
-		);
-
-		expect(outputs).toContain("All specs already done.");
-		expect(result.built).toEqual([]);
-		expect(mockRunLoop).not.toHaveBeenCalled();
-	});
-});
-
-describe("session lifecycle in executeBuild", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	it("creates session before build and clears it on sentinel success", async () => {
-		// Make runLoop return sentinel (specDone = true)
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "sentinel" as const };
-		});
-
-		// After runSpecBuild, readStatus is called again for cleanup.
-		// Simulate that the session was written by the session creation step.
-		const baseStatus = {
-			specs: {
-				"01-auth": { status: "planned" as const, plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-			},
-		};
-		let callCount = 0;
-		mockReadStatus.mockImplementation(() => {
-			callCount++;
-			if (callCount === 1) return baseStatus;
-			// Subsequent calls return status with session (as written by creation step)
-			return {
-				...baseStatus,
-				session: { name: "auth", cli: "claude", specs: ["01-auth"], state: "active" as const, startedAt: "2026-03-20T00:00:00.000Z" },
-			};
-		});
-
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// Session creation: first writeStatus call should include session
-		const firstWriteCall = mockWriteStatus.mock.calls[0];
-		expect(firstWriteCall[0].session).toEqual(
-			expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }),
-		);
-
-		// Session cleanup: last writeStatus call should have no session (cleared on success)
-		const lastWriteCall = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
-		expect(lastWriteCall[0].session).toBeUndefined();
-	});
-
-	it("marks session as interrupted when build does not complete", async () => {
-		// Override to return max_iterations (specDone = false)
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-		const baseStatus = {
-			specs: {
-				"01-auth": { status: "planned" as const, plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-			},
-		};
-		let callCount = 0;
-		mockReadStatus.mockImplementation(() => {
-			callCount++;
-			if (callCount === 1) return baseStatus;
-			return {
-				...baseStatus,
-				session: { name: "auth", cli: "claude", specs: ["01-auth"], state: "active" as const, startedAt: "2026-03-20T00:00:00.000Z" },
-			};
-		});
-
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// Last writeStatus call should have session with state="interrupted"
-		const lastWriteCall = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
-		expect(lastWriteCall[0].session).toEqual(
-			expect.objectContaining({ state: "interrupted" }),
-		);
-	});
-
-	it("session contains correct name, cli, and specs array", async () => {
-		await executeBuild(defaultFlags, {}, "/project");
-
-		// First writeStatus call is the session creation
-		const firstWriteCall = mockWriteStatus.mock.calls[0];
-		expect(firstWriteCall[0].session).toEqual(
-			expect.objectContaining({
-				name: "auth",
-				cli: "claude",
-				specs: ["01-auth"],
-			}),
-		);
-	});
-});
-
-describe("multi-spec loop interruption", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	function setupThreeSpecs() {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
-			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-			},
-		});
-		return specs;
-	}
-
-	it("stops loop when spec b errors — spec c is never started", async () => {
-		setupThreeSpecs();
-		let specIndex = 0;
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			specIndex++;
-			const sentinel = specIndex === 1; // Only first spec succeeds
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: sentinel ? 0 : 1, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: sentinel,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			if (sentinel) {
-				return { iterations: [iterResult], stopReason: "sentinel" as const };
-			}
-			return { iterations: [iterResult], stopReason: "error" as const };
-		});
-
-		// First readStatus call returns all planned (for initial filter); subsequent calls reflect done status
-		let readCount = 0;
-		mockReadStatus.mockImplementation(() => {
-			readCount++;
-			if (readCount === 1) {
-				return {
-					specs: {
-						"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-						"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-						"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					},
-				};
-			}
-			return {
-				specs: {
-					"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					"02-api": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				},
-			};
-		});
-
-		const started: string[] = [];
-		await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onSpecStart: (name) => { started.push(name); } },
-			"/p",
-		);
-
-		expect(started).toEqual(["01-auth", "02-api"]);
-		expect(started).not.toContain("03-ui");
-	});
-
-	it("stops loop on max_iterations (incomplete) same as error", async () => {
-		setupThreeSpecs();
-		// All specs return max_iterations — loop should stop after first
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-
-		const started: string[] = [];
-		await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onSpecStart: (name) => { started.push(name); } },
-			"/p",
-		);
-
-		expect(started).toEqual(["01-auth"]);
-	});
-
-	it("outputs correct completed/remaining summary with resume hint", async () => {
-		setupThreeSpecs();
-		let specIndex = 0;
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			specIndex++;
-			const sentinel = specIndex === 1;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: sentinel ? 0 : 1, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: sentinel,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return sentinel
-				? { iterations: [iterResult], stopReason: "sentinel" as const }
-				: { iterations: [iterResult], stopReason: "error" as const };
-		});
-
-		let readCount = 0;
-		mockReadStatus.mockImplementation(() => {
-			readCount++;
-			if (readCount === 1) {
-				return {
-					specs: {
-						"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-						"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-						"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					},
-				};
-			}
-			return {
-				specs: {
-					"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					"02-api": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-					"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				},
-			};
-		});
-
-		const outputs: string[] = [];
-		await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onOutput: (msg) => { outputs.push(msg); } },
-			"/p",
-		);
-
-		const summary = outputs.join("\n");
-		expect(summary).toContain("interrupted");
-		expect(summary).toContain("02-api");
-		expect(summary).toContain("error");
-		expect(summary).toContain("Completed: 01-auth (1/3)");
-		expect(summary).toContain("Remaining: 02-api, 03-ui (2/3)");
-		expect(summary).toContain("toby resume");
-	});
-
-	it("error on first spec shows 0 completed and all remaining", async () => {
-		setupThreeSpecs();
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "error" as const };
-		});
-
-		// No specs are done
-		mockReadStatus.mockImplementation(() => ({
-			specs: {
-				"01-auth": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-				"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-			},
-		}));
-
-		const outputs: string[] = [];
-		await executeBuildAll(
-			{ all: true, verbose: false },
-			{ onOutput: (msg) => { outputs.push(msg); } },
-			"/p",
-		);
-
-		const summary = outputs.join("\n");
-		expect(summary).toContain("Completed: (none) (0/3)");
-		expect(summary).toContain("Remaining: 01-auth, 02-api, 03-ui (3/3)");
-		expect(summary).toContain("toby resume");
-	});
-});
-
-describe("AbortError handling in executeBuildAll", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	it("sets session state to interrupted on AbortError and re-throws", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "aborted" as const };
-		});
-
-		// readStatus returns status with active session after abort
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
-			},
-			session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-		});
-
-		await expect(
-			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
-		).rejects.toThrow(AbortError);
-
-		// Should have written status with interrupted session
-		const interruptedCall = mockWriteStatus.mock.calls.find(
-			(call) => call[0].session?.state === "interrupted",
-		);
-		expect(interruptedCall).toBeDefined();
-	});
-
-	it("does not change session state for non-AbortError exceptions", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockRunLoop.mockImplementation(async () => {
-			throw new Error("Unexpected failure");
-		});
-
-		await expect(
-			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
-		).rejects.toThrow("Unexpected failure");
-
-		// No writeStatus call should have session.state = "interrupted"
-		const interruptedCall = mockWriteStatus.mock.calls.find(
-			(call) => call[0].session?.state === "interrupted",
-		);
-		expect(interruptedCall).toBeUndefined();
-	});
-});
-
-describe("session management in executeBuildAll", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	it("creates session before first spec when none exists", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		// First writeStatus call should have session
-		const firstWrite = mockWriteStatus.mock.calls[0];
-		expect(firstWrite[0].session).toEqual(
-			expect.objectContaining({ cli: "claude", specs: ["01-auth"], state: "active" }),
-		);
-	});
-
-	it("reuses existing session on resume and sets state to active", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-			},
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
-		});
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		// First writeStatus should reuse session name and set state to active
-		const firstWrite = mockWriteStatus.mock.calls[0];
-		expect(firstWrite[0].session?.name).toBe("warm-lynx-52");
-		expect(firstWrite[0].session?.state).toBe("active");
-	});
-
-	it("clears session when all specs complete successfully", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		// After loop, readStatus returns all done
-		let readCount = 0;
-		mockReadStatus.mockImplementation(() => {
-			readCount++;
-			if (readCount <= 1) {
-				return {
-					specs: { "01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
-				};
-			}
-			return {
-				specs: { "01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
-				session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-			};
-		});
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		// Last writeStatus should have no session (cleared)
-		const lastWrite = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
-		expect(lastWrite[0].session).toBeUndefined();
-	});
-
-	it("sets session interrupted when build breaks in loop", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(1, null);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "error" as const };
-		});
-
-		// readStatus returns status with active session
-		mockReadStatus.mockReturnValue({
-			specs: { "01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
-			session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
-		});
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		// Should find a writeStatus call with interrupted session
-		const interruptedCall = mockWriteStatus.mock.calls.find(
-			(call) => call[0].session?.state === "interrupted",
-		);
-		expect(interruptedCall).toBeDefined();
-	});
-
-	it("session name from existing session on resume, not regenerated", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
-
-		mockReadStatus.mockReturnValue({
-			specs: {
-				"01-auth": {
-					status: "building",
-					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
-					],
-				},
-			},
-			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
-		});
-
-		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
-
-		// generateSessionName should NOT have been used since existing session was reused
-		expect(mockGenerateSessionName).not.toHaveBeenCalled();
 	});
 });

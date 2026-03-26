@@ -1,13 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { StatusSchema, SpecStatusEntrySchema } from "../types.js";
-import type {
-	StatusData,
-	SpecStatusEntry,
-	Iteration,
-	Session,
-	SessionState,
-} from "../types.js";
+import type { StatusData, SpecStatusEntry, Iteration, Session, SessionState } from "../types.js";
 import { getLocalDir, STATUS_FILE } from "./paths.js";
 
 /**
@@ -106,6 +100,45 @@ export function addIteration(
 }
 
 /**
+ * Create a new session object.
+ */
+export function createSession(name: string, cli: string, specs: string[]): Session {
+	return {
+		name,
+		cli,
+		specs,
+		state: "active",
+		startedAt: new Date().toISOString(),
+	};
+}
+
+/**
+ * Update the session state. Returns a new status object (immutable).
+ */
+export function updateSessionState(status: StatusData, state: SessionState): StatusData {
+	if (!status.session) return status;
+	return {
+		...status,
+		session: { ...status.session, state },
+	};
+}
+
+/**
+ * Clear the session from status. Returns a new status object (immutable).
+ */
+export function clearSession(status: StatusData): StatusData {
+	const { session: _, ...rest } = status;
+	return rest as StatusData;
+}
+
+/**
+ * Check if a resumable session exists (active or interrupted).
+ */
+export function hasResumableSession(status: StatusData): boolean {
+	return status.session?.state === "active" || status.session?.state === "interrupted";
+}
+
+/**
  * Update the status field of a spec entry.
  * Returns a new status object (immutable).
  */
@@ -126,58 +159,4 @@ export function updateSpecStatus(
 			},
 		},
 	};
-}
-
-/**
- * Create a new Session object with state 'active' and current timestamp.
- */
-export function createSession(
-	name: string,
-	cli: string,
-	specs: string[],
-): Session {
-	return {
-		name,
-		cli,
-		specs,
-		state: "active",
-		startedAt: new Date().toISOString(),
-	};
-}
-
-/**
- * Update the session state (e.g. active → interrupted).
- * Returns a new status object (immutable).
- */
-export function updateSessionState(
-	status: StatusData,
-	state: SessionState,
-): StatusData {
-	if (!status.session) {
-		return status;
-	}
-
-	return {
-		...status,
-		session: {
-			...status.session,
-			state,
-		},
-	};
-}
-
-/**
- * Remove the session from status.
- * Returns a new status object (immutable).
- */
-export function clearSession(status: StatusData): StatusData {
-	const { session: _, ...rest } = status;
-	return rest;
-}
-
-/**
- * Check if the status has a resumable session (active or interrupted).
- */
-export function hasResumableSession(status: StatusData): boolean {
-	return status.session !== undefined;
 }
