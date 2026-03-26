@@ -378,6 +378,17 @@ export async function executeBuildAll(
 	});
 	const session = flags.session || (anyNeedsResume ? status.session?.name : null) || generateSessionName();
 
+	// Session lifecycle: create new or reuse existing
+	let currentStatus = status;
+	if (status.session && anyNeedsResume) {
+		// Resume: reuse existing session, set state to active
+		currentStatus = updateSessionState(currentStatus, "active");
+	} else {
+		// New build: create session
+		currentStatus = { ...currentStatus, session: createSession(session, commandConfig.cli, specNames) };
+	}
+	writeStatus(currentStatus, cwd);
+
 	return withTranscript(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
 		undefined,
@@ -434,9 +445,12 @@ export async function executeBuildAll(
 
 					// Stop loop on any non-sentinel result — prevents cascading failures
 					if (!result.specDone) {
-						const currentStatus = readStatus(cwd);
-						const completed = buildable.filter((s) => currentStatus.specs[s.name]?.status === "done").map((s) => s.name);
-						const remaining = buildable.filter((s) => currentStatus.specs[s.name]?.status !== "done").map((s) => s.name);
+						let breakStatus = readStatus(cwd);
+						breakStatus = updateSessionState(breakStatus, "interrupted");
+						writeStatus(breakStatus, cwd);
+
+						const completed = buildable.filter((s) => breakStatus.specs[s.name]?.status === "done").map((s) => s.name);
+						const remaining = buildable.filter((s) => breakStatus.specs[s.name]?.status !== "done").map((s) => s.name);
 						const stopReason = result.error ? "error" : "incomplete";
 
 						callbacks.onOutput?.(`\nSession "${session}" interrupted — ${spec.name} stopped (${stopReason}).`);
@@ -448,11 +462,18 @@ export async function executeBuildAll(
 				}
 			} catch (err) {
 				if (err instanceof AbortError) {
-					let currentStatus = readStatus(cwd);
-					currentStatus = updateSessionState(currentStatus, "interrupted");
-					writeStatus(currentStatus, cwd);
+					let abortStatus = readStatus(cwd);
+					abortStatus = updateSessionState(abortStatus, "interrupted");
+					writeStatus(abortStatus, cwd);
 				}
 				throw err;
+			}
+
+			// After loop: clear session if all specs done, otherwise leave as interrupted
+			const finalStatus = readStatus(cwd);
+			const allDone = specNames.every((name) => finalStatus.specs[name]?.status === "done");
+			if (allDone) {
+				writeStatus(clearSession(finalStatus), cwd);
 			}
 
 			return { built };

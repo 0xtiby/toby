@@ -2353,3 +2353,141 @@ describe("AbortError handling in executeBuildAll", () => {
 		expect(interruptedCall).toBeUndefined();
 	});
 });
+
+describe("session management in executeBuildAll", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("creates session before first spec when none exists", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// First writeStatus call should have session
+		const firstWrite = mockWriteStatus.mock.calls[0];
+		expect(firstWrite[0].session).toEqual(
+			expect.objectContaining({ cli: "claude", specs: ["01-auth"], state: "active" }),
+		);
+	});
+
+	it("reuses existing session on resume and sets state to active", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// First writeStatus should reuse session name and set state to active
+		const firstWrite = mockWriteStatus.mock.calls[0];
+		expect(firstWrite[0].session?.name).toBe("warm-lynx-52");
+		expect(firstWrite[0].session?.state).toBe("active");
+	});
+
+	it("clears session when all specs complete successfully", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		// After loop, readStatus returns all done
+		let readCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			readCount++;
+			if (readCount <= 1) {
+				return {
+					specs: { "01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
+				};
+			}
+			return {
+				specs: { "01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
+				session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+			};
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// Last writeStatus should have no session (cleared)
+		const lastWrite = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
+		expect(lastWrite[0].session).toBeUndefined();
+	});
+
+	it("sets session interrupted when build breaks in loop", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		// readStatus returns status with active session
+		mockReadStatus.mockReturnValue({
+			specs: { "01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] } },
+			session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// Should find a writeStatus call with interrupted session
+		const interruptedCall = mockWriteStatus.mock.calls.find(
+			(call) => call[0].session?.state === "interrupted",
+		);
+		expect(interruptedCall).toBeDefined();
+	});
+
+	it("session name from existing session on resume, not regenerated", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "building",
+					plannedAt: "2026-03-20T00:00:00.000Z",
+					iterations: [
+						{ type: "build", iteration: 1, sessionId: "s1", state: "in_progress", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: null, exitCode: null, taskCompleted: null, tokensUsed: null },
+					],
+				},
+			},
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "interrupted", startedAt: "2026-03-20T00:00:00.000Z" },
+		});
+
+		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
+
+		// generateSessionName should NOT have been used since existing session was reused
+		expect(mockGenerateSessionName).not.toHaveBeenCalled();
+	});
+});
