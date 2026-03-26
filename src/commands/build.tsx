@@ -382,68 +382,77 @@ export async function executeBuildAll(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
 		undefined,
 		async (writer) => {
-			for (let i = 0; i < buildable.length; i++) {
-				const spec = buildable[i];
-				writer?.writeSpecHeader(i + 1, buildable.length, spec.name);
-				callbacks.onSpecStart?.(spec.name, i, buildable.length);
+			try {
+				for (let i = 0; i < buildable.length; i++) {
+					const spec = buildable[i];
+					writer?.writeSpecHeader(i + 1, buildable.length, spec.name);
+					callbacks.onSpecStart?.(spec.name, i, buildable.length);
 
-				// Per-spec resume detection
-				const specEntry = status.specs[spec.name];
-				const existingIterations = specEntry?.iterations.length ?? 0;
-				const resume = detectResume(specEntry, commandConfig.cli, status.session);
+					// Per-spec resume detection
+					const specEntry = status.specs[spec.name];
+					const existingIterations = specEntry?.iterations.length ?? 0;
+					const resume = detectResume(specEntry, commandConfig.cli, status.session);
 
-				if (resume.isCrashResume) {
-					const lastIteration = specEntry?.iterations.at(-1);
-					callbacks.onOutput?.(
-						`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration?.iteration} was in progress). Resuming...`,
-					);
-				} else if (resume.isExhaustedResume) {
-					callbacks.onOutput?.(
-						`⚠ [${spec.name}] Previous build exhausted iterations without completing. Resuming in same worktree...`,
-					);
+					if (resume.isCrashResume) {
+						const lastIteration = specEntry?.iterations.at(-1);
+						callbacks.onOutput?.(
+							`⚠ [${spec.name}] Previous build interrupted (iteration ${lastIteration?.iteration} was in progress). Resuming...`,
+						);
+					} else if (resume.isExhaustedResume) {
+						callbacks.onOutput?.(
+							`⚠ [${spec.name}] Previous build exhausted iterations without completing. Resuming in same worktree...`,
+						);
+					}
+
+					const { result } = await runSpecBuild({
+						spec,
+						promptName: "PROMPT_BUILD",
+						existingIterations,
+						iterations: commandConfig.iterations,
+						cli: commandConfig.cli,
+						model: commandConfig.model,
+						templateVars: config.templateVars,
+						specsDir: config.specsDir,
+						session,
+						sessionId: resume.sessionId,
+						specIndex: i + 1,
+						specCount: buildable.length,
+						specs: specNames,
+						cwd,
+						abortSignal,
+						callbacks: {
+							onPhase: callbacks.onPhase,
+							onIteration: callbacks.onIteration,
+							onEvent: callbacks.onEvent,
+							onOutput: callbacks.onOutput,
+						},
+						writer,
+					});
+
+					built.push({ ...result, needsResume: resume.needsResume });
+					callbacks.onSpecComplete?.({ ...result, needsResume: resume.needsResume });
+
+					// Stop loop on any non-sentinel result — prevents cascading failures
+					if (!result.specDone) {
+						const currentStatus = readStatus(cwd);
+						const completed = buildable.filter((s) => currentStatus.specs[s.name]?.status === "done").map((s) => s.name);
+						const remaining = buildable.filter((s) => currentStatus.specs[s.name]?.status !== "done").map((s) => s.name);
+						const stopReason = result.error ? "error" : "incomplete";
+
+						callbacks.onOutput?.(`\nSession "${session}" interrupted — ${spec.name} stopped (${stopReason}).`);
+						callbacks.onOutput?.(`Completed: ${completed.length > 0 ? completed.join(", ") : "(none)"} (${completed.length}/${buildable.length})`);
+						callbacks.onOutput?.(`Remaining: ${remaining.join(", ")} (${remaining.length}/${buildable.length})`);
+						callbacks.onOutput?.("Run 'toby resume' to continue.");
+						break;
+					}
 				}
-
-				const { result } = await runSpecBuild({
-					spec,
-					promptName: "PROMPT_BUILD",
-					existingIterations,
-					iterations: commandConfig.iterations,
-					cli: commandConfig.cli,
-					model: commandConfig.model,
-					templateVars: config.templateVars,
-					specsDir: config.specsDir,
-					session,
-					sessionId: resume.sessionId,
-					specIndex: i + 1,
-					specCount: buildable.length,
-					specs: specNames,
-					cwd,
-					abortSignal,
-					callbacks: {
-						onPhase: callbacks.onPhase,
-						onIteration: callbacks.onIteration,
-						onEvent: callbacks.onEvent,
-						onOutput: callbacks.onOutput,
-					},
-					writer,
-				});
-
-				built.push({ ...result, needsResume: resume.needsResume });
-				callbacks.onSpecComplete?.({ ...result, needsResume: resume.needsResume });
-
-				// Stop loop on any non-sentinel result — prevents cascading failures
-				if (!result.specDone) {
-					const currentStatus = readStatus(cwd);
-					const completed = buildable.filter((s) => currentStatus.specs[s.name]?.status === "done").map((s) => s.name);
-					const remaining = buildable.filter((s) => currentStatus.specs[s.name]?.status !== "done").map((s) => s.name);
-					const stopReason = result.error ? "error" : "incomplete";
-
-					callbacks.onOutput?.(`\nSession "${session}" interrupted — ${spec.name} stopped (${stopReason}).`);
-					callbacks.onOutput?.(`Completed: ${completed.length > 0 ? completed.join(", ") : "(none)"} (${completed.length}/${buildable.length})`);
-					callbacks.onOutput?.(`Remaining: ${remaining.join(", ")} (${remaining.length}/${buildable.length})`);
-					callbacks.onOutput?.("Run 'toby resume' to continue.");
-					break;
+			} catch (err) {
+				if (err instanceof AbortError) {
+					let currentStatus = readStatus(cwd);
+					currentStatus = updateSessionState(currentStatus, "interrupted");
+					writeStatus(currentStatus, cwd);
 				}
+				throw err;
 			}
 
 			return { built };

@@ -2288,3 +2288,68 @@ describe("multi-spec loop interruption", () => {
 		expect(summary).toContain("toby resume");
 	});
 });
+
+describe("AbortError handling in executeBuildAll", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("sets session state to interrupted on AbortError and re-throws", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "aborted" as const };
+		});
+
+		// readStatus returns status with active session after abort
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+			session: { name: "bold-hawk-42", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
+		});
+
+		await expect(
+			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
+		).rejects.toThrow(AbortError);
+
+		// Should have written status with interrupted session
+		const interruptedCall = mockWriteStatus.mock.calls.find(
+			(call) => call[0].session?.state === "interrupted",
+		);
+		expect(interruptedCall).toBeDefined();
+	});
+
+	it("does not change session state for non-AbortError exceptions", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+
+		mockRunLoop.mockImplementation(async () => {
+			throw new Error("Unexpected failure");
+		});
+
+		await expect(
+			executeBuildAll({ all: true, verbose: false }, {}, "/p"),
+		).rejects.toThrow("Unexpected failure");
+
+		// No writeStatus call should have session.state = "interrupted"
+		const interruptedCall = mockWriteStatus.mock.calls.find(
+			(call) => call[0].session?.state === "interrupted",
+		);
+		expect(interruptedCall).toBeUndefined();
+	});
+});
