@@ -13,6 +13,8 @@ import {
 	addIteration,
 	updateSpecStatus,
 	createSession,
+	clearSession,
+	updateSessionState,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, Session } from "../types.js";
@@ -265,6 +267,12 @@ export async function executeBuild(
 		callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
 	}
 
+	// Create session before build starts (or reuse existing on resume)
+	if (!resume.needsResume) {
+		let statusWithSession = { ...status, session: createSession(session, commandConfig.cli, [found.name]) };
+		writeStatus(statusWithSession, cwd);
+	}
+
 	return withTranscript(
 		{ flags, config, command: "build", specName: found.name },
 		externalWriter,
@@ -288,6 +296,15 @@ export async function executeBuild(
 				callbacks,
 				writer,
 			});
+
+			// Session cleanup: clear on success, mark interrupted otherwise
+			let currentStatus = readStatus(cwd);
+			if (result.specDone) {
+				currentStatus = clearSession(currentStatus);
+			} else {
+				currentStatus = updateSessionState(currentStatus, "interrupted");
+			}
+			writeStatus(currentStatus, cwd);
 
 			return { ...result, needsResume: resume.needsResume };
 		},

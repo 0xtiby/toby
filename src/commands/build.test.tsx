@@ -45,6 +45,8 @@ vi.mock("../lib/status.js", async (importOriginal) => {
 		addIteration: vi.fn(),
 		updateSpecStatus: vi.fn(),
 		createSession: actual.createSession,
+		clearSession: actual.clearSession,
+		updateSessionState: actual.updateSessionState,
 	};
 });
 
@@ -82,7 +84,7 @@ import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } f
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
-import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
+import { readStatus, writeStatus, addIteration, updateSpecStatus, clearSession, updateSessionState } from "../lib/status.js";
 import { openTranscript } from "../lib/transcript.js";
 import { executeBuild, executeBuildAll } from "./build.js";
 import { AbortError } from "../lib/errors.js";
@@ -343,7 +345,7 @@ describe("executeBuild", () => {
 				cli: "claude",
 			}),
 		);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(3); // 1 onIterationStart + 1 onIterationComplete + 1 final
+		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 1 session create + 1 onIterationStart + 1 onIterationComplete + 1 final + 1 session cleanup
 	});
 
 	it("spec status transitions to building on completion", async () => {
@@ -761,7 +763,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(result.specDone).toBe(true);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "done");
 		expect(mockAddIteration).toHaveBeenCalledTimes(4);
-		expect(mockWriteStatus).toHaveBeenCalledTimes(9); // 4 onIterationStart + 4 onIterationComplete + 1 final
+		expect(mockWriteStatus).toHaveBeenCalledTimes(11); // 1 session create + 4 onIterationStart + 4 onIterationComplete + 1 final + 1 session cleanup
 	});
 
 	it("build --all processes specs in order with correct session vars and collects results", async () => {
@@ -899,7 +901,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		expect(iterationCount).toBe(3);
 		expect(mockAddIteration).toHaveBeenCalledTimes(3);
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "building");
-		expect(mockWriteStatus).toHaveBeenCalledTimes(7); // 3 onIterationStart + 3 onIterationComplete + 1 final
+		expect(mockWriteStatus).toHaveBeenCalledTimes(9); // 1 session create + 3 onIterationStart + 3 onIterationComplete + 1 final + 1 session cleanup
 
 		expect(result.specName).toBe("01-auth");
 
@@ -1988,5 +1990,95 @@ describe("done guard", () => {
 		expect(outputs).toContain("All specs already done.");
 		expect(result.built).toEqual([]);
 		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+});
+
+describe("session lifecycle in executeBuild", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	it("creates session before build and clears it on sentinel success", async () => {
+		// Make runLoop return sentinel (specDone = true)
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+
+		// After runSpecBuild, readStatus is called again for cleanup.
+		// Simulate that the session was written by the session creation step.
+		const baseStatus = {
+			specs: {
+				"01-auth": { status: "planned" as const, plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		};
+		let callCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			callCount++;
+			if (callCount === 1) return baseStatus;
+			// Subsequent calls return status with session (as written by creation step)
+			return {
+				...baseStatus,
+				session: { name: "auth", cli: "claude", specs: ["01-auth"], state: "active" as const, startedAt: "2026-03-20T00:00:00.000Z" },
+			};
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// Session creation: first writeStatus call should include session
+		const firstWriteCall = mockWriteStatus.mock.calls[0];
+		expect(firstWriteCall[0].session).toEqual(
+			expect.objectContaining({ name: "auth", cli: "claude", specs: ["01-auth"], state: "active" }),
+		);
+
+		// Session cleanup: last writeStatus call should have no session (cleared on success)
+		const lastWriteCall = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
+		expect(lastWriteCall[0].session).toBeUndefined();
+	});
+
+	it("marks session as interrupted when build does not complete", async () => {
+		// Default mockRunLoop returns max_iterations (specDone = false)
+		const baseStatus = {
+			specs: {
+				"01-auth": { status: "planned" as const, plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		};
+		let callCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			callCount++;
+			if (callCount === 1) return baseStatus;
+			return {
+				...baseStatus,
+				session: { name: "auth", cli: "claude", specs: ["01-auth"], state: "active" as const, startedAt: "2026-03-20T00:00:00.000Z" },
+			};
+		});
+
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// Last writeStatus call should have session with state="interrupted"
+		const lastWriteCall = mockWriteStatus.mock.calls[mockWriteStatus.mock.calls.length - 1];
+		expect(lastWriteCall[0].session).toEqual(
+			expect.objectContaining({ state: "interrupted" }),
+		);
+	});
+
+	it("session contains correct name, cli, and specs array", async () => {
+		await executeBuild(defaultFlags, {}, "/project");
+
+		// First writeStatus call is the session creation
+		const firstWriteCall = mockWriteStatus.mock.calls[0];
+		expect(firstWriteCall[0].session).toEqual(
+			expect.objectContaining({
+				name: "auth",
+				cli: "claude",
+				specs: ["01-auth"],
+			}),
+		);
 	});
 });
