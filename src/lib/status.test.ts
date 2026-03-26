@@ -8,6 +8,8 @@ import {
 	SpecStatusEntrySchema,
 	StopReasonSchema,
 	StatusSchema,
+	SessionSchema,
+	SessionStateSchema,
 } from "../types.js";
 import type { StatusData } from "../types.js";
 import {
@@ -178,7 +180,56 @@ describe("SpecStatusEntrySchema", () => {
 	});
 });
 
+describe("SessionStateSchema", () => {
+	it("validates active and interrupted", () => {
+		expect(SessionStateSchema.parse("active")).toBe("active");
+		expect(SessionStateSchema.parse("interrupted")).toBe("interrupted");
+	});
+
+	it("rejects invalid values", () => {
+		expect(() => SessionStateSchema.parse("paused")).toThrow();
+	});
+});
+
+describe("SessionSchema", () => {
+	const validSession = {
+		name: "warm-lynx-52",
+		cli: "claude",
+		specs: ["01-auth", "02-api"],
+		state: "active" as const,
+		startedAt: "2026-01-15T10:00:00Z",
+	};
+
+	it("validates all required fields", () => {
+		const result = SessionSchema.parse(validSession);
+		expect(result.name).toBe("warm-lynx-52");
+		expect(result.cli).toBe("claude");
+		expect(result.specs).toEqual(["01-auth", "02-api"]);
+		expect(result.state).toBe("active");
+		expect(result.startedAt).toBe("2026-01-15T10:00:00Z");
+	});
+
+	it("rejects missing name", () => {
+		const { name, ...rest } = validSession;
+		expect(() => SessionSchema.parse(rest)).toThrow();
+	});
+
+	it("rejects invalid state", () => {
+		expect(() =>
+			SessionSchema.parse({ ...validSession, state: "paused" }),
+		).toThrow();
+	});
+});
+
 describe("StatusSchema", () => {
+	const validSession = {
+		name: "warm-lynx-52",
+		cli: "claude",
+		specs: ["01-auth"],
+		state: "active" as const,
+		startedAt: "2026-01-15T10:00:00Z",
+	};
+
 	it("parses a valid status", () => {
 		const result = StatusSchema.parse(validStatus);
 		expect(result.specs["01-auth"].status).toBe("building");
@@ -199,30 +250,41 @@ describe("StatusSchema", () => {
 		expect(Object.keys(result.specs)).toHaveLength(2);
 	});
 
-	it("accepts sessionName and lastCli fields", () => {
+	it("accepts session object", () => {
+		const result = StatusSchema.parse({
+			...validStatus,
+			session: validSession,
+		});
+		expect(result.session).toBeDefined();
+		expect(result.session!.name).toBe("warm-lynx-52");
+		expect(result.session!.cli).toBe("claude");
+	});
+
+	it("accepts status without session field (optional)", () => {
+		const result = StatusSchema.parse(validStatus);
+		expect(result.session).toBeUndefined();
+	});
+
+	it("strips old sessionName and lastCli fields silently", () => {
 		const result = StatusSchema.parse({
 			...validStatus,
 			sessionName: "warm-lynx-52",
 			lastCli: "claude",
 		});
-		expect(result.sessionName).toBe("warm-lynx-52");
-		expect(result.lastCli).toBe("claude");
+		expect((result as any).sessionName).toBeUndefined();
+		expect((result as any).lastCli).toBeUndefined();
 	});
 
-	it("defaults sessionName and lastCli to undefined when omitted", () => {
-		const result = StatusSchema.parse(validStatus);
-		expect(result.sessionName).toBeUndefined();
-		expect(result.lastCli).toBeUndefined();
-	});
-
-	it("accepts explicit sessionName and lastCli values", () => {
+	it("uses session object and ignores old fields when both present", () => {
 		const result = StatusSchema.parse({
 			...validStatus,
-			sessionName: "my-session",
-			lastCli: "claude",
+			sessionName: "old-session",
+			lastCli: "codex",
+			session: validSession,
 		});
-		expect(result.sessionName).toBe("my-session");
-		expect(result.lastCli).toBe("claude");
+		expect(result.session!.name).toBe("warm-lynx-52");
+		expect((result as any).sessionName).toBeUndefined();
+		expect((result as any).lastCli).toBeUndefined();
 	});
 
 	it("rejects missing specs field", () => {
@@ -311,16 +373,22 @@ describe("writeStatus", () => {
 		expect(result.specs["01-auth"].iterations[0].type).toBe("build");
 	});
 
-	it("round-trips sessionName and lastCli", () => {
+	it("round-trips session object", () => {
 		const statusWithSession = {
 			...validStatus,
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: {
+				name: "warm-lynx-52",
+				cli: "claude",
+				specs: ["01-auth"],
+				state: "active" as const,
+				startedAt: "2026-01-15T10:00:00Z",
+			},
 		};
 		writeStatus(statusWithSession, tmpDir);
 		const result = readStatus(tmpDir);
-		expect(result.sessionName).toBe("warm-lynx-52");
-		expect(result.lastCli).toBe("claude");
+		expect(result.session).toBeDefined();
+		expect(result.session!.name).toBe("warm-lynx-52");
+		expect(result.session!.cli).toBe("claude");
 	});
 
 	it("round-trips stopReason on spec entry", () => {
