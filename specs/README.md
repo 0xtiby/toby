@@ -53,3 +53,6 @@
 | [Spawner Dependency Upgrade](./38-spawner-dependency-upgrade.md) | `package.json`, `pnpm-lock.yaml` | Bump @0xtiby/spawner to ^1.1.0, pin version, adapt to type changes |
 | [Clean Transcripts Command](./39-clean-transcripts-command.md) | `src/lib/clean.ts`, `src/commands/clean.tsx`, `src/cli.tsx` | Delete all transcript files from .toby/transcripts/ with confirmation prompt |
 | [Agent-Friendly Help](./40-agent-friendly-help.md) | `src/lib/help.ts`, `src/cli.tsx`, `src/commands/init.tsx`, `src/commands/config.tsx` | Two-level progressive help with examples and actionable error hints for AI agents |
+| [Session Object Model](./41-session-object-model.md) | `src/types.ts`, `src/lib/status.ts` | Replace flat sessionName/lastCli with structured session object in status.json |
+| [Session Lifecycle](./42-session-lifecycle.md) | `src/commands/build.tsx`, `src/lib/status.ts` | Session creation, cleanup on success, interruption on error, stop-on-error, done guard |
+| [Resume Command](./43-resume-command.md) | `src/commands/resume.tsx`, `src/cli.tsx` | Dedicated command to resume interrupted build sessions on same branch |

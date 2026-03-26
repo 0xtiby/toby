@@ -2014,8 +2014,195 @@
         }
       ],
       "stopReason": "sentinel"
+    },
+    "40-agent-friendly-help": {
+      "status": "done",
+      "plannedAt": null,
+      "iterations": [
+        {
+          "type": "plan",
+          "iteration": 1,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "in_progress",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T16:49:25.428Z",
+          "completedAt": "2026-03-25T16:53:10.082Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 7811
+        },
+        {
+          "type": "plan",
+          "iteration": 2,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "in_progress",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T16:53:10.082Z",
+          "completedAt": "2026-03-25T16:55:22.421Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 6092
+        },
+        {
+          "type": "build",
+          "iteration": 3,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:38:53.618Z",
+          "completedAt": "2026-03-25T17:41:16.391Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2310
+        },
+        {
+          "type": "build",
+          "iteration": 4,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:41:16.400Z",
+          "completedAt": "2026-03-25T17:44:26.966Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3007
+        },
+        {
+          "type": "build",
+          "iteration": 5,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:44:26.972Z",
+          "completedAt": "2026-03-25T17:47:28.565Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3795
+        },
+        {
+          "type": "build",
+          "iteration": 6,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:47:28.574Z",
+          "completedAt": "2026-03-25T17:49:21.105Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2515
+        },
+        {
+          "type": "build",
+          "iteration": 7,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:49:21.116Z",
+          "completedAt": "2026-03-25T17:50:47.731Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1875
+        },
+        {
+          "type": "build",
+          "iteration": 8,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T17:50:47.745Z",
+          "completedAt": "2026-03-25T18:02:09.780Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1340
+        },
+        {
+          "type": "build",
+          "iteration": 9,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T18:02:09.790Z",
+          "completedAt": "2026-03-25T18:04:02.645Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2631
+        },
+        {
+          "type": "build",
+          "iteration": 10,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T18:04:02.653Z",
+          "completedAt": "2026-03-25T18:06:32.344Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 3404
+        },
+        {
+          "type": "build",
+          "iteration": 11,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T18:06:32.353Z",
+          "completedAt": "2026-03-25T18:08:13.235Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2708
+        },
+        {
+          "type": "build",
+          "iteration": 12,
+          "sessionId": "29809cc4-05e6-4829-879c-d4b0a450ec45",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T18:08:13.239Z",
+          "completedAt": "2026-03-25T18:09:37.648Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 2017
+        },
+        {
+          "type": "build",
+          "iteration": 13,
+          "sessionId": "7e362dff-b9ca-427d-bdcd-42c39c4e72f2",
+          "state": "failed",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T22:07:24.346Z",
+          "completedAt": "2026-03-25T22:10:12.746Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 6703
+        },
+        {
+          "type": "build",
+          "iteration": 14,
+          "sessionId": "7e362dff-b9ca-427d-bdcd-42c39c4e72f2",
+          "state": "complete",
+          "cli": "claude",
+          "model": "claude-opus-4-6[1m]",
+          "startedAt": "2026-03-25T22:10:12.757Z",
+          "completedAt": "2026-03-25T22:11:09.686Z",
+          "exitCode": 0,
+          "taskCompleted": null,
+          "tokensUsed": 1730
+        }
+      ],
+      "stopReason": "sentinel"
     }
-  },
-  "sessionName": "new-home-screen",
-  "lastCli": "claude"
+  }
 }
