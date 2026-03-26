@@ -70,16 +70,21 @@ export function useCommandRunner(options: {
 			if (filtered.length === 0) {
 				setErrorMessage(emptyMessage ?? "No specs found.");
 				setPhase("error");
-				exit();
 				return;
 			}
 			setSpecs(filtered);
 		} catch (err) {
 			setErrorMessage((err as Error).message);
 			setPhase("error");
-			exit(new Error((err as Error).message));
 		}
 	}, [phase]);
+
+	// Exit after error phase renders
+	useEffect(() => {
+		if (phase === "error" && errorMessage) {
+			exit(new Error(errorMessage));
+		}
+	}, [phase, errorMessage]);
 
 	// Resolve specs for multi-spec mode (comma-separated --spec)
 	useEffect(() => {

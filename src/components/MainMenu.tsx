@@ -9,6 +9,7 @@ export interface MainMenuProps {
 const MENU_ITEMS = [
 	{ label: "plan", value: "plan", description: "Plan specs with AI loop engine" },
 	{ label: "build", value: "build", description: "Build tasks one-per-spawn with AI" },
+	{ label: "resume", value: "resume", description: "Resume an interrupted build session" },
 	{ label: "status", value: "status", description: "Show project status" },
 	{ label: "config", value: "config", description: "Manage configuration" },
 ];

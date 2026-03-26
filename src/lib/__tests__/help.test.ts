@@ -7,7 +7,7 @@ import {
 } from "../help.js";
 import { COMMAND_NAMES, MEOW_FLAG_NAMES } from "../cli-meta.js";
 
-const EXPECTED_COMMANDS = ["plan", "build", "init", "status", "config", "clean"];
+const EXPECTED_COMMANDS = ["plan", "build", "resume", "init", "status", "config", "clean"];
 
 function assertMaxLineWidth(output: string, maxWidth = 80) {
 	const lines = output.split("\n");

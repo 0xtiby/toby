@@ -7,6 +7,7 @@ import Init from "./commands/init.js";
 import Status from "./commands/status.js";
 import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import Clean from "./commands/clean.js";
+import Resume from "./commands/resume.js";
 import Welcome from "./components/Welcome.js";
 import { ensureGlobalDir } from "./lib/paths.js";
 import {
@@ -95,6 +96,16 @@ const commands: Record<string, CommandEntry> = {
 		render: (flags, _input, version) => (
 			<Status spec={flags.spec} version={version} />
 		),
+	},
+	resume: {
+		render: (flags) => (
+			<Resume
+				iterations={flags.iterations}
+				verbose={flags.verbose}
+				transcript={flags.transcript}
+			/>
+		),
+		waitForExit: true,
 	},
 	clean: {
 		render: (flags) => <Clean force={flags.force} />,

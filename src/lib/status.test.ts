@@ -8,6 +8,8 @@ import {
 	SpecStatusEntrySchema,
 	StopReasonSchema,
 	StatusSchema,
+	SessionSchema,
+	SessionStateSchema,
 } from "../types.js";
 import type { StatusData } from "../types.js";
 import {
@@ -16,6 +18,10 @@ import {
 	getSpecStatus,
 	addIteration,
 	updateSpecStatus,
+	createSession,
+	updateSessionState,
+	clearSession,
+	hasResumableSession,
 } from "./status.js";
 
 const validIteration = {
@@ -199,30 +205,36 @@ describe("StatusSchema", () => {
 		expect(Object.keys(result.specs)).toHaveLength(2);
 	});
 
-	it("accepts sessionName and lastCli fields", () => {
+	it("accepts session object", () => {
+		const result = StatusSchema.parse({
+			...validStatus,
+			session: {
+				name: "warm-lynx-52",
+				cli: "claude",
+				specs: ["01-auth"],
+				state: "active",
+				startedAt: "2026-03-20T00:00:00.000Z",
+			},
+		});
+		expect(result.session?.name).toBe("warm-lynx-52");
+		expect(result.session?.cli).toBe("claude");
+		expect(result.session?.specs).toEqual(["01-auth"]);
+		expect(result.session?.state).toBe("active");
+	});
+
+	it("defaults session to undefined when omitted", () => {
+		const result = StatusSchema.parse(validStatus);
+		expect(result.session).toBeUndefined();
+	});
+
+	it("strips old sessionName and lastCli fields (backwards compat)", () => {
 		const result = StatusSchema.parse({
 			...validStatus,
 			sessionName: "warm-lynx-52",
 			lastCli: "claude",
 		});
-		expect(result.sessionName).toBe("warm-lynx-52");
-		expect(result.lastCli).toBe("claude");
-	});
-
-	it("defaults sessionName and lastCli to undefined when omitted", () => {
-		const result = StatusSchema.parse(validStatus);
-		expect(result.sessionName).toBeUndefined();
-		expect(result.lastCli).toBeUndefined();
-	});
-
-	it("accepts explicit sessionName and lastCli values", () => {
-		const result = StatusSchema.parse({
-			...validStatus,
-			sessionName: "my-session",
-			lastCli: "claude",
-		});
-		expect(result.sessionName).toBe("my-session");
-		expect(result.lastCli).toBe("claude");
+		expect(result).not.toHaveProperty("sessionName");
+		expect(result).not.toHaveProperty("lastCli");
 	});
 
 	it("rejects missing specs field", () => {
@@ -311,16 +323,23 @@ describe("writeStatus", () => {
 		expect(result.specs["01-auth"].iterations[0].type).toBe("build");
 	});
 
-	it("round-trips sessionName and lastCli", () => {
+	it("round-trips session object", () => {
 		const statusWithSession = {
 			...validStatus,
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: {
+				name: "warm-lynx-52",
+				cli: "claude",
+				specs: ["01-auth", "02-api"],
+				state: "active" as const,
+				startedAt: "2026-03-20T00:00:00.000Z",
+			},
 		};
 		writeStatus(statusWithSession, tmpDir);
 		const result = readStatus(tmpDir);
-		expect(result.sessionName).toBe("warm-lynx-52");
-		expect(result.lastCli).toBe("claude");
+		expect(result.session?.name).toBe("warm-lynx-52");
+		expect(result.session?.cli).toBe("claude");
+		expect(result.session?.specs).toEqual(["01-auth", "02-api"]);
+		expect(result.session?.state).toBe("active");
 	});
 
 	it("round-trips stopReason on spec entry", () => {
@@ -437,6 +456,115 @@ describe("updateSpecStatus", () => {
 		expect(status.specs["my-spec"].status).toBe("building");
 		status = updateSpecStatus(status, "my-spec", "done");
 		expect(status.specs["my-spec"].status).toBe("done");
+	});
+});
+
+describe("SessionSchema", () => {
+	it("validates a valid session object", () => {
+		const result = SessionSchema.parse({
+			name: "warm-lynx-52",
+			cli: "claude",
+			specs: ["01-auth", "02-api"],
+			state: "active",
+			startedAt: "2026-03-20T00:00:00.000Z",
+		});
+		expect(result.name).toBe("warm-lynx-52");
+		expect(result.state).toBe("active");
+	});
+
+	it("accepts interrupted state", () => {
+		const result = SessionSchema.parse({
+			name: "warm-lynx-52",
+			cli: "claude",
+			specs: ["01-auth"],
+			state: "interrupted",
+			startedAt: "2026-03-20T00:00:00.000Z",
+		});
+		expect(result.state).toBe("interrupted");
+	});
+
+	it("rejects invalid state", () => {
+		expect(() => SessionSchema.parse({
+			name: "warm-lynx-52",
+			cli: "claude",
+			specs: [],
+			state: "invalid",
+			startedAt: "2026-03-20T00:00:00.000Z",
+		})).toThrow();
+	});
+});
+
+describe("SessionStateSchema", () => {
+	it("accepts active and interrupted", () => {
+		expect(SessionStateSchema.parse("active")).toBe("active");
+		expect(SessionStateSchema.parse("interrupted")).toBe("interrupted");
+	});
+
+	it("rejects invalid state", () => {
+		expect(() => SessionStateSchema.parse("done")).toThrow();
+	});
+});
+
+describe("createSession", () => {
+	it("returns a session with all fields", () => {
+		const session = createSession("warm-lynx-52", "claude", ["01-auth", "02-api"]);
+		expect(session.name).toBe("warm-lynx-52");
+		expect(session.cli).toBe("claude");
+		expect(session.specs).toEqual(["01-auth", "02-api"]);
+		expect(session.state).toBe("active");
+		expect(new Date(session.startedAt).toISOString()).toBe(session.startedAt);
+	});
+});
+
+describe("updateSessionState", () => {
+	it("transitions state from active to interrupted", () => {
+		const status: StatusData = {
+			specs: {},
+			session: createSession("warm-lynx-52", "claude", ["01-auth"]),
+		};
+		const result = updateSessionState(status, "interrupted");
+		expect(result.session?.state).toBe("interrupted");
+	});
+
+	it("returns unchanged status when no session exists", () => {
+		const status: StatusData = { specs: {} };
+		const result = updateSessionState(status, "interrupted");
+		expect(result.session).toBeUndefined();
+	});
+});
+
+describe("clearSession", () => {
+	it("removes session from status", () => {
+		const status: StatusData = {
+			specs: {},
+			session: createSession("warm-lynx-52", "claude", ["01-auth"]),
+		};
+		const result = clearSession(status);
+		expect(result.session).toBeUndefined();
+		expect(result.specs).toEqual({});
+	});
+});
+
+describe("hasResumableSession", () => {
+	it("returns true for interrupted session", () => {
+		const status: StatusData = {
+			specs: {},
+			session: { ...createSession("warm-lynx-52", "claude", ["01-auth"]), state: "interrupted" },
+		};
+		expect(hasResumableSession(status)).toBe(true);
+	});
+
+	it("returns true for active session (crashed process)", () => {
+		const status: StatusData = {
+			specs: {},
+			session: createSession("warm-lynx-52", "claude", ["01-auth"]),
+		};
+		expect(hasResumableSession(status)).toBe(true);
+	});
+
+	it("returns false when no session", () => {
+		const status: StatusData = { specs: {} };
+		expect(hasResumableSession(status)).toBe(false);
 	});
 });
 

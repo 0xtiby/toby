@@ -81,11 +81,22 @@ export const SpecStatusEntrySchema = z.object({
 	stopReason: StopReasonSchema.optional(),
 });
 
+export const SessionStateSchema = z.enum(["active", "interrupted"]);
+export type SessionState = z.infer<typeof SessionStateSchema>;
+
+export const SessionSchema = z.object({
+	name: z.string(),
+	cli: z.string(),
+	specs: z.array(z.string()),
+	state: SessionStateSchema,
+	startedAt: z.string().datetime(),
+});
+export type Session = z.infer<typeof SessionSchema>;
+
 export const StatusSchema = z.object({
 	specs: z.record(z.string(), SpecStatusEntrySchema),
-	sessionName: z.string().optional(),
-	lastCli: z.string().optional(),
-});
+	session: SessionSchema.optional(),
+}).strip();
 
 export type StatusData = z.infer<typeof StatusSchema>;
 export type Iteration = z.infer<typeof IterationSchema>;

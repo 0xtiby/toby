@@ -71,6 +71,32 @@ export const commandHelp: Record<string, CommandHelp> = {
 			},
 		],
 	},
+	resume: {
+		summary: "Resume an interrupted build session",
+		usage: ["$ toby resume [options]"],
+		flags: [
+			{ name: "--iterations=<n>", description: "Override iteration count" },
+			{ name: "--verbose", description: "Show full CLI output" },
+			{ name: "--transcript", description: "Save session transcript to file" },
+		],
+		examples: [
+			{
+				command: "toby resume",
+				description:
+					"Resume the most recent interrupted session from where it left off",
+			},
+			{
+				command: "toby resume --iterations=10 --verbose",
+				description:
+					"Resume with 10 iterations per spec and full CLI output",
+			},
+			{
+				command: "toby resume --transcript",
+				description:
+					"Resume and save a transcript of the resumed session",
+			},
+		],
+	},
 	init: {
 		summary: "Initialize toby in current project",
 		usage: ["$ toby init [options]"],
