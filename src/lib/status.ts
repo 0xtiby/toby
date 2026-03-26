@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { StatusSchema, SpecStatusEntrySchema } from "../types.js";
-import type { StatusData, SpecStatusEntry, Iteration, Session, SessionState } from "../types.js";
+import type { StatusData, SpecStatusEntry, Iteration, Session, SessionState, CliName } from "../types.js";
 import { getLocalDir, STATUS_FILE } from "./paths.js";
 
 /**
@@ -102,7 +102,7 @@ export function addIteration(
 /**
  * Create a new session object.
  */
-export function createSession(name: string, cli: string, specs: string[]): Session {
+export function createSession(name: string, cli: CliName, specs: string[]): Session {
 	return {
 		name,
 		cli,
@@ -127,8 +127,7 @@ export function updateSessionState(status: StatusData, state: SessionState): Sta
  * Clear the session from status. Returns a new status object (immutable).
  */
 export function clearSession(status: StatusData): StatusData {
-	const { session: _, ...rest } = status;
-	return rest as StatusData;
+	return { specs: status.specs };
 }
 
 /**

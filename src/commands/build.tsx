@@ -429,8 +429,7 @@ export async function executeBuildAll(
 						// Summary output
 						const allSpecNames = sessionObj.specs;
 						const doneSpecs = allSpecNames.filter((name) => {
-							const entry = readStatus(cwd).specs[name];
-							return entry?.status === "done";
+							return currentStatus.specs[name]?.status === "done";
 						});
 						const remainingSpecs = allSpecNames.filter((name) => !doneSpecs.includes(name));
 

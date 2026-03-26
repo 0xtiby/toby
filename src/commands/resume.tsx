@@ -63,15 +63,11 @@ export async function executeResume(
 		);
 	}
 
-	if (incompleteNames.length === 0 && missingNames.length === 0) {
-		throw new Error(
-			"All specs in this session are already done. Nothing to resume.",
-		);
-	}
-
 	if (incompleteNames.length === 0) {
 		throw new Error(
-			"All specs in this session are already done. Nothing to resume.",
+			missingNames.length > 0
+				? "All remaining session specs are missing from specs/. Nothing to resume."
+				: "All specs in this session are already done. Nothing to resume.",
 		);
 	}
 
