@@ -6,6 +6,7 @@ import MainMenu from "./MainMenu.js";
 import Plan from "../commands/plan.js";
 import Build from "../commands/build.js";
 import Status from "../commands/status.js";
+import Resume from "../commands/resume.js";
 import { ConfigEditor } from "../commands/config.js";
 import { computeProjectStats } from "../lib/stats.js";
 import { formatTokens } from "./InfoPanel.js";
@@ -37,6 +38,9 @@ export default function Welcome({ version }: WelcomeProps) {
 	}
 	if (selectedCommand === "build") {
 		return <Build />;
+	}
+	if (selectedCommand === "resume") {
+		return <Resume />;
 	}
 	if (selectedCommand === "status") {
 		return <Status version={version} />;
