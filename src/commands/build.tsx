@@ -430,6 +430,20 @@ export async function executeBuildAll(
 
 				built.push({ ...result, needsResume: resume.needsResume });
 				callbacks.onSpecComplete?.({ ...result, needsResume: resume.needsResume });
+
+				// Stop loop on any non-sentinel result — prevents cascading failures
+				if (!result.specDone) {
+					const currentStatus = readStatus(cwd);
+					const completed = buildable.filter((s) => currentStatus.specs[s.name]?.status === "done").map((s) => s.name);
+					const remaining = buildable.filter((s) => currentStatus.specs[s.name]?.status !== "done").map((s) => s.name);
+					const stopReason = result.error ? "error" : "incomplete";
+
+					callbacks.onOutput?.(`\nSession "${session}" interrupted — ${spec.name} stopped (${stopReason}).`);
+					callbacks.onOutput?.(`Completed: ${completed.length > 0 ? completed.join(", ") : "(none)"} (${completed.length}/${buildable.length})`);
+					callbacks.onOutput?.(`Remaining: ${remaining.join(", ")} (${remaining.length}/${buildable.length})`);
+					callbacks.onOutput?.("Run 'toby resume' to continue.");
+					break;
+				}
 			}
 
 			return { built };

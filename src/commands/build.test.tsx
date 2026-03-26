@@ -176,13 +176,13 @@ function setupDefaults() {
 			tokensUsed: 150,
 			model: "claude-sonnet-4-6",
 			durationMs: 1000,
-			sentinelDetected: false,
+			sentinelDetected: true,
 		};
 		options.onIterationStart?.(1, null);
 		options.onIterationComplete?.(iterResult);
 		return {
 			iterations: [iterResult],
-			stopReason: "max_iterations" as const,
+			stopReason: "sentinel" as const,
 		};
 	});
 }
@@ -348,7 +348,17 @@ describe("executeBuild", () => {
 		expect(mockWriteStatus).toHaveBeenCalledTimes(5); // 1 session create + 1 onIterationStart + 1 onIterationComplete + 1 final + 1 session cleanup
 	});
 
-	it("spec status transitions to building on completion", async () => {
+	it("spec status transitions to building on max_iterations", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
 		await executeBuild(defaultFlags, {}, "/project");
 
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(
@@ -781,11 +791,11 @@ describe("integration: full build flow with mocked spawner", () => {
 			options.getPrompt(1);
 			const iterResult = {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
-				model: "claude-sonnet-4-6", durationMs: 500, sentinelDetected: false,
+				model: "claude-sonnet-4-6", durationMs: 500, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
 
 		mockLoadPrompt.mockImplementation((_template, vars) => {
@@ -1428,11 +1438,11 @@ describe("executeBuildAll", () => {
 			options.getPrompt(1);
 			const iterResult = {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
 			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
 
 		await executeBuildAll({ all: true, verbose: false }, {}, "/p");
@@ -2043,7 +2053,16 @@ describe("session lifecycle in executeBuild", () => {
 	});
 
 	it("marks session as interrupted when build does not complete", async () => {
-		// Default mockRunLoop returns max_iterations (specDone = false)
+		// Override to return max_iterations (specDone = false)
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
 		const baseStatus = {
 			specs: {
 				"01-auth": { status: "planned" as const, plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
@@ -2080,5 +2099,192 @@ describe("session lifecycle in executeBuild", () => {
 				specs: ["01-auth"],
 			}),
 		);
+	});
+});
+
+describe("multi-spec loop interruption", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+	});
+
+	function setupThreeSpecs() {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+		mockLoadSpecContent.mockImplementation((s) => ({ ...s, content: `# ${s.name}` }));
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		});
+		return specs;
+	}
+
+	it("stops loop when spec b errors — spec c is never started", async () => {
+		setupThreeSpecs();
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			const sentinel = specIndex === 1; // Only first spec succeeds
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: sentinel ? 0 : 1, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: sentinel,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			if (sentinel) {
+				return { iterations: [iterResult], stopReason: "sentinel" as const };
+			}
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		// First readStatus call returns all planned (for initial filter); subsequent calls reflect done status
+		let readCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			readCount++;
+			if (readCount === 1) {
+				return {
+					specs: {
+						"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					},
+				};
+			}
+			return {
+				specs: {
+					"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"02-api": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				},
+			};
+		});
+
+		const started: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { started.push(name); } },
+			"/p",
+		);
+
+		expect(started).toEqual(["01-auth", "02-api"]);
+		expect(started).not.toContain("03-ui");
+	});
+
+	it("stops loop on max_iterations (incomplete) same as error", async () => {
+		setupThreeSpecs();
+		// All specs return max_iterations — loop should stop after first
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const started: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onSpecStart: (name) => { started.push(name); } },
+			"/p",
+		);
+
+		expect(started).toEqual(["01-auth"]);
+	});
+
+	it("outputs correct completed/remaining summary with resume hint", async () => {
+		setupThreeSpecs();
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			const sentinel = specIndex === 1;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: sentinel ? 0 : 1, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: sentinel,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return sentinel
+				? { iterations: [iterResult], stopReason: "sentinel" as const }
+				: { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		let readCount = 0;
+		mockReadStatus.mockImplementation(() => {
+			readCount++;
+			if (readCount === 1) {
+				return {
+					specs: {
+						"01-auth": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+						"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					},
+				};
+			}
+			return {
+				specs: {
+					"01-auth": { status: "done", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"02-api": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+					"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				},
+			};
+		});
+
+		const outputs: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onOutput: (msg) => { outputs.push(msg); } },
+			"/p",
+		);
+
+		const summary = outputs.join("\n");
+		expect(summary).toContain("interrupted");
+		expect(summary).toContain("02-api");
+		expect(summary).toContain("error");
+		expect(summary).toContain("Completed: 01-auth (1/3)");
+		expect(summary).toContain("Remaining: 02-api, 03-ui (2/3)");
+		expect(summary).toContain("toby resume");
+	});
+
+	it("error on first spec shows 0 completed and all remaining", async () => {
+		setupThreeSpecs();
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 100,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "error" as const };
+		});
+
+		// No specs are done
+		mockReadStatus.mockImplementation(() => ({
+			specs: {
+				"01-auth": { status: "building", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"02-api": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+				"03-ui": { status: "planned", plannedAt: "2026-03-20T00:00:00.000Z", iterations: [] },
+			},
+		}));
+
+		const outputs: string[] = [];
+		await executeBuildAll(
+			{ all: true, verbose: false },
+			{ onOutput: (msg) => { outputs.push(msg); } },
+			"/p",
+		);
+
+		const summary = outputs.join("\n");
+		expect(summary).toContain("Completed: (none) (0/3)");
+		expect(summary).toContain("Remaining: 01-auth, 02-api, 03-ui (3/3)");
+		expect(summary).toContain("toby resume");
 	});
 });
