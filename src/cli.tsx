@@ -1,6 +1,6 @@
 import meow from "meow";
 import React from "react";
-import { render, Text } from "ink";
+import { render } from "ink";
 import Plan from "./commands/plan.js";
 import Build from "./commands/build.js";
 import Init from "./commands/init.js";
@@ -9,115 +9,29 @@ import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import Clean from "./commands/clean.js";
 import Welcome from "./components/Welcome.js";
 import { ensureGlobalDir } from "./lib/paths.js";
+import {
+	formatGlobalHelp,
+	formatCommandHelp,
+	formatErrorWithHint,
+	commandHelp,
+} from "./lib/help.js";
+import { COMMAND_NAMES, MEOW_FLAGS } from "./lib/cli-meta.js";
 
-function Help({ version }: { version: string }) {
-	return (
-		<Text>
-			{`toby v${version} — AI-assisted development loop engine
-
-Usage
-  $ toby <command> [options]
-
-Commands
-  plan     Plan specs with AI loop engine
-  build    Build tasks one-per-spawn with AI
-  init     Initialize toby in current project
-  status   Show project status
-  config   Manage configuration
-  clean    Delete all transcript files
-
-Options
-  --help       Show this help
-  --version    Show version
-
-Spec Selection
-  --spec=<name>       Single spec or comma-separated (e.g. --spec=auth,payments)
-  --specs=<names>     Alias for --spec`}
-		</Text>
+function writeUnknownCommandError(command: string): void {
+	process.stderr.write(
+		formatErrorWithHint(
+			`Unknown command: ${command}`,
+			COMMAND_NAMES,
+			"toby --help",
+		),
 	);
 }
 
-function UnknownCommand({ command }: { command: string }) {
-	return (
-		<Text color="red">
-			{`Unknown command: ${command}\nRun "toby --help" for available commands.`}
-		</Text>
-	);
-}
-
-const cli = meow(
-	`
-Usage
-  $ toby <command> [options]
-
-Commands
-  plan     Plan specs with AI loop engine
-  build    Build tasks one-per-spawn with AI
-  init     Initialize toby in current project
-  status   Show project status
-  config   Manage configuration
-  clean    Delete all transcript files
-
-Plan Options
-  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
-  --specs=<names>    Alias for --spec with comma-separated specs
-  --all              Plan all pending specs
-  --iterations=<n>   Override iteration count
-  --verbose          Show full CLI output
-  --transcript       Save session transcript to file
-  --cli=<name>       Override AI CLI (claude, codex, opencode)
-  --session=<name>   Name the session for branch/PR naming
-
-Build Options
-  --spec=<query>     Target spec(s) by name, slug, number, or comma-separated list
-  --specs=<names>    Alias for --spec with comma-separated specs
-  --all              Build all planned specs in order
-  --iterations=<n>   Override max iteration count
-  --verbose          Show full CLI output
-  --transcript       Save session transcript to file
-  --cli=<name>       Override AI CLI (claude, codex, opencode)
-  --session=<name>   Name the session for branch/PR naming
-
-Status Options
-  --spec=<query>     Show status for a spec by name, slug, or number
-
-Init Options
-  --plan-cli=<name>    Set plan CLI (claude, codex, opencode)
-  --plan-model=<id>    Set plan model
-  --build-cli=<name>   Set build CLI (claude, codex, opencode)
-  --build-model=<id>   Set build model
-  --specs-dir=<path>   Set specs directory
-  --verbose            Enable verbose output in config
-
-Config Subcommands
-  config             Interactive config editor
-  config get <key>   Show a config value (dot-notation)
-  config set <key> <value>  Set a config value
-  config set <k>=<v> [<k>=<v>...]  Batch set config values
-
-Clean Options
-  --force    Skip confirmation prompt
-`,
-	{
-		importMeta: import.meta,
-		flags: {
-			spec: { type: "string" },
-			specs: { type: "string" },
-			all: { type: "boolean", default: false },
-			iterations: { type: "number" },
-			verbose: { type: "boolean", default: false },
-			transcript: { type: "boolean" },
-			cli: { type: "string" },
-			planCli: { type: "string" },
-			planModel: { type: "string" },
-			buildCli: { type: "string" },
-			buildModel: { type: "string" },
-			specsDir: { type: "string" },
-			session: { type: "string" },
-			force: { type: "boolean", default: false },
-		},
-	},
-);
+const cli = meow("", {
+	importMeta: import.meta,
+	autoHelp: false,
+	flags: MEOW_FLAGS,
+});
 
 ensureGlobalDir();
 
@@ -210,12 +124,25 @@ const commands: Record<string, CommandEntry> = {
 const version = cli.pkg.version ?? "0.0.0";
 const [command] = cli.input;
 
-if (!command) {
+// --help takes precedence over everything
+if (cli.flags.help) {
+	if (!command || command in commands) {
+		if (command && command in commandHelp) {
+			process.stdout.write(formatCommandHelp(command, commandHelp[command]));
+		} else {
+			process.stdout.write(formatGlobalHelp(version));
+		}
+		process.exitCode = 0;
+	} else {
+		writeUnknownCommandError(command);
+		process.exitCode = 1;
+	}
+} else if (!command) {
 	if (process.stdin.isTTY) {
 		const app = render(<Welcome version={version} />);
 		await app.waitUntilExit();
 	} else {
-		render(<Help version={version} />).unmount();
+		process.stdout.write(formatGlobalHelp(version));
 	}
 } else if (command in commands) {
 	const entry = commands[command];
@@ -226,6 +153,6 @@ if (!command) {
 		app.unmount();
 	}
 } else {
-	render(<UnknownCommand command={command} />).unmount();
+	writeUnknownCommandError(command);
 	process.exitCode = 1;
 }
