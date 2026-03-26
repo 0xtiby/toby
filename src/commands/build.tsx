@@ -14,7 +14,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry } from "../types.js";
+import type { Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, Session } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -71,13 +71,13 @@ interface ResumeDetection {
 function detectResume(
 	specEntry: SpecStatusEntry | undefined,
 	currentCli: string,
-	lastCli: string | undefined,
+	session: Session | undefined,
 ): ResumeDetection {
 	const lastIteration = specEntry?.iterations.at(-1);
 	const isCrashResume = !!(specEntry?.status !== "done" && lastIteration?.state === "in_progress");
 	const isExhaustedResume = !!(specEntry?.status !== "done" && specEntry?.stopReason === "max_iterations");
 	const needsResume = isCrashResume || isExhaustedResume;
-	const isSameCli = currentCli === lastCli;
+	const isSameCli = currentCli === session?.cli;
 	const sessionId = (isSameCli && isCrashResume)
 		? lastIteration?.sessionId ?? undefined
 		: undefined;
@@ -133,7 +133,7 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				tokensUsed: null,
 			};
 			status = addIteration(status, spec.name, iterationRecord);
-			status = { ...status, sessionName: options.session, lastCli: cli };
+			status = { ...status, session: { name: options.session, cli, specs: [spec.name], state: "active" as const, startedAt: new Date().toISOString() } };
 			writeStatus(status, cwd);
 		},
 		onIterationComplete: (iterResult: IterationResult) => {
@@ -248,14 +248,14 @@ export async function executeBuild(
 	const existingIterations = specEntry.iterations.length;
 
 	// Resume detection: check for crash or exhaustion from previous run
-	const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
+	const resume = detectResume(specEntry, commandConfig.cli, status.session);
 
-	// Session name reuse: reuse status.sessionName on resume so CLI finds existing worktree
-	const session = flags.session || (resume.needsResume ? status.sessionName : null) || computeSpecSlug(found.name);
+	// Session name reuse: reuse status.session?.name on resume so CLI finds existing worktree
+	const session = flags.session || (resume.needsResume ? status.session?.name : null) || computeSpecSlug(found.name);
 
 	if (resume.isCrashResume) {
-		const isSameCli = commandConfig.cli === status.lastCli;
-		const resumeType = isSameCli ? "continuing session" : `switching from ${status.lastCli} to ${commandConfig.cli}`;
+		const isSameCli = commandConfig.cli === status.session?.cli;
+		const resumeType = isSameCli ? "continuing session" : `switching from ${status.session?.cli} to ${commandConfig.cli}`;
 		callbacks.onOutput?.(`Resuming session "${session}" (${resumeType})`);
 	} else if (resume.isExhaustedResume) {
 		callbacks.onOutput?.(`⚠ Previous build exhausted iterations without completing. Resuming in worktree "${session}"...`);
@@ -347,9 +347,9 @@ export async function executeBuildAll(
 		iterations: flags.iterations,
 	});
 	const anyNeedsResume = planned.some((spec) => {
-		return detectResume(status.specs[spec.name], commandConfig.cli, status.lastCli).needsResume;
+		return detectResume(status.specs[spec.name], commandConfig.cli, status.session).needsResume;
 	});
-	const session = flags.session || (anyNeedsResume ? status.sessionName : null) || generateSessionName();
+	const session = flags.session || (anyNeedsResume ? status.session?.name : null) || generateSessionName();
 
 	return withTranscript(
 		{ flags: { ...flags, session: flags.session ?? session }, config, command: "build" },
@@ -363,7 +363,7 @@ export async function executeBuildAll(
 				// Per-spec resume detection
 				const specEntry = status.specs[spec.name];
 				const existingIterations = specEntry?.iterations.length ?? 0;
-				const resume = detectResume(specEntry, commandConfig.cli, status.lastCli);
+				const resume = detectResume(specEntry, commandConfig.cli, status.session);
 
 				if (resume.isCrashResume) {
 					const lastIteration = specEntry?.iterations.at(-1);

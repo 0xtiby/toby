@@ -912,7 +912,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 	it("detects crash when last iteration state is in_progress", async () => {
 		mockReadStatus.mockReturnValue({
-			lastCli: "claude",
+			session: { name: "test-session", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -962,8 +962,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 	it("crash resume with cross-CLI shows switching message", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -985,7 +984,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 	it("crash takes priority over exhaustion when both conditions are true", async () => {
 		mockReadStatus.mockReturnValue({
-			lastCli: "claude",
+			session: { name: "test-session", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1117,10 +1116,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		await expect(executeBuild(defaultFlags, {}, "/project")).rejects.toThrow("No plan found");
 	});
 
-	it("crash + sessionName in status → session equals status.sessionName", async () => {
+	it("crash + session in status → session equals status.session.name", async () => {
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1144,8 +1142,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 	it("crash + same CLI → sessionId passed to runSpecBuild", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1172,8 +1169,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 	it("crash + different CLI → sessionId is undefined", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1200,8 +1196,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 	it("exhaustion + same CLI → sessionId is undefined", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1226,10 +1221,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("flags.session overrides status.sessionName", async () => {
+	it("flags.session overrides status.session.name", async () => {
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1253,8 +1247,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 	it("exhaustion + cross CLI → session reused, sessionId undefined", async () => {
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1300,10 +1293,8 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("status.sessionName is undefined → falls through to computeSpecSlug", async () => {
+	it("status.session is undefined → falls through to computeSpecSlug", async () => {
 		mockReadStatus.mockReturnValue({
-			sessionName: undefined,
-			lastCli: "claude",
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1324,7 +1315,7 @@ describe("executeBuild crash/exhaustion detection", () => {
 		);
 	});
 
-	it("writes sessionName and lastCli to status on iteration start", async () => {
+	it("writes session to status on iteration start", async () => {
 		mockReadStatus.mockReturnValue({
 			specs: {
 				"01-auth": {
@@ -1337,14 +1328,14 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		await executeBuild(defaultFlags, {}, "/project");
 
-		// writeStatus is called by onIterationStart — verify sessionName and lastCli are set
+		// writeStatus is called by onIterationStart — verify session object is set
 		expect(mockWriteStatus).toHaveBeenCalledWith(
-			expect.objectContaining({ sessionName: "auth", lastCli: "claude" }),
+			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude" }) }),
 			"/project",
 		);
 	});
 
-	it("sessionName and lastCli written before iteration completes", async () => {
+	it("session written before iteration completes", async () => {
 		let statusAtIterationStart: Record<string, unknown> | null = null;
 		mockWriteStatus.mockImplementation((s: Record<string, unknown>) => {
 			if (!statusAtIterationStart) {
@@ -1364,9 +1355,9 @@ describe("executeBuild crash/exhaustion detection", () => {
 
 		await executeBuild(defaultFlags, {}, "/project");
 
-		// First writeStatus call (from onIterationStart) should have sessionName and lastCli
+		// First writeStatus call (from onIterationStart) should have session object
 		expect(statusAtIterationStart).toEqual(
-			expect.objectContaining({ sessionName: "auth", lastCli: "claude" }),
+			expect.objectContaining({ session: expect.objectContaining({ name: "auth", cli: "claude" }) }),
 		);
 	});
 
@@ -1600,14 +1591,13 @@ describe("executeBuildAll", () => {
 		);
 	});
 
-	it("buildAll with crashed spec → session equals status.sessionName", async () => {
+	it("buildAll with crashed spec → session equals status.session.name", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1628,14 +1618,13 @@ describe("executeBuildAll", () => {
 		);
 	});
 
-	it("buildAll with exhausted spec → session equals status.sessionName", async () => {
+	it("buildAll with exhausted spec → session equals status.session.name", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1664,8 +1653,7 @@ describe("executeBuildAll", () => {
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockResolveCommandConfig.mockReturnValue({ cli: "claude", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1689,8 +1677,7 @@ describe("executeBuildAll", () => {
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockResolveCommandConfig.mockReturnValue({ cli: "opencode", model: "default", iterations: 10 });
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
@@ -1713,7 +1700,7 @@ describe("executeBuildAll", () => {
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "planned",
@@ -1732,14 +1719,13 @@ describe("executeBuildAll", () => {
 		);
 	});
 
-	it("buildAll flags.session overrides status.sessionName", async () => {
+	it("buildAll flags.session overrides status.session.name", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "building" as const },
 		];
 		mockDiscoverSpecs.mockReturnValue(specs);
 		mockReadStatus.mockReturnValue({
-			sessionName: "warm-lynx-52",
-			lastCli: "claude",
+			session: { name: "warm-lynx-52", cli: "claude", specs: ["01-auth"], state: "active", startedAt: "2026-03-20T00:00:00.000Z" },
 			specs: {
 				"01-auth": {
 					status: "building",
