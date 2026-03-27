@@ -1115,6 +1115,89 @@ describe("runPlan", () => {
 		);
 	});
 
+	it("--all summary prints per-spec detail lines", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("02-api", 2, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		await runPlan({ all: true, verbose: false });
+
+		// Per-spec detail lines printed by printAllSummary
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("01-auth"),
+		);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("02-api"),
+		);
+	});
+
+	it("--all summary with max_iterations shows per-spec warnings", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("02-api", 2, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		let callCount = 0;
+		mockRunLoop.mockImplementation(async (options) => {
+			callCount++;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000,
+				sentinelDetected: callCount === 1,
+			};
+			options.onIterationComplete?.(iterResult);
+			return {
+				iterations: [iterResult],
+				stopReason: callCount === 1 ? "sentinel" as const : "max_iterations" as const,
+			};
+		});
+
+		await runPlan({ all: true, verbose: false });
+
+		// Overall summary should be yellow (has warnings)
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("⚠️"),
+		);
+		// Per-spec max_iterations warning
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("maximum iteration limit reached"),
+		);
+	});
+
+	it("--spec single prints green summary for sentinel", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		mockRunLoop.mockImplementation(async (options) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+
+		await runPlan({ spec: "01-auth", verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Plan complete for 01-auth"),
+		);
+	});
+
+	it("--spec single prints yellow warning for max_iterations", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		await runPlan({ spec: "01-auth", verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("maximum iteration limit reached"),
+		);
+	});
+
 	it("--spec single name plans via executePlan", async () => {
 		const spec1 = makeSpec("01-auth", 1, "pending");
 		mockDiscoverSpecs.mockReturnValue([spec1]);

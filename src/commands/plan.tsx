@@ -251,9 +251,68 @@ export interface RunPlanOptions {
 	session?: string;
 }
 
+function printSummary(result: PlanResult): void {
+	if (result.stopReason === "max_iterations") {
+		console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+	} else {
+		console.log(chalk.green(`✔ Plan complete for ${result.specName}`));
+	}
+}
+
+function printAllSummary(result: PlanAllResult): void {
+	const hasWarnings = result.planned.some((r) => r.stopReason === "max_iterations");
+	console.log(
+		hasWarnings
+			? chalk.yellow(`⚠️ All specs planned (${result.planned.length} planned)`)
+			: chalk.green(`✔ All specs planned (${result.planned.length} planned)`),
+	);
+	for (const r of result.planned) {
+		if (r.stopReason === "max_iterations") {
+			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`));
+		} else {
+			console.log(`  ${r.specName}`);
+		}
+	}
+}
+
+function printInterrupted(specName: string, completedIterations: number): void {
+	console.log(chalk.yellow(`⚠ Planning interrupted for ${specName}`));
+	console.log(chalk.dim(`  ${completedIterations} iteration(s) completed, partial status saved`));
+}
+
+function makePlanAllCallbacks(verbose: boolean): PlanAllCallbacks {
+	return {
+		onEvent: (event) => writeEvent(event, verbose),
+		onSpecStart: (name, i, total) => {
+			console.log(chalk.dim(`◇ Planning ${name} (${i + 1}/${total})`));
+		},
+		onSpecComplete: (result) => {
+			if (result.stopReason === "max_iterations") {
+				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+			} else {
+				console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
+			}
+		},
+		onRefinement: (specName) => {
+			console.log(chalk.yellow(`Existing plan found for ${specName}`));
+			console.log(chalk.yellow("Running in refinement mode..."));
+		},
+	};
+}
+
+async function withSigint<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+	const abortController = new AbortController();
+	const onSigint = () => abortController.abort();
+	process.on("SIGINT", onSigint);
+	try {
+		return await fn(abortController.signal);
+	} finally {
+		process.off("SIGINT", onSigint);
+	}
+}
+
 /**
  * Imperative CLI wrapper for plan command.
- * Handles --all mode with callbacks wired to stdout.
  */
 export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	const cwd = process.cwd();
@@ -271,7 +330,6 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	};
 
 	if (flags.all) {
-		// Discover specs — handle "no specs" gracefully
 		const discovered = discoverSpecs(cwd, config);
 		if (discovered.length === 0) {
 			console.log("No specs found.");
@@ -284,45 +342,17 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 			return;
 		}
 
-		const abortController = new AbortController();
-		const onSigint = () => abortController.abort();
-		process.on("SIGINT", onSigint);
-
-		const callbacks: PlanAllCallbacks = {
-			onEvent: (event) => writeEvent(event, verbose),
-			onSpecStart: (name, i, total) => {
-				console.log(chalk.dim(`◇ Planning ${name} (${i + 1}/${total})`));
-			},
-			onSpecComplete: (result) => {
-				if (result.stopReason === "max_iterations") {
-					console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
-				} else {
-					console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
-				}
-			},
-			onRefinement: (specName) => {
-				console.log(chalk.yellow(`Existing plan found for ${specName}`));
-				console.log(chalk.yellow("Running in refinement mode..."));
-			},
-		};
-
 		try {
-			const result = await executePlanAll(flags, callbacks, cwd, abortController.signal, pending);
-			const hasWarnings = result.planned.some((r) => r.stopReason === "max_iterations");
-			console.log(
-				hasWarnings
-					? chalk.yellow(`⚠️ All specs planned (${result.planned.length} planned)`)
-					: chalk.green(`✔ All specs planned (${result.planned.length} planned)`),
+			const result = await withSigint((signal) =>
+				executePlanAll(flags, makePlanAllCallbacks(verbose), cwd, signal, pending),
 			);
+			printAllSummary(result);
 		} catch (err) {
 			if (err instanceof AbortError) {
-				console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
-				console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+				printInterrupted(err.specName, err.completedIterations);
 			} else {
 				throw err;
 			}
-		} finally {
-			process.off("SIGINT", onSigint);
 		}
 		return;
 	}
@@ -334,10 +364,8 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 			return;
 		}
 
-		// Check if comma-separated (multiple specs)
-		const isMulti = flags.spec.includes(",");
-
-		if (isMulti) {
+		// Comma-separated → multiple specs
+		if (flags.spec.includes(",")) {
 			let resolved: ReturnType<typeof findSpecs>;
 			try {
 				resolved = findSpecs(discovered, flags.spec);
@@ -348,45 +376,17 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 				return;
 			}
 
-			const abortController = new AbortController();
-			const onSigint = () => abortController.abort();
-			process.on("SIGINT", onSigint);
-
-			const callbacks: PlanAllCallbacks = {
-				onEvent: (event) => writeEvent(event, verbose),
-				onSpecStart: (name, i, total) => {
-					console.log(chalk.dim(`◇ Planning ${name} (${i + 1}/${total})`));
-				},
-				onSpecComplete: (result) => {
-					if (result.stopReason === "max_iterations") {
-						console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
-					} else {
-						console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
-					}
-				},
-				onRefinement: (specName) => {
-					console.log(chalk.yellow(`Existing plan found for ${specName}`));
-					console.log(chalk.yellow("Running in refinement mode..."));
-				},
-			};
-
 			try {
-				const result = await executePlanAll(flags, callbacks, cwd, abortController.signal, resolved);
-				const hasWarnings = result.planned.some((r) => r.stopReason === "max_iterations");
-				console.log(
-					hasWarnings
-						? chalk.yellow(`⚠️ All specs planned (${result.planned.length} planned)`)
-						: chalk.green(`✔ All specs planned (${result.planned.length} planned)`),
+				const result = await withSigint((signal) =>
+					executePlanAll(flags, makePlanAllCallbacks(verbose), cwd, signal, resolved),
 				);
+				printAllSummary(result);
 			} catch (err) {
 				if (err instanceof AbortError) {
-					console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
-					console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+					printInterrupted(err.specName, err.completedIterations);
 				} else {
 					throw err;
 				}
-			} finally {
-				process.off("SIGINT", onSigint);
 			}
 			return;
 		}
@@ -400,10 +400,6 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 			return;
 		}
 
-		const abortController = new AbortController();
-		const onSigint = () => abortController.abort();
-		process.on("SIGINT", onSigint);
-
 		const callbacks: PlanCallbacks = {
 			onEvent: (event) => writeEvent(event, verbose),
 			onIteration: (current, max) => {
@@ -416,21 +412,16 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		};
 
 		try {
-			const result = await executePlan(flags, callbacks, cwd, abortController.signal);
-			if (result.stopReason === "max_iterations") {
-				console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
-			} else {
-				console.log(chalk.green(`✔ Plan complete for ${result.specName}`));
-			}
+			const result = await withSigint((signal) =>
+				executePlan(flags, callbacks, cwd, signal),
+			);
+			printSummary(result);
 		} catch (err) {
 			if (err instanceof AbortError) {
-				console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
-				console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+				printInterrupted(err.specName, err.completedIterations);
 			} else {
 				throw err;
 			}
-		} finally {
-			process.off("SIGINT", onSigint);
 		}
 		return;
 	}
