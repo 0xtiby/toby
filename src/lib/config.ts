@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ConfigSchema, CLI_NAMES } from "../types.js";
 import type { TobyConfig, CommandConfig } from "../types.js";
-import { getGlobalDir, getLocalDir, CONFIG_FILE } from "./paths.js";
+import { getLocalDir, CONFIG_FILE } from "./paths.js";
 import { formatErrorWithHint } from "./help.js";
 
 /**
@@ -21,47 +21,15 @@ function readConfigFile(filePath: string): Record<string, unknown> {
 	}
 }
 
-/** Load global config from ~/.toby/config.json */
-export function loadGlobalConfig(): Partial<TobyConfig> {
-	return readConfigFile(path.join(getGlobalDir(), CONFIG_FILE));
-}
-
 /** Load local config from <cwd>/.toby/config.json */
 export function loadLocalConfig(cwd?: string): Partial<TobyConfig> {
 	return readConfigFile(path.join(getLocalDir(cwd), CONFIG_FILE));
 }
 
-/** Deep-merge two partial configs, with local overriding global for nested command objects */
-export function mergeConfigs(
-	global: Partial<TobyConfig>,
-	local: Partial<TobyConfig>,
-): Partial<TobyConfig> {
-	const merged: Record<string, unknown> = { ...global };
-
-	for (const [key, value] of Object.entries(local)) {
-		if (
-			typeof value === "object" &&
-			value !== null &&
-			!Array.isArray(value) &&
-			typeof merged[key] === "object" &&
-			merged[key] !== null &&
-			!Array.isArray(merged[key])
-		) {
-			merged[key] = { ...(merged[key] as Record<string, unknown>), ...value };
-		} else {
-			merged[key] = value;
-		}
-	}
-
-	return merged as Partial<TobyConfig>;
-}
-
-/** Load, merge, and validate config from global + local sources */
+/** Load and validate config from local .toby/config.json + Zod defaults */
 export function loadConfig(cwd?: string): TobyConfig {
-	const global = loadGlobalConfig();
 	const local = loadLocalConfig(cwd);
-	const merged = mergeConfigs(global, local);
-	return ConfigSchema.parse(merged);
+	return ConfigSchema.parse(local);
 }
 
 /**
