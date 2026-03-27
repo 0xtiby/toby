@@ -1,24 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { normalizeBooleanFlags } from "../cli-meta.js";
+import { MEOW_FLAGS, normalizeBooleanFlags } from "../cli-meta.js";
 
 describe("normalizeBooleanFlags", () => {
-	const baseFlags = {
-		help: false,
-		spec: undefined,
-		specs: undefined,
-		all: false,
-		iterations: undefined,
-		verbose: false,
-		transcript: false,
-		cli: undefined,
-		planCli: undefined,
-		planModel: undefined,
-		buildCli: undefined,
-		buildModel: undefined,
-		specsDir: undefined,
-		session: undefined,
-		force: false,
-	};
+	const baseFlags = Object.fromEntries(
+		Object.entries(MEOW_FLAGS).map(([name, def]) => [
+			name,
+			"default" in def ? def.default : def.type === "boolean" ? false : undefined,
+		]),
+	);
 
 	it("sets transcript to undefined when not passed", () => {
 		const result = normalizeBooleanFlags(baseFlags, ["plan", "--spec=foo"]);
@@ -63,11 +52,6 @@ describe("normalizeBooleanFlags", () => {
 			"--transcript",
 		]);
 		expect(result.transcript).toBeUndefined();
-	});
-
-	it("does not modify verbose (has explicit default)", () => {
-		const result = normalizeBooleanFlags(baseFlags, ["plan", "--verbose"]);
-		expect(result.verbose).toBe(false);
 	});
 
 	it("does not modify flags with explicit defaults", () => {
