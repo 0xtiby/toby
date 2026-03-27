@@ -183,6 +183,77 @@ describe("createProject", () => {
 		);
 		expect(config.verbose).toBe(true);
 	});
+
+	it("sets PRD_PATH templateVar for prd-json tracker", () => {
+		createProject({ ...DEFAULT_SELECTIONS, tracker: "prd-json" }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.templateVars).toEqual({ PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" });
+	});
+
+	it("sets empty templateVars for github tracker", () => {
+		createProject({ ...DEFAULT_SELECTIONS, tracker: "github" }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.templateVars).toEqual({});
+	});
+
+	it("sets empty templateVars for beads tracker", () => {
+		createProject({ ...DEFAULT_SELECTIONS, tracker: "beads" }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.templateVars).toEqual({});
+	});
+
+	it("copies tracker prompt files to .toby/", () => {
+		createProject({ ...DEFAULT_SELECTIONS, tracker: "prd-json" }, tmpDir);
+
+		const localDir = path.join(tmpDir, ".toby");
+		expect(fs.existsSync(path.join(localDir, "PROMPT_PLAN.md"))).toBe(true);
+		expect(fs.existsSync(path.join(localDir, "PROMPT_BUILD.md"))).toBe(true);
+	});
+
+	it("preserves existing prompt files on re-run", () => {
+		const localDir = path.join(tmpDir, ".toby");
+		fs.mkdirSync(localDir, { recursive: true });
+		fs.writeFileSync(path.join(localDir, "PROMPT_PLAN.md"), "custom plan");
+
+		createProject({ ...DEFAULT_SELECTIONS, tracker: "prd-json" }, tmpDir);
+
+		expect(fs.readFileSync(path.join(localDir, "PROMPT_PLAN.md"), "utf-8")).toBe("custom plan");
+		// BUILD should still be copied since it didn't exist
+		expect(fs.existsSync(path.join(localDir, "PROMPT_BUILD.md"))).toBe(true);
+	});
+
+	it("writes transcript: true to config when selected", () => {
+		createProject({ ...DEFAULT_SELECTIONS, transcript: true }, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.transcript).toBe(true);
+	});
+
+	it("writes transcript: false to config by default", () => {
+		createProject(DEFAULT_SELECTIONS, tmpDir);
+
+		const config = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, ".toby", "config.json"), "utf-8"),
+		);
+		expect(config.transcript).toBe(false);
+	});
+
+	it("throws for invalid tracker name", () => {
+		expect(() =>
+			createProject({ ...DEFAULT_SELECTIONS, tracker: "invalid" }, tmpDir),
+		).toThrow(/Unknown tracker: "invalid"/);
+	});
 });
 
 describe("getInstalledClis", () => {
