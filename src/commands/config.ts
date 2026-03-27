@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as clack from "@clack/prompts";
+import chalk from "chalk";
+import { detectAll, listModels } from "@0xtiby/spawner";
 import { loadConfig, writeConfig } from "../lib/config.js";
 import { getLocalDir, CONFIG_FILE } from "../lib/paths.js";
-import { ConfigSchema } from "../types.js";
-import type { TobyConfig } from "../types.js";
+import { ConfigSchema, CLI_NAMES } from "../types.js";
+import type { TobyConfig, CliName } from "../types.js";
+import { isTTY } from "../ui/tty.js";
 
 /** All valid dot-notation keys and their expected types */
 export const VALID_KEYS: Record<string, "string" | "number" | "boolean" | "string[]"> = {
@@ -222,20 +226,153 @@ export function configSetBatch(pairs: string[]): void {
 	}
 }
 
+function checkCancel(value: unknown): void {
+	if (clack.isCancel(value)) {
+		clack.cancel("Config editor cancelled.");
+		process.exit(0);
+	}
+}
+
+interface CliDetection {
+	installed: boolean;
+	version: string | null;
+	authenticated: boolean;
+	binaryPath: string | null;
+}
+
+type DetectAllResult = Record<CliName, CliDetection>;
+
+async function loadModelOptions(cli: CliName): Promise<{ value: string; label: string }[]> {
+	try {
+		const models = await listModels({ cli });
+		return [
+			{ value: "default", label: "default" },
+			...models.map((m) => ({ value: m.id, label: `${m.name} (${m.id})` })),
+		];
+	} catch {
+		return [{ value: "default", label: "default" }];
+	}
+}
+
+async function promptForValue(key: string, currentValue: unknown): Promise<unknown> {
+	const type = VALID_KEYS[key];
+
+	if (key === "plan.cli" || key === "build.cli") {
+		const s = clack.spinner();
+		s.start("Detecting installed CLIs...");
+		const detectResult = (await detectAll()) as DetectAllResult;
+		const installed = (Object.entries(detectResult) as [CliName, CliDetection][])
+			.filter(([, info]) => info.installed)
+			.map(([name]) => name);
+		// Ensure current value is included
+		const cliSet = new Set(installed);
+		if (currentValue && !cliSet.has(currentValue as CliName)) {
+			cliSet.add(currentValue as CliName);
+		}
+		s.stop("CLI detection complete.");
+
+		const result = await clack.select({
+			message: `Select CLI for ${key.split(".")[0]}`,
+			options: Array.from(cliSet).map((name) => ({ value: name, label: name })),
+			initialValue: currentValue as string,
+		});
+		checkCancel(result);
+		return result;
+	}
+
+	if (key === "plan.model" || key === "build.model") {
+		const cliKey = key.replace(".model", ".cli");
+		const config = loadConfig();
+		const cli = getNestedValue(config as unknown as Record<string, unknown>, cliKey) as CliName;
+		const s = clack.spinner();
+		s.start(`Loading models for ${cli}...`);
+		const options = await loadModelOptions(cli);
+		s.stop("Models loaded.");
+
+		const result = await clack.select({
+			message: `Select model for ${key.split(".")[0]} (${cli})`,
+			options,
+			initialValue: currentValue as string,
+		});
+		checkCancel(result);
+		return result;
+	}
+
+	if (type === "number") {
+		const result = await clack.text({
+			message: `Enter value for ${key}`,
+			placeholder: String(currentValue),
+			defaultValue: String(currentValue),
+			validate(val) {
+				const n = Number(val);
+				if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
+					return "Must be a positive integer";
+				}
+			},
+		});
+		checkCancel(result);
+		return Number(result);
+	}
+
+	if (type === "boolean") {
+		const result = await clack.select({
+			message: `Set ${key}`,
+			options: [
+				{ value: "true", label: "true" },
+				{ value: "false", label: "false" },
+			],
+			initialValue: String(currentValue),
+		});
+		checkCancel(result);
+		return result === "true";
+	}
+
+	// String fields
+	const result = await clack.text({
+		message: `Enter value for ${key}`,
+		placeholder: String(currentValue),
+		defaultValue: String(currentValue),
+	});
+	checkCancel(result);
+	return (result as string).trim() || currentValue;
+}
+
+async function runInteractiveConfig(): Promise<void> {
+	clack.intro("toby config");
+
+	const config = loadConfig();
+	const configObj = config as unknown as Record<string, unknown>;
+
+	const keyChoice = await clack.select({
+		message: "Which setting to edit?",
+		options: Object.keys(VALID_KEYS).map((key) => ({
+			value: key,
+			label: key,
+			hint: String(getNestedValue(configObj, key)),
+		})),
+	});
+	checkCancel(keyChoice);
+
+	const key = keyChoice as string;
+	const currentValue = getNestedValue(configObj, key);
+	const newValue = await promptForValue(key, currentValue);
+
+	readMergeWriteConfig([{ key, value: newValue }]);
+	clack.outro(`${chalk.green("✔")} Updated ${key} = ${String(newValue)}`);
+}
+
 /** Main entry point for the config command. */
 export async function runConfig(args: string[]): Promise<void> {
 	const [subcommand, ...rest] = args;
 
-	// No subcommand → interactive editor (placeholder for now)
+	// No subcommand → interactive editor
 	if (!subcommand) {
-		if (!process.stdout.isTTY) {
+		if (!isTTY()) {
 			console.error("Interactive config editor requires a TTY.\nUse: toby config get <key> | toby config set <key> <value>");
 			process.exitCode = 1;
 			return;
 		}
-		// Interactive editor will be added in a later task
-		console.error("Interactive config editor not yet implemented.\nUse: toby config get [key] | toby config set <key> <value>");
-		process.exitCode = 1;
+		await runInteractiveConfig();
 		return;
 	}
 
