@@ -121,3 +121,15 @@ export interface ComputeCliVarsOptions {
 	specs: string[];
 	specsDir: string;
 }
+
+// ── CLI Command Flags ────────────────────────────────────────────
+
+export interface CommandFlags {
+	spec?: string;
+	all: boolean;
+	iterations?: number;
+	verbose: boolean;
+	transcript?: boolean;
+	cli?: string;
+	session?: string;
+}
