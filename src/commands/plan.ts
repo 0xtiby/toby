@@ -1,5 +1,3 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Text, Box } from "ink";
 import chalk from "chalk";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
@@ -15,7 +13,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration, StopReason } from "../types.js";
+import type { CommandFlags, Iteration, StopReason } from "../types.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
@@ -23,10 +21,6 @@ import type { TranscriptWriter } from "../lib/transcript.js";
 import { writeEvent } from "../ui/stream.js";
 import { isTTY } from "../ui/tty.js";
 import { selectSpecs } from "../ui/prompt.js";
-import { useCommandRunner } from "../hooks/useCommandRunner.js";
-import type { CommandFlags } from "../hooks/useCommandRunner.js";
-import MultiSpecSelector from "../components/MultiSpecSelector.js";
-import StreamOutput from "../components/StreamOutput.js";
 
 export type PlanFlags = CommandFlags;
 
@@ -466,124 +460,3 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 	}
 }
 
-export default function Plan(flags: PlanFlags) {
-	const runner = useCommandRunner({
-		flags,
-		runPhase: "planning",
-		filterSpecs: (specs) => filterByStatus(specs, "pending"),
-		emptyMessage: "No pending specs to plan. All specs have been planned.",
-	});
-
-	const [result, setResult] = useState<PlanResult | null>(null);
-	const [allResult, setAllResult] = useState<PlanAllResult | null>(null);
-	const [refinementInfo, setRefinementInfo] = useState<{ specName: string } | null>(null);
-
-	const allCallbacks: PlanAllCallbacks = useMemo(() => ({
-		onSpecStart: runner.onSpecStartCallback,
-		onSpecComplete: () => {},
-		onPhase: runner.onPhaseCallback,
-		onRefinement: (name: string) => { setRefinementInfo({ specName: name }); },
-		onIteration: runner.onIterationCallback,
-		onEvent: runner.addEvent,
-	}), [runner.onSpecStartCallback, runner.onPhaseCallback, runner.onIterationCallback, runner.addEvent]);
-
-	// Run multi-spec mode (specs resolved by useCommandRunner)
-	useEffect(() => {
-		if (runner.phase !== "multi" || runner.selectedSpecs.length === 0) return;
-		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal, runner.selectedSpecs)
-			.then((r) => { setAllResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.phase, runner.selectedSpecs]);
-
-	// Run --all mode
-	useEffect(() => {
-		if (runner.phase !== "all") return;
-		executePlanAll(flags, allCallbacks, undefined, runner.abortSignal)
-			.then((r) => { setAllResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.phase]);
-
-	// Run single mode
-	useEffect(() => {
-		if (runner.phase !== "init") return;
-		executePlan(runner.activeFlags, {
-			onPhase: runner.onPhaseCallback,
-			onRefinement: (name) => { setRefinementInfo({ specName: name }); },
-			onIteration: runner.onIterationCallback,
-			onEvent: runner.addEvent,
-		}, undefined, runner.abortSignal)
-			.then((r) => { runner.setSpecName(r.specName); setResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.activeFlags, runner.phase]);
-
-	if (runner.phase === "interrupted" && runner.interruptInfo) {
-		return (
-			<Box flexDirection="column">
-				<Text color="yellow">{`⚠ Planning interrupted for ${runner.interruptInfo.specName}`}</Text>
-				<Text dimColor>{`  ${runner.interruptInfo.iterations} iteration(s) completed, partial status saved`}</Text>
-			</Box>
-		);
-	}
-
-	if (runner.phase === "error") {
-		return <Text color="red">{runner.errorMessage}</Text>;
-	}
-
-	if (runner.phase === "selecting") {
-		return <MultiSpecSelector specs={runner.specs} onConfirm={runner.handleMultiSpecConfirm} />;
-	}
-
-	if (runner.phase === "done" && allResult) {
-		const hasWarnings = allResult.planned.some((r) => r.stopReason === "max_iterations");
-		return (
-			<Box flexDirection="column">
-				<Text color={hasWarnings ? "yellow" : "green"}>
-					{`${hasWarnings ? "⚠️" : "✓"} All specs planned (${allResult.planned.length} planned)`}
-				</Text>
-				{allResult.planned.map((r) => (
-					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
-						{r.stopReason === "max_iterations"
-							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`
-							: `  ${r.specName}`}
-					</Text>
-				))}
-			</Box>
-		);
-	}
-
-	if (runner.phase === "done" && result) {
-		if (result.stopReason === "max_iterations") {
-			return (
-				<Box flexDirection="column">
-					<Text color="yellow">
-						{`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}.`}
-					</Text>
-				</Box>
-			);
-		}
-		return (
-			<Box flexDirection="column">
-				<Text color="green">{`✓ Plan complete for ${result.specName}`}</Text>
-			</Box>
-		);
-	}
-
-	return (
-		<Box flexDirection="column">
-			{refinementInfo && (
-				<>
-					<Text color="yellow">{`Existing plan found for ${refinementInfo.specName}`}</Text>
-					<Text color="yellow">Running in refinement mode...</Text>
-				</>
-			)}
-			{runner.allProgress.total > 0 && (
-				<Text dimColor>{`[${runner.allProgress.current}/${runner.allProgress.total}]`}</Text>
-			)}
-			<Text dimColor>
-				{`Planning: ${runner.specName || runner.activeFlags.spec} (iteration ${Math.min(runner.currentIteration, runner.maxIterations)}/${runner.maxIterations})`}
-			</Text>
-			<Text dimColor>{"─".repeat(40)}</Text>
-			<StreamOutput events={runner.events} verbose={runner.resolvedVerbose} />
-		</Box>
-	);
-}

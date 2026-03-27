@@ -1,6 +1,4 @@
-import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "ink-testing-library";
 
 vi.mock("../lib/config.js", () => ({
 	loadConfig: vi.fn(),
@@ -49,17 +47,6 @@ vi.mock("../ui/prompt.js", () => ({
 	selectSpecs: vi.fn(),
 }));
 
-vi.mock("../hooks/useCommandRunner.js", () => ({
-	useCommandRunner: vi.fn(),
-}));
-
-vi.mock("../components/MultiSpecSelector.js", () => ({
-	default: vi.fn(),
-}));
-
-vi.mock("../components/StreamOutput.js", () => ({
-	default: vi.fn(),
-}));
 
 vi.mock("../lib/transcript.js", () => {
 	const openTranscript = vi.fn();
@@ -98,7 +85,6 @@ import { writeEvent } from "../ui/stream.js";
 import { isTTY } from "../ui/tty.js";
 import { selectSpecs } from "../ui/prompt.js";
 import { AbortError } from "../lib/errors.js";
-import Plan from "./plan.js";
 import type { PlanFlags } from "./plan.js";
 
 const makeSpec = (name: string, num: number, status: "pending" | "planned" | "building" | "done") => ({
@@ -881,133 +867,6 @@ describe("error handling edge cases", () => {
 	});
 });
 
-describe("Plan component", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupDefaults();
-	});
-
-	it("renders spec selector when no --spec flag provided", async () => {
-		const specs = [
-			makeSpec("01-auth", 1, "pending"),
-			makeSpec("02-api", 2, "pending"),
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-
-		const { lastFrame } = render(
-			<Plan all={false} verbose={false} />,
-		);
-
-		// Wait for useEffect to discover specs and re-render with MultiSpecSelector
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Select specs to plan");
-			expect(output).toContain("01-auth");
-			expect(output).toContain("02-api");
-		});
-	});
-
-	it("skips selector and starts planning with --spec flag", async () => {
-		// With --spec provided, phase starts at "init" and executePlan runs immediately
-		// The component should NOT show the selector
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1,
-				sessionId: "sess-1",
-				exitCode: 0,
-				tokensUsed: 150,
-				model: "claude-sonnet-4-6",
-				durationMs: 1000,
-				sentinelDetected: false,
-			};
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-		const { lastFrame } = render(
-			<Plan spec="auth" all={false} verbose={false} />,
-		);
-
-		// Should NOT show selector
-		const output = lastFrame()!;
-		expect(output).not.toContain("Select specs to plan");
-	});
-
-	it("only shows pending specs in selector", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
-			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "building" as const },
-			{ name: "04-done", path: "/p/specs/04-done.md", order: { num: 4, suffix: null }, status: "done" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-
-		const { lastFrame } = render(
-			<Plan all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("01-auth");
-			expect(output).not.toContain("02-api");
-			expect(output).not.toContain("03-ui");
-			expect(output).not.toContain("04-done");
-		});
-	});
-
-	it("shows error when no pending specs exist", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "done" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
-
-		const { lastFrame } = render(
-			<Plan all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("No pending specs to plan");
-		});
-	});
-
-	it("shows error when spec not found", async () => {
-		mockFindSpec.mockReturnValue(undefined);
-
-		const { lastFrame } = render(
-			<Plan spec="nonexistent" all={false} verbose={false} />,
-		);
-
-		// Wait for async effect to resolve
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("not found");
-		});
-	});
-
-	it("max_iterations shows warning instead of success", async () => {
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-
-		const { lastFrame } = render(
-			<Plan spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("⚠️");
-			expect(output).toContain("maximum iteration limit reached");
-			expect(output).toContain("1/2");
-			expect(output).not.toContain("✓");
-		});
-	});
-});
 
 const mockWriteEvent = vi.mocked(writeEvent);
 const mockIsTTY = vi.mocked(isTTY);
