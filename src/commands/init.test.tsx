@@ -57,7 +57,9 @@ const DEFAULT_SELECTIONS: InitSelections = {
 	planModel: "default",
 	buildCli: "claude",
 	buildModel: "default",
+	tracker: "prd-json",
 	specsDir: "specs",
+	transcript: false,
 	verbose: false,
 };
 
