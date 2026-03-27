@@ -341,3 +341,77 @@ describe("generateSessionName", () => {
 		expect(names.size).toBeGreaterThan(1);
 	});
 });
+
+/**
+ * Shipped prompt structure validation tests.
+ * Migrated from prompts/prompts.test.ts — now targets templates/prd-json/.
+ */
+describe("shipped prompt files (templates/prd-json/)", () => {
+	const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"] as const;
+
+	function getShippedDir(): string {
+		return path.resolve(path.dirname(getShippedPromptPath("PROMPT_PLAN")));
+	}
+
+	function readShippedPrompt(file: string): string {
+		return fs.readFileSync(path.join(getShippedDir(), file), "utf-8");
+	}
+
+	function extractVars(content: string): string[] {
+		const matches = content.matchAll(/\{\{(\w+)\}\}/g);
+		return [...new Set([...matches].map((m) => m[1]))];
+	}
+
+	it.each(PROMPT_FILES)("%s exists and is readable", (file) => {
+		expect(() => fs.accessSync(path.join(getShippedDir(), file))).not.toThrow();
+	});
+
+	it.each(PROMPT_FILES)("%s is non-empty markdown", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content.length).toBeGreaterThan(0);
+		expect(content).toContain("#");
+	});
+
+	it.each(PROMPT_FILES)("%s contains :::TOBY_DONE::: sentinel", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content).toContain(":::TOBY_DONE:::");
+	});
+
+	it.each(PROMPT_FILES)("%s uses {{VAR_NAME}} syntax (no single-brace vars)", (file) => {
+		const content = readShippedPrompt(file);
+		const singleBrace = content.match(/(?<!\{)\{([A-Z_]+)\}(?!\})/g);
+		expect(singleBrace).toBeNull();
+	});
+
+	it.each(PROMPT_FILES)("%s does not start with frontmatter", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content.startsWith("---")).toBe(false);
+	});
+
+	it.each(PROMPT_FILES)("%s does not contain dead vars", (file) => {
+		const content = readShippedPrompt(file);
+		const deadVars = ["BRANCH", "WORKTREE", "EPIC_NAME", "IS_LAST_SPEC", "IS_EPIC", "SPEC_CONTENT"];
+		for (const v of deadVars) {
+			expect(content).not.toContain(`{{${v}}}`);
+		}
+	});
+
+	it("PROMPT_PLAN.md contains expected variables", () => {
+		const vars = extractVars(readShippedPrompt("PROMPT_PLAN.md"));
+		for (const v of ["SPEC_NAME", "ITERATION", "PRD_PATH", "SPECS_DIR"]) {
+			expect(vars).toContain(v);
+		}
+	});
+
+	it("PROMPT_BUILD.md contains expected variables", () => {
+		const vars = extractVars(readShippedPrompt("PROMPT_BUILD.md"));
+		for (const v of ["SPEC_NAME", "ITERATION", "SPECS_DIR", "SPEC_INDEX", "SPEC_COUNT", "SESSION", "SPECS"]) {
+			expect(vars).toContain(v);
+		}
+	});
+
+	it("shipped directory resolves to templates/prd-json/", () => {
+		const dir = getShippedDir();
+		expect(dir).toMatch(/templates[/\\]prd-json$/);
+	});
+});
