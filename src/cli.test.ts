@@ -39,7 +39,7 @@ describe("cli", () => {
 	it("no args shows help", () => {
 		const { stdout } = run();
 		expect(stdout).toContain("toby");
-		expect(stdout).toContain("Usage");
+		expect(stdout).toContain("Commands:");
 	});
 
 	it("--help lists all 7 commands", () => {

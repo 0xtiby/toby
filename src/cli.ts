@@ -141,9 +141,11 @@ program
 
 ensureGlobalDir();
 
-// No subcommand → show help (exit 0)
+// No subcommand → welcome screen (TTY) or help text (non-TTY)
 if (process.argv.length <= 2) {
-	program.help();
+	const { runWelcome } = await import("./commands/welcome.js");
+	await runWelcome(version);
+	process.exit(0);
 }
 
 program.parse();
