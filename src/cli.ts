@@ -92,7 +92,6 @@ program
 	.action(async (opts) => {
 		const { runInit } = await import("./commands/init.js");
 		await runInit({
-			version,
 			planCli: opts.planCli,
 			planModel: opts.planModel,
 			buildCli: opts.buildCli,
