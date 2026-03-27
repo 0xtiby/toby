@@ -39,10 +39,7 @@ ensureGlobalDir();
 // Resolve --specs as alias for --spec (--specs takes precedence)
 const resolvedSpec = cli.flags.specs ?? cli.flags.spec;
 
-const normalized = normalizeBooleanFlags(
-	cli.flags as Record<string, unknown>,
-	process.argv.slice(2),
-) as typeof cli.flags;
+const normalized = normalizeBooleanFlags(cli.flags, process.argv.slice(2));
 const flags = { ...normalized, spec: resolvedSpec };
 
 interface CommandEntry {
