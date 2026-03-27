@@ -25,6 +25,8 @@ export interface InitFlags {
 	buildModel?: string;
 	specsDir?: string;
 	verbose?: boolean;
+	tracker?: string;
+	transcript?: boolean;
 }
 
 interface CliDetection {
@@ -52,7 +54,9 @@ export interface InitSelections {
 	planModel: string;
 	buildCli: CliName;
 	buildModel: string;
+	tracker: string;
 	specsDir: string;
+	transcript: boolean;
 	verbose: boolean;
 }
 
@@ -226,7 +230,9 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 				planModel: flags.planModel!,
 				buildCli: buildCli as CliName,
 				buildModel: flags.buildModel!,
+				tracker: flags.tracker ?? "prd-json",
 				specsDir: flags.specsDir!,
+				transcript: flags.transcript ?? false,
 				verbose: flags.verbose ?? false,
 			};
 
@@ -281,7 +287,9 @@ function InteractiveInit({ version }: { version: string }) {
 		planModel: "default",
 		buildCli: "claude",
 		buildModel: "default",
+		tracker: "prd-json",
 		specsDir: DEFAULT_SPECS_DIR,
+		transcript: false,
 		verbose: false,
 	});
 	const [specsDirInput, setSpecsDirInput] = useState(DEFAULT_SPECS_DIR);
