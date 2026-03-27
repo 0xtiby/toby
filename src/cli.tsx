@@ -16,7 +16,7 @@ import {
 	formatErrorWithHint,
 	commandHelp,
 } from "./lib/help.js";
-import { COMMAND_NAMES, MEOW_FLAGS } from "./lib/cli-meta.js";
+import { COMMAND_NAMES, MEOW_FLAGS, normalizeBooleanFlags } from "./lib/cli-meta.js";
 
 function writeUnknownCommandError(command: string): void {
 	process.stderr.write(
@@ -38,7 +38,12 @@ ensureGlobalDir();
 
 // Resolve --specs as alias for --spec (--specs takes precedence)
 const resolvedSpec = cli.flags.specs ?? cli.flags.spec;
-const flags = { ...cli.flags, spec: resolvedSpec };
+
+const normalized = normalizeBooleanFlags(
+	cli.flags as Record<string, unknown>,
+	process.argv.slice(2),
+) as typeof cli.flags;
+const flags = { ...normalized, spec: resolvedSpec };
 
 interface CommandEntry {
 	render: (
