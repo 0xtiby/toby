@@ -15,6 +15,7 @@ import {
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { Iteration, StopReason } from "../types.js";
+import { formatMaxIterationsWarning } from "../lib/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -152,11 +153,11 @@ export async function executePlan(
 			writeStatus(status, cwd);
 
 			return {
-			specName: found.name,
-			totalIterations: loopResult.iterations.length,
-			maxIterations: commandConfig.iterations,
-			stopReason: loopResult.stopReason,
-		};
+				specName: found.name,
+				totalIterations: loopResult.iterations.length,
+				maxIterations: commandConfig.iterations,
+				stopReason: loopResult.stopReason,
+			};
 		},
 	);
 }
@@ -315,7 +316,7 @@ export default function Plan(flags: PlanFlags) {
 				{allResult.planned.map((r) => (
 					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
 						{r.stopReason === "max_iterations"
-							? `  ⚠️ ${r.specName}: max iteration limit reached (${r.totalIterations}/${r.maxIterations})`
+							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`
 							: `  ${r.specName}`}
 					</Text>
 				))}
@@ -328,7 +329,7 @@ export default function Plan(flags: PlanFlags) {
 			return (
 				<Box flexDirection="column">
 					<Text color="yellow">
-						{`⚠️ Spec "${result.specName}": maximum plan iteration limit reached (${result.totalIterations}/${result.maxIterations} iterations).`}
+						{`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}.`}
 					</Text>
 				</Box>
 			);

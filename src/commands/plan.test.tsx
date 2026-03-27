@@ -973,7 +973,7 @@ describe("Plan component", () => {
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
 			expect(output).toContain("⚠️");
-			expect(output).toContain("maximum plan iteration limit reached");
+			expect(output).toContain("maximum iteration limit reached");
 			expect(output).toContain("1/2");
 			expect(output).not.toContain("✓");
 		});
