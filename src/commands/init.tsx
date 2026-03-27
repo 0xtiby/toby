@@ -14,6 +14,7 @@ import {
 	STATUS_FILE,
 	DEFAULT_SPECS_DIR,
 } from "../lib/paths.js";
+import { copyTrackerPrompts } from "../lib/template.js";
 import { CLI_NAMES, TRACKER_NAMES } from "../types.js";
 import type { TobyConfig, CliName } from "../types.js";
 
@@ -73,6 +74,13 @@ export function createProject(
 	selections: InitSelections,
 	cwd: string = process.cwd(),
 ): InitResult {
+	// Validate tracker
+	if (!(TRACKER_NAMES as readonly string[]).includes(selections.tracker)) {
+		throw new Error(
+			`Unknown tracker: "${selections.tracker}". Must be one of: ${TRACKER_NAMES.join(", ")}`,
+		);
+	}
+
 	const localDir = getLocalDir(cwd);
 	const configPath = path.join(localDir, CONFIG_FILE);
 	const statusPath = path.join(localDir, STATUS_FILE);
@@ -87,6 +95,14 @@ export function createProject(
 			: `Failed to create project directory: ${(err as Error).message}`;
 		throw new Error(msg);
 	}
+
+	// Copy tracker prompt files to .toby/ (skips existing)
+	copyTrackerPrompts(selections.tracker, localDir);
+
+	// Set templateVars based on tracker choice
+	const templateVars = selections.tracker === "prd-json"
+		? { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" }
+		: {};
 
 	try {
 		// Write config.json (always overwrite)
@@ -103,9 +119,8 @@ export function createProject(
 			},
 			specsDir: selections.specsDir,
 			verbose: selections.verbose,
-			templateVars: {
-				PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json",
-			},
+			transcript: selections.transcript,
+			templateVars,
 		};
 		writeConfig(config, configPath);
 	} catch (err) {
@@ -193,21 +208,30 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 
 	const planCli = flags.planCli!;
 	const buildCli = flags.buildCli!;
+	const tracker = flags.tracker ?? "prd-json";
 
 	// Validate CLI names synchronously
 	const invalidCli = [planCli, buildCli].find(
 		(cli) => !(CLI_NAMES as readonly string[]).includes(cli),
 	);
 
+	// Validate tracker name synchronously
+	const invalidTracker = !(TRACKER_NAMES as readonly string[]).includes(tracker);
+
 	const [status, setStatus] = useState<
 		| { type: "detecting" }
 		| { type: "invalid_cli"; cli: string }
+		| { type: "invalid_tracker"; tracker: string }
 		| { type: "error"; message: string }
 		| { type: "success"; result: InitResult; selections: InitSelections }
-	>(invalidCli ? { type: "invalid_cli", cli: invalidCli } : { type: "detecting" });
+	>(
+		invalidCli ? { type: "invalid_cli", cli: invalidCli }
+		: invalidTracker ? { type: "invalid_tracker", tracker }
+		: { type: "detecting" },
+	);
 
 	useEffect(() => {
-		if (invalidCli) {
+		if (invalidCli || invalidTracker) {
 			process.exitCode = 1;
 			exit();
 			return;
@@ -232,7 +256,7 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 				planModel: flags.planModel!,
 				buildCli: buildCli as CliName,
 				buildModel: flags.buildModel!,
-				tracker: flags.tracker ?? "prd-json",
+				tracker,
 				specsDir: flags.specsDir!,
 				transcript: flags.transcript ?? false,
 				verbose: flags.verbose ?? false,
@@ -251,6 +275,10 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 
 	if (status.type === "invalid_cli") {
 		return <Text color="red">{`✗ Unknown CLI: ${status.cli}. Must be one of: ${CLI_NAMES.join(", ")}`}</Text>;
+	}
+
+	if (status.type === "invalid_tracker") {
+		return <Text color="red">{`✗ Unknown tracker: "${status.tracker}". Must be one of: ${TRACKER_NAMES.join(", ")}`}</Text>;
 	}
 
 	if (status.type === "detecting") {
