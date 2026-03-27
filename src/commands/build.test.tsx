@@ -566,7 +566,30 @@ describe("Build component", () => {
 		});
 	});
 
-	it("completion summary shows iterations and tokens", async () => {
+	it("completion summary shows iterations and tokens for sentinel", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+
+		const { lastFrame } = render(
+			<Build spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("Build complete");
+			expect(output).toContain("Iterations: 1");
+			expect(output).toContain("Tokens: 500");
+		});
+	});
+
+	it("max_iterations shows warning instead of success", async () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
@@ -583,8 +606,10 @@ describe("Build component", () => {
 
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
-			expect(output).toContain("Iterations: 1");
-			expect(output).toContain("Tokens: 500");
+			expect(output).toContain("⚠️");
+			expect(output).toContain("maximum iteration limit reached");
+			expect(output).toContain("1/10");
+			expect(output).not.toContain("✓");
 		});
 	});
 
