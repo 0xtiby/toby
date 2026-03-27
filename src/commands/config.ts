@@ -361,9 +361,16 @@ async function runInteractiveConfig(): Promise<void> {
 	clack.outro(`${chalk.green("✔")} Updated ${key} = ${String(newValue)}`);
 }
 
+export interface RunConfigOpts {
+	subcommand?: string;
+	args?: string[];
+	version?: string;
+}
+
 /** Main entry point for the config command. */
-export async function runConfig(args: string[]): Promise<void> {
-	const [subcommand, ...rest] = args;
+export async function runConfig(opts: RunConfigOpts = {}): Promise<void> {
+	const { subcommand } = opts;
+	const rest = opts.args ?? [];
 
 	// No subcommand → interactive editor
 	if (!subcommand) {

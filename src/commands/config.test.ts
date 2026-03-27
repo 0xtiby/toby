@@ -233,33 +233,33 @@ describe("config commands", () => {
 
 	describe("runConfig", () => {
 		it("routes get with key to configGet", async () => {
-			await runConfig(["get", "plan.cli"]);
+			await runConfig({ subcommand: "get", args: ["plan.cli"] });
 			expect(logSpy).toHaveBeenCalledWith("claude");
 		});
 
 		it("routes get without key to configListAll", async () => {
-			await runConfig(["get"]);
+			await runConfig({ subcommand: "get" });
 			expect(logSpy).toHaveBeenCalledWith("plan.cli = claude");
 		});
 
 		it("routes set with key=value to configSetBatch", async () => {
-			await runConfig(["set", "plan.cli=codex"]);
+			await runConfig({ subcommand: "set", args: ["plan.cli=codex"] });
 			expect(logSpy).toHaveBeenCalledWith("Set plan.cli = codex");
 		});
 
 		it("routes set with key value to configSet", async () => {
-			await runConfig(["set", "build.iterations", "20"]);
+			await runConfig({ subcommand: "set", args: ["build.iterations", "20"] });
 			expect(logSpy).toHaveBeenCalledWith("Set build.iterations = 20");
 		});
 
 		it("errors on missing set value", async () => {
-			await runConfig(["set", "specsDir"]);
+			await runConfig({ subcommand: "set", args: ["specsDir"] });
 			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Missing value"));
 			expect(process.exitCode).toBe(1);
 		});
 
 		it("errors on unknown subcommand", async () => {
-			await runConfig(["badcmd"]);
+			await runConfig({ subcommand: "badcmd" });
 			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown config subcommand: badcmd"));
 			expect(process.exitCode).toBe(1);
 		});
@@ -268,7 +268,7 @@ describe("config commands", () => {
 			const origTTY = process.stdout.isTTY;
 			Object.defineProperty(process.stdout, "isTTY", { value: false, writable: true, configurable: true });
 			try {
-				await runConfig([]);
+				await runConfig({});
 				expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires a TTY"));
 				expect(process.exitCode).toBe(1);
 			} finally {
