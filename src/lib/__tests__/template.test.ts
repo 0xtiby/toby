@@ -5,6 +5,8 @@ import os from "node:os";
 import {
 	resolvePromptPath,
 	getShippedPromptPath,
+	getTemplatesDir,
+	copyTrackerPrompts,
 	loadPrompt,
 	computeSpecSlug,
 	computeCliVars,
@@ -413,5 +415,71 @@ describe("shipped prompt files (templates/prd-json/)", () => {
 	it("shipped directory resolves to templates/prd-json/", () => {
 		const dir = getShippedDir();
 		expect(dir).toMatch(/templates[/\\]prd-json$/);
+	});
+});
+
+describe("getTemplatesDir", () => {
+	it("returns absolute path ending with /templates", () => {
+		const dir = getTemplatesDir();
+		expect(path.isAbsolute(dir)).toBe(true);
+		expect(dir).toMatch(/templates$/);
+	});
+
+	it("contains prd-json, github, and beads subdirectories", () => {
+		const dir = getTemplatesDir();
+		for (const tracker of ["prd-json", "github", "beads"]) {
+			expect(fs.existsSync(path.join(dir, tracker))).toBe(true);
+		}
+	});
+});
+
+describe("copyTrackerPrompts", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-copy-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("copies both prompt files when destination is empty", () => {
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual(["PROMPT_PLAN.md", "PROMPT_BUILD.md"]);
+		expect(fs.existsSync(path.join(tmpDir, "PROMPT_PLAN.md"))).toBe(true);
+		expect(fs.existsSync(path.join(tmpDir, "PROMPT_BUILD.md"))).toBe(true);
+	});
+
+	it("skips copy when destination files already exist", () => {
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "custom plan");
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_BUILD.md"), "custom build");
+
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual([]);
+		expect(fs.readFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "utf-8")).toBe("custom plan");
+	});
+
+	it("copies only missing files when one already exists", () => {
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "custom");
+
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual(["PROMPT_BUILD.md"]);
+		expect(fs.readFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "utf-8")).toBe("custom");
+	});
+
+	it("works for each tracker type", () => {
+		for (const tracker of ["prd-json", "github", "beads"]) {
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), `toby-${tracker}-`));
+			const { copied } = copyTrackerPrompts(tracker, dir);
+			expect(copied).toHaveLength(2);
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("throws when source template file is missing", () => {
+		expect(() => copyTrackerPrompts("nonexistent", tmpDir)).toThrow(
+			/Template "nonexistent\/PROMPT_PLAN\.md" not found/,
+		);
 	});
 });
