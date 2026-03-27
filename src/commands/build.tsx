@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, sortSpecs } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, findSpecs, sortSpecs } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
@@ -595,7 +595,102 @@ export async function runBuild(opts: RunBuildOptions): Promise<void> {
 		return;
 	}
 
-	// TODO: --spec and interactive modes will be added in subsequent tasks
+	if (flags.spec) {
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+
+		// Comma-separated → multiple specs
+		if (flags.spec.includes(",")) {
+			let resolved: ReturnType<typeof findSpecs>;
+			try {
+				resolved = findSpecs(discovered, flags.spec);
+			} catch (err) {
+				const available = discovered.map((s) => s.name).join(", ");
+				console.error(chalk.red(`${(err as Error).message}. Available: ${available}`));
+				process.exitCode = 1;
+				return;
+			}
+
+			// Validate each spec status
+			const status = readStatus(cwd);
+			for (const spec of resolved) {
+				const entry = status.specs[spec.name];
+				if (entry?.status === "done") {
+					console.error(chalk.red(`Spec '${spec.name}' is already done. Reset its status in .toby/status.json to rebuild.`));
+					process.exitCode = 1;
+					return;
+				}
+				if (!entry || (entry.status !== "planned" && entry.status !== "building")) {
+					console.error(chalk.red(`Spec '${spec.name}' has not been planned yet. Run 'toby plan --spec ${spec.name}' first.`));
+					process.exitCode = 1;
+					return;
+				}
+			}
+
+			try {
+				const result = await withSigint((signal) =>
+					executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, resolved),
+				);
+				printBuildAllSummary(result);
+			} catch (err) {
+				if (err instanceof AbortError) {
+					printBuildInterrupted(err.specName, err.completedIterations);
+				} else {
+					throw err;
+				}
+			}
+			return;
+		}
+
+		// Single spec
+		const found = findSpec(discovered, flags.spec);
+		if (!found) {
+			const available = discovered.map((s) => s.name).join(", ");
+			console.error(chalk.red(`Spec '${flags.spec}' not found. Available: ${available}`));
+			process.exitCode = 1;
+			return;
+		}
+
+		// Validate spec status
+		const status = readStatus(cwd);
+		const entry = status.specs[found.name];
+		if (entry?.status === "done") {
+			console.error(chalk.red(`Spec '${found.name}' is already done. Reset its status in .toby/status.json to rebuild.`));
+			process.exitCode = 1;
+			return;
+		}
+		if (!entry || (entry.status !== "planned" && entry.status !== "building")) {
+			console.error(chalk.red(`Spec '${found.name}' has not been planned yet. Run 'toby plan --spec ${found.name}' first.`));
+			process.exitCode = 1;
+			return;
+		}
+
+		const callbacks: BuildCallbacks = {
+			onEvent: (event) => writeEvent(event, verbose),
+			onIteration: (current, max) => {
+				console.log(chalk.dim(`  Iteration ${current}/${max}`));
+			},
+		};
+
+		try {
+			const result = await withSigint((signal) =>
+				executeBuild(flags, callbacks, cwd, signal),
+			);
+			printBuildSummary(result);
+		} catch (err) {
+			if (err instanceof AbortError) {
+				printBuildInterrupted(err.specName, err.completedIterations);
+			} else {
+				throw err;
+			}
+		}
+		return;
+	}
+
+	// TODO: interactive multiselect mode will be added in subsequent task
 	console.error(chalk.red("No --all or --spec flag provided. Use --all or --spec."));
 	process.exitCode = 1;
 }
