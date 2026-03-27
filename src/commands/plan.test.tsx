@@ -41,6 +41,14 @@ vi.mock("../ui/stream.js", () => ({
 	writeEvent: vi.fn(),
 }));
 
+vi.mock("../ui/tty.js", () => ({
+	isTTY: vi.fn(() => true),
+}));
+
+vi.mock("../ui/prompt.js", () => ({
+	selectSpecs: vi.fn(),
+}));
+
 vi.mock("../hooks/useCommandRunner.js", () => ({
 	useCommandRunner: vi.fn(),
 }));
@@ -87,6 +95,8 @@ import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/
 import { openTranscript } from "../lib/transcript.js";
 import { executePlan, executePlanAll, runPlan } from "./plan.js";
 import { writeEvent } from "../ui/stream.js";
+import { isTTY } from "../ui/tty.js";
+import { selectSpecs } from "../ui/prompt.js";
 import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
 import type { PlanFlags } from "./plan.js";
@@ -1000,6 +1010,8 @@ describe("Plan component", () => {
 });
 
 const mockWriteEvent = vi.mocked(writeEvent);
+const mockIsTTY = vi.mocked(isTTY);
+const mockSelectSpecs = vi.mocked(selectSpecs);
 
 describe("runPlan", () => {
 	beforeEach(() => {
@@ -1265,10 +1277,56 @@ describe("runPlan", () => {
 		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 
-	it("throws when no flags provided (interactive not yet implemented)", async () => {
-		await expect(runPlan({ verbose: false })).rejects.toThrow(
-			"No --all or --spec flag provided",
+	it("no flags + TTY prompts multiselect and plans selected specs", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("02-api", 2, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+		mockIsTTY.mockReturnValue(true);
+		mockSelectSpecs.mockResolvedValue([spec1]);
+
+		await runPlan({ verbose: false });
+
+		expect(mockSelectSpecs).toHaveBeenCalledTimes(1);
+		expect(mockRunLoop).toHaveBeenCalledTimes(1);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("All specs planned"),
 		);
+	});
+
+	it("no flags + non-TTY prints error suggesting --all or --spec", async () => {
+		mockIsTTY.mockReturnValue(false);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await runPlan({ verbose: false });
+
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("--all or --spec"),
+		);
+		expect(process.exitCode).toBe(1);
+		process.exitCode = undefined;
+	});
+
+	it("no flags + TTY + no specs found prints friendly message", async () => {
+		mockDiscoverSpecs.mockReturnValue([]);
+		mockIsTTY.mockReturnValue(true);
+
+		await runPlan({ verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No specs found.");
+		expect(mockSelectSpecs).not.toHaveBeenCalled();
+	});
+
+	it("no flags + TTY + empty selection prints message", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockIsTTY.mockReturnValue(true);
+		mockSelectSpecs.mockResolvedValue([]);
+
+		await runPlan({ verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No specs selected.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 });
 

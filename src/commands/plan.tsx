@@ -21,6 +21,8 @@ import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
 import { writeEvent } from "../ui/stream.js";
+import { isTTY } from "../ui/tty.js";
+import { selectSpecs } from "../ui/prompt.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
 import MultiSpecSelector from "../components/MultiSpecSelector.js";
@@ -426,8 +428,42 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		return;
 	}
 
-	// TODO: interactive mode will be added in subsequent task
-	throw new Error("No --all or --spec flag provided. Use --all or --spec to plan.");
+	// Interactive mode — TTY only
+	if (!isTTY()) {
+		console.error(chalk.red("No --all or --spec flag provided. Use --all or --spec in non-interactive mode."));
+		process.exitCode = 1;
+		return;
+	}
+
+	const discovered = discoverSpecs(cwd, config);
+	if (discovered.length === 0) {
+		console.log("No specs found.");
+		return;
+	}
+
+	const status = readStatus(cwd);
+	const selected = await selectSpecs(discovered, status.specs);
+
+	if (selected.length === 0) {
+		console.log("No specs selected.");
+		return;
+	}
+
+	// Cast SpecFile[] back to Spec[] (selectSpecs returns SpecFile but our discovered are Spec)
+	const selectedSpecs = selected as Spec[];
+
+	try {
+		const result = await withSigint((signal) =>
+			executePlanAll(flags, makePlanAllCallbacks(verbose), cwd, signal, selectedSpecs),
+		);
+		printAllSummary(result);
+	} catch (err) {
+		if (err instanceof AbortError) {
+			printInterrupted(err.specName, err.completedIterations);
+		} else {
+			throw err;
+		}
+	}
 }
 
 export default function Plan(flags: PlanFlags) {
