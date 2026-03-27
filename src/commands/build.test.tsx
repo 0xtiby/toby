@@ -1778,6 +1778,46 @@ describe("session lifecycle", () => {
 		expect(mockUpdateSessionState).toHaveBeenCalledWith(expect.anything(), "interrupted");
 	});
 
+	it("multi-spec max_iterations onOutput shows iteration limit message", async () => {
+		const specs = [
+			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
+			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
+		];
+		mockDiscoverSpecs.mockReturnValue(specs);
+
+		let specIndex = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			specIndex++;
+			if (specIndex === 2) {
+				const iterResult = {
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50,
+					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+				};
+				options.onIterationStart?.(1, null);
+				options.onIterationComplete?.(iterResult);
+				return { iterations: [iterResult], stopReason: "max_iterations" as const };
+			}
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationStart?.(1, null);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+		mockUpdateSpecStatus.mockImplementation((status) => status);
+
+		const onOutput = vi.fn();
+		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
+
+		expect(onOutput).toHaveBeenCalledWith(
+			expect.stringContaining("maximum iteration limit reached"),
+		);
+		expect(onOutput).toHaveBeenCalledWith(
+			expect.stringContaining('Spec "02-api" stopped'),
+		);
+	});
+
 	it("interruption output shows completed/remaining counts and toby resume hint", async () => {
 		const specs = [
 			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const },
@@ -1840,7 +1880,7 @@ describe("session lifecycle", () => {
 		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
 
 		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining('interrupted at 02-api'),
+			expect.stringContaining('Spec "02-api" stopped'),
 		);
 		expect(onOutput).toHaveBeenCalledWith(
 			expect.stringContaining("1/3"),
