@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
-import { detectAll } from "@0xtiby/spawner";
+import * as clack from "@clack/prompts";
+import { detectAll, listModels } from "@0xtiby/spawner";
 import { writeConfig } from "../lib/config.js";
 import {
 	getLocalDir,
@@ -10,7 +11,7 @@ import {
 	DEFAULT_SPECS_DIR,
 } from "../lib/paths.js";
 import { CLI_NAMES } from "../types.js";
-import type { TobyConfig, CliName } from "../types.js";
+import type { CliName, TobyConfig } from "../types.js";
 import { isTTY } from "../ui/tty.js";
 
 export interface InitFlags {
@@ -163,11 +164,150 @@ export async function runInit(flags: InitFlags): Promise<void> {
 		return;
 	}
 
-	// Interactive mode — implemented in next task
-	console.log("Interactive mode not yet implemented.");
-	console.log(
-		"Provide all flags: toby init --planCli claude --planModel default --buildCli claude --buildModel default --specsDir specs",
-	);
+	await runInteractive(flags);
+}
+
+async function loadModelOptions(
+	cli: CliName,
+): Promise<{ value: string; label: string }[]> {
+	try {
+		const models = await listModels({ cli });
+		return [
+			{ value: "default", label: "default" },
+			...models.map((m) => ({ value: m.id, label: `${m.name} (${m.id})` })),
+		];
+	} catch {
+		return [{ value: "default", label: "default" }];
+	}
+}
+
+function checkCancel(value: unknown): void {
+	if (clack.isCancel(value)) {
+		clack.cancel("Setup cancelled.");
+		process.exit(0);
+	}
+}
+
+async function runInteractive(flags: InitFlags): Promise<void> {
+	clack.intro("toby init");
+
+	// Check existing config
+	const configPath = path.join(getLocalDir(), CONFIG_FILE);
+	if (fs.existsSync(configPath) && !flags.force) {
+		const overwrite = await clack.confirm({
+			message: "Overwrite existing .toby/config.json?",
+		});
+		checkCancel(overwrite);
+		if (!overwrite) {
+			clack.cancel("Init cancelled.");
+			return;
+		}
+	}
+
+	// Detect CLIs
+	const s = clack.spinner();
+	s.start("Detecting installed CLIs...");
+	const detectResult = (await detectAll()) as DetectAllResult;
+	const installed = getInstalledClis(detectResult);
+	s.stop("CLI detection complete.");
+
+	if (installed.length === 0) {
+		clack.cancel(
+			"No AI CLIs found. Install one of:\n" +
+				"  claude   — npm install -g @anthropic-ai/claude-code\n" +
+				"  codex    — npm install -g @openai/codex\n" +
+				"  opencode — go install github.com/opencode-ai/opencode@latest",
+		);
+		process.exitCode = 1;
+		return;
+	}
+
+	const cliOptions = installed.map((name) => ({
+		value: name,
+		label: `${name} — ${detectResult[name]?.version ?? "unknown"}`,
+	}));
+
+	let planCli: CliName;
+	let buildCli: CliName;
+
+	if (installed.length === 1) {
+		planCli = installed[0]!;
+		buildCli = installed[0]!;
+		clack.note(
+			`Only ${planCli} is installed — auto-selected for plan and build.`,
+			"CLI Selection",
+		);
+	} else {
+		// Plan CLI
+		const planCliResult = await clack.select({
+			message: "Select CLI for planning",
+			options: cliOptions,
+		});
+		checkCancel(planCliResult);
+		planCli = planCliResult as CliName;
+
+		// Build CLI
+		const buildCliResult = await clack.select({
+			message: "Select CLI for building",
+			options: cliOptions,
+		});
+		checkCancel(buildCliResult);
+		buildCli = buildCliResult as CliName;
+	}
+
+	// Plan model
+	const planModelOptions = await loadModelOptions(planCli);
+	const planModel = await clack.select({
+		message: `Select model for planning (${planCli})`,
+		options: planModelOptions,
+	});
+	checkCancel(planModel);
+
+	// Build model
+	const buildModelOptions = await loadModelOptions(buildCli);
+	const buildModel = await clack.select({
+		message: `Select model for building (${buildCli})`,
+		options: buildModelOptions,
+	});
+	checkCancel(buildModel);
+
+	// Specs directory
+	const specsDir = await clack.text({
+		message: "Specs directory",
+		placeholder: DEFAULT_SPECS_DIR,
+		defaultValue: DEFAULT_SPECS_DIR,
+	});
+	checkCancel(specsDir);
+
+	// Verbose
+	const verbose = await clack.confirm({
+		message: "Enable verbose output?",
+		initialValue: false,
+	});
+	checkCancel(verbose);
+
+	const selections: InitSelections = {
+		planCli,
+		planModel: planModel as string,
+		buildCli,
+		buildModel: buildModel as string,
+		specsDir: (specsDir as string).trim() || DEFAULT_SPECS_DIR,
+		verbose: verbose as boolean,
+	};
+
+	try {
+		const result = createProject(selections);
+		clack.outro(
+			`${chalk.green("Project initialized!")}\n` +
+				chalk.dim(
+					`  Config: ${path.relative(process.cwd(), result.configPath)}\n`,
+				) +
+				chalk.dim(`  Specs:  ${selections.specsDir}/`),
+		);
+	} catch (err) {
+		clack.cancel(`Initialization failed: ${(err as Error).message}`);
+		process.exitCode = 1;
+	}
 }
 
 async function runNonInteractive(flags: InitFlags): Promise<void> {
