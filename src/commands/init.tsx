@@ -14,7 +14,7 @@ import {
 	STATUS_FILE,
 	DEFAULT_SPECS_DIR,
 } from "../lib/paths.js";
-import { CLI_NAMES } from "../types.js";
+import { CLI_NAMES, TRACKER_NAMES } from "../types.js";
 import type { TobyConfig, CliName } from "../types.js";
 
 export interface InitFlags {
@@ -45,6 +45,7 @@ type Phase =
 	| "plan_model"
 	| "build_cli"
 	| "build_model"
+	| "tracker"
 	| "specs_dir"
 	| "verbose"
 	| "done";
@@ -338,6 +339,11 @@ function InteractiveInit({ version }: { version: string }) {
 
 	function handleBuildModelSelect(item: { value: string }) {
 		setSelections((s) => ({ ...s, buildModel: item.value }));
+		setPhase("tracker");
+	}
+
+	function handleTrackerSelect(item: { value: string }) {
+		setSelections((s) => ({ ...s, tracker: item.value }));
 		setPhase("specs_dir");
 	}
 
@@ -436,6 +442,23 @@ function InteractiveInit({ version }: { version: string }) {
 					<SelectInput
 						items={buildModels.items}
 						onSelect={handleBuildModelSelect}
+					/>
+				</Box>
+			)}
+
+			{phase === "tracker" && (
+				<Box flexDirection="column">
+					<Text bold>Select task tracker:</Text>
+					<SelectInput
+						items={TRACKER_NAMES.map((name) => ({
+							label: `${name} — ${
+								name === "prd-json" ? "Local JSON files, no external tools required" :
+								name === "github" ? "GitHub Issues via gh CLI" :
+								"Local beads tracker via bd CLI"
+							}`,
+							value: name,
+						}))}
+						onSelect={handleTrackerSelect}
 					/>
 				</Box>
 			)}
