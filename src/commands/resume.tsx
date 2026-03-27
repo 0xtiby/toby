@@ -150,7 +150,11 @@ export default function Resume(props: ResumeFlags) {
 				))}
 				<Text color="green">{`✓ Resume complete (${result.built.length} spec(s) built)`}</Text>
 				{result.built.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
+					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
+						{r.stopReason === "max_iterations"
+							? `  ⚠️ ${r.specName}: max iteration limit reached (${r.totalIterations}/${r.maxIterations})`
+							: `  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}
+					</Text>
 				))}
 				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
 			</Box>
