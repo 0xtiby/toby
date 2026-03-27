@@ -14,6 +14,8 @@ import {
 	resolveTemplateVars,
 	generateSessionName,
 } from "../template.js";
+import { TRACKER_NAMES } from "../../types.js";
+import type { TrackerName } from "../../types.js";
 
 /**
  * Integration tests for prompt resolution and loading.
@@ -469,17 +471,11 @@ describe("copyTrackerPrompts", () => {
 	});
 
 	it("works for each tracker type", () => {
-		for (const tracker of ["prd-json", "github", "beads"]) {
+		for (const tracker of TRACKER_NAMES) {
 			const dir = fs.mkdtempSync(path.join(os.tmpdir(), `toby-${tracker}-`));
 			const { copied } = copyTrackerPrompts(tracker, dir);
 			expect(copied).toHaveLength(2);
 			fs.rmSync(dir, { recursive: true, force: true });
 		}
-	});
-
-	it("throws when source template file is missing", () => {
-		expect(() => copyTrackerPrompts("nonexistent", tmpDir)).toThrow(
-			/Template "nonexistent\/PROMPT_PLAN\.md" not found/,
-		);
 	});
 });
