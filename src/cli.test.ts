@@ -42,14 +42,46 @@ describe("cli", () => {
 		expect(stdout).toContain("Usage");
 	});
 
-	it("--help shows plan command", () => {
+	it("--help lists all 7 commands", () => {
 		const { stdout } = run("--help");
-		expect(stdout).toContain("plan");
+		for (const cmd of ["plan", "build", "resume", "init", "status", "config", "clean"]) {
+			expect(stdout).toContain(cmd);
+		}
 	});
 
 	it("plan --help shows --spec flag", () => {
 		const { stdout } = run("plan", "--help");
 		expect(stdout).toContain("--spec");
+	});
+
+	it("build --help shows --session flag", () => {
+		const { stdout } = run("build", "--help");
+		expect(stdout).toContain("--session");
+	});
+
+	it("init --help shows --plan-cli flag", () => {
+		const { stdout } = run("init", "--help");
+		expect(stdout).toContain("--plan-cli");
+	});
+
+	it("config --help shows subcommand argument", () => {
+		const { stdout } = run("config", "--help");
+		expect(stdout).toContain("subcommand");
+	});
+
+	it("clean --help shows --force flag", () => {
+		const { stdout } = run("clean", "--help");
+		expect(stdout).toContain("--force");
+	});
+
+	it("status --help shows --spec flag", () => {
+		const { stdout } = run("status", "--help");
+		expect(stdout).toContain("--spec");
+	});
+
+	it("resume --help shows --iterations flag", () => {
+		const { stdout } = run("resume", "--help");
+		expect(stdout).toContain("--iterations");
 	});
 
 	it("--version shows version", () => {
