@@ -15,22 +15,17 @@ import {
 
 /**
  * Integration tests for prompt resolution and loading.
- * Uses real temp directories to test the 3-level resolution chain.
+ * Uses real temp directories to test the 2-level resolution chain.
  */
 
 describe("resolvePromptPath (integration)", () => {
 	let tmpDir: string;
-	let origHome: string;
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-tpl-"));
-		origHome = process.env.HOME ?? os.homedir();
-		// Point HOME to tmpDir so global ~/.toby resolves inside our temp dir
-		process.env.HOME = tmpDir;
 	});
 
 	afterEach(() => {
-		process.env.HOME = origHome;
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		vi.restoreAllMocks();
 	});
@@ -47,22 +42,7 @@ describe("resolvePromptPath (integration)", () => {
 		expect(result).toBe(path.join(localDir, "PROMPT_PLAN.md"));
 	});
 
-	it("falls back to global ~/.toby when no local override", () => {
-		const globalDir = path.join(tmpDir, ".toby");
-		fs.mkdirSync(globalDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(globalDir, "PROMPT_PLAN.md"),
-			"global content",
-		);
-
-		const projectDir = path.join(tmpDir, "project");
-		fs.mkdirSync(projectDir, { recursive: true });
-
-		const result = resolvePromptPath("PROMPT_PLAN", projectDir);
-		expect(result).toBe(path.join(globalDir, "PROMPT_PLAN.md"));
-	});
-
-	it("falls back to shipped prompt when no overrides exist", () => {
+	it("falls back to shipped prompt when no local override exists", () => {
 		const projectDir = path.join(tmpDir, "project");
 		fs.mkdirSync(projectDir, { recursive: true });
 
@@ -70,27 +50,7 @@ describe("resolvePromptPath (integration)", () => {
 		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
 	});
 
-	it("prefers local over global", () => {
-		const projectDir = path.join(tmpDir, "project");
-		const localDir = path.join(projectDir, ".toby");
-		const globalDir = path.join(tmpDir, ".toby");
-
-		fs.mkdirSync(localDir, { recursive: true });
-		fs.mkdirSync(globalDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(localDir, "PROMPT_BUILD.md"),
-			"local override",
-		);
-		fs.writeFileSync(
-			path.join(globalDir, "PROMPT_BUILD.md"),
-			"global override",
-		);
-
-		const result = resolvePromptPath("PROMPT_BUILD", projectDir);
-		expect(result).toBe(path.join(localDir, "PROMPT_BUILD.md"));
-	});
-
-	it("throws with descriptive error listing all 3 paths checked", () => {
+	it("throws with descriptive error listing all 2 paths checked", () => {
 		vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
 		try {
@@ -104,11 +64,11 @@ describe("resolvePromptPath (integration)", () => {
 			expect(msg).toContain("PROMPT_PLAN.md");
 			// Should list shipped path
 			expect(msg).toContain("prompts");
-			// Should have 3 path entries (local, global, shipped)
+			// Should have 2 path entries (local, shipped)
 			const pathLines = msg
 				.split("\n")
 				.filter((l) => l.trim().startsWith("- "));
-			expect(pathLines).toHaveLength(3);
+			expect(pathLines).toHaveLength(2);
 		}
 	});
 

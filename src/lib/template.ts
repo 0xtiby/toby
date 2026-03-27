@@ -8,7 +8,7 @@ import type {
 	ComputeCliVarsOptions,
 } from "../types.js";
 
-import { getLocalDir, getGlobalDir } from "./paths.js";
+import { getLocalDir } from "./paths.js";
 
 /**
  * Returns the absolute path to a shipped prompt file inside the package's prompts/ directory.
@@ -32,10 +32,9 @@ export function getShippedPromptPath(name: PromptName): string {
 }
 
 /**
- * Resolve a prompt file path through the 3-level chain:
+ * Resolve a prompt file path through the 2-level chain:
  * 1. Local .toby/<name>.md (project override)
- * 2. Global ~/.toby/<name>.md (user override)
- * 3. Shipped prompts/<name>.md (package default)
+ * 2. Shipped prompts/<name>.md (package default)
  *
  * Returns the first existing path. Throws if not found at any level.
  */
@@ -43,7 +42,6 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 	const filename = `${name}.md`;
 	const candidates = [
 		path.join(getLocalDir(cwd), filename),
-		path.join(getGlobalDir(), filename),
 		getShippedPromptPath(name),
 	];
 
