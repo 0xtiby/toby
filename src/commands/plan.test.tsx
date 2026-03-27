@@ -921,6 +921,29 @@ describe("Plan component", () => {
 			expect(output).toContain("not found");
 		});
 	});
+
+	it("max_iterations shows warning instead of success", async () => {
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		const { lastFrame } = render(
+			<Plan spec="auth" all={false} verbose={false} />,
+		);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("⚠️");
+			expect(output).toContain("maximum plan iteration limit reached");
+			expect(output).toContain("1/2");
+			expect(output).not.toContain("✓");
+		});
+	});
 });
 
 describe("integration: full plan flow with mocked spawner", () => {
@@ -982,8 +1005,11 @@ describe("integration: full plan flow with mocked spawner", () => {
 		expect(mockUpdateSpecStatus).toHaveBeenCalledWith(expect.anything(), "01-auth", "planned");
 		expect(mockWriteStatus).toHaveBeenCalledTimes(3); // 2 iterations + 1 final
 
-		// Verify result — simplified PlanResult
+		// Verify result — PlanResult with iteration metadata
 		expect(result.specName).toBe("01-auth");
+		expect(result.totalIterations).toBe(2);
+		expect(result.maxIterations).toBe(2);
+		expect(result.stopReason).toBe("max_iterations");
 		expect(result).not.toHaveProperty("taskCount");
 		expect(result).not.toHaveProperty("prdPath");
 

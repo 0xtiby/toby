@@ -14,7 +14,7 @@ import {
 	updateSpecStatus,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { Iteration } from "../types.js";
+import type { Iteration, StopReason } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -34,6 +34,9 @@ export interface PlanCallbacks {
 
 export interface PlanResult {
 	specName: string;
+	totalIterations: number;
+	maxIterations: number;
+	stopReason: StopReason;
 }
 
 /**
@@ -148,7 +151,12 @@ export async function executePlan(
 			status = updateSpecStatus(status, found.name, "planned");
 			writeStatus(status, cwd);
 
-			return { specName: found.name };
+			return {
+			specName: found.name,
+			totalIterations: loopResult.iterations.length,
+			maxIterations: commandConfig.iterations,
+			stopReason: loopResult.stopReason,
+		};
 		},
 	);
 }
@@ -309,6 +317,15 @@ export default function Plan(flags: PlanFlags) {
 	}
 
 	if (runner.phase === "done" && result) {
+		if (result.stopReason === "max_iterations") {
+			return (
+				<Box flexDirection="column">
+					<Text color="yellow">
+						{`⚠️ Spec "${result.specName}": maximum plan iteration limit reached (${result.totalIterations}/${result.maxIterations} iterations).`}
+					</Text>
+				</Box>
+			);
+		}
 		return (
 			<Box flexDirection="column">
 				<Text color="green">{`✓ Plan complete for ${result.specName}`}</Text>
