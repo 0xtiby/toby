@@ -306,11 +306,18 @@ export default function Plan(flags: PlanFlags) {
 	}
 
 	if (runner.phase === "done" && allResult) {
+		const hasWarnings = allResult.planned.some((r) => r.stopReason === "max_iterations");
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ All specs planned (${allResult.planned.length} planned)`}</Text>
+				<Text color={hasWarnings ? "yellow" : "green"}>
+					{`${hasWarnings ? "⚠️" : "✓"} All specs planned (${allResult.planned.length} planned)`}
+				</Text>
 				{allResult.planned.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}`}</Text>
+					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
+						{r.stopReason === "max_iterations"
+							? `  ⚠️ ${r.specName}: max iteration limit reached (${r.totalIterations}/${r.maxIterations})`
+							: `  ${r.specName}`}
+					</Text>
 				))}
 			</Box>
 		);

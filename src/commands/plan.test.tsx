@@ -568,6 +568,40 @@ describe("executePlanAll", () => {
 		expect(onSpecStart).toHaveBeenCalledWith("02-api", 1, 2);
 	});
 
+	it("returns stopReason per spec including max_iterations", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("02-api", 2, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		let callCount = 0;
+		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+			callCount++;
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000,
+				sentinelDetected: callCount === 1,
+			};
+			options.onIterationComplete?.(iterResult);
+			return {
+				iterations: [iterResult],
+				stopReason: callCount === 1 ? "sentinel" as const : "max_iterations" as const,
+			};
+		});
+
+		const result = await executePlanAll(
+			{ all: true, verbose: false },
+			{},
+			"/project",
+		);
+
+		expect(result.planned).toHaveLength(2);
+		expect(result.planned[0].stopReason).toBe("sentinel");
+		expect(result.planned[1].stopReason).toBe("max_iterations");
+		expect(result.planned[1].totalIterations).toBe(1);
+		expect(result.planned[1].maxIterations).toBe(2);
+	});
+
 	it("only plans pending specs", async () => {
 		const spec1 = makeSpec("01-auth", 1, "planned");
 		const spec2 = makeSpec("02-api", 2, "pending");
