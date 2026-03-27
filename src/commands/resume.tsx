@@ -6,6 +6,7 @@ import { readStatus, updateSessionState, hasResumableSession, writeStatus } from
 import { executeBuildAll } from "./build.js";
 import type { BuildFlags } from "./build.js";
 import type { BuildAllCallbacks, BuildAllResult } from "./build.js";
+import { formatMaxIterationsWarning } from "../lib/format.js";
 
 export interface ResumeFlags {
 	iterations?: number;
@@ -152,7 +153,7 @@ export default function Resume(props: ResumeFlags) {
 				{result.built.map((r) => (
 					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
 						{r.stopReason === "max_iterations"
-							? `  ⚠️ ${r.specName}: max iteration limit reached (${r.totalIterations}/${r.maxIterations})`
+							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}, ${r.totalTokens} tokens`
 							: `  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}
 					</Text>
 				))}

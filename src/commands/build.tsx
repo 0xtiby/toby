@@ -18,6 +18,7 @@ import {
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
 import type { CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
+import { formatMaxIterationsWarning } from "../lib/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -436,10 +437,10 @@ export async function executeBuildAll(
 						const remainingSpecs = allSpecNames.filter((name) => !doneSpecs.includes(name));
 
 						const reason = result.stopReason === "max_iterations"
-							? `maximum iteration limit reached (${result.totalIterations} iterations)`
+							? formatMaxIterationsWarning(result.totalIterations, result.maxIterations)
 							: result.error ?? "incomplete";
 						callbacks.onOutput?.(
-							`⚠️ Spec "${spec.name}" stopped: ${reason}.`,
+							`Session "${sessionObj.name}" interrupted at ${spec.name}: ${reason}.`,
 						);
 						callbacks.onOutput?.(
 							`Completed: ${doneSpecs.join(", ") || "none"} (${doneSpecs.length}/${allSpecNames.length})`,
@@ -545,11 +546,18 @@ export default function Build(flags: BuildFlags) {
 	if (runner.phase === "done" && allResult) {
 		const totalIter = allResult.built.reduce((s, r) => s + r.totalIterations, 0);
 		const totalTok = allResult.built.reduce((s, r) => s + r.totalTokens, 0);
+		const hasWarnings = allResult.built.some((r) => r.stopReason === "max_iterations");
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ All specs built (${allResult.built.length} built)`}</Text>
+				<Text color={hasWarnings ? "yellow" : "green"}>
+					{`${hasWarnings ? "⚠️" : "✓"} All specs built (${allResult.built.length} built)`}
+				</Text>
 				{allResult.built.map((r) => (
-					<Text key={r.specName}>{`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}</Text>
+					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
+						{r.stopReason === "max_iterations"
+							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`
+							: `  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}
+					</Text>
 				))}
 				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
 			</Box>
@@ -568,7 +576,7 @@ export default function Build(flags: BuildFlags) {
 			return (
 				<Box flexDirection="column">
 					<Text color="yellow">
-						{`⚠️ Spec "${result.specName}" stopped: maximum iteration limit reached (${result.totalIterations}/${result.maxIterations} iterations). Last build state: failed.`}
+						{`⚠️ Spec "${result.specName}" stopped: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}.`}
 					</Text>
 				</Box>
 			);

@@ -358,7 +358,7 @@ describe("Resume component", () => {
 		await vi.waitFor(() => {
 			const output = lastFrame()!;
 			expect(output).toContain("⚠️");
-			expect(output).toContain("max iteration limit reached");
+			expect(output).toContain("maximum iteration limit reached");
 			expect(output).toContain("10/10");
 			expect(output).toContain("02-api: 3 iterations");
 			expect(output).toContain("[done]");

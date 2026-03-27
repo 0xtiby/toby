@@ -1814,7 +1814,7 @@ describe("session lifecycle", () => {
 			expect.stringContaining("maximum iteration limit reached"),
 		);
 		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining('Spec "02-api" stopped'),
+			expect.stringContaining("interrupted at 02-api"),
 		);
 	});
 
@@ -1880,7 +1880,7 @@ describe("session lifecycle", () => {
 		await executeBuildAll({ all: true, verbose: false }, { onOutput }, "/p");
 
 		expect(onOutput).toHaveBeenCalledWith(
-			expect.stringContaining('Spec "02-api" stopped'),
+			expect.stringContaining("interrupted at 02-api"),
 		);
 		expect(onOutput).toHaveBeenCalledWith(
 			expect.stringContaining("1/3"),
