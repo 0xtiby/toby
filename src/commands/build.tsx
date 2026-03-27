@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Text, Box } from "ink";
+import chalk from "chalk";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec, sortSpecs } from "../lib/specs.js";
@@ -17,15 +16,12 @@ import {
 	updateSessionState,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
+import type { CommandFlags, CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
-import { useCommandRunner } from "../hooks/useCommandRunner.js";
-import type { CommandFlags } from "../hooks/useCommandRunner.js";
-import MultiSpecSelector from "../components/MultiSpecSelector.js";
-import StreamOutput from "../components/StreamOutput.js";
+import { writeEvent } from "../ui/stream.js";
 
 export type BuildFlags = CommandFlags;
 
@@ -473,132 +469,133 @@ export async function executeBuildAll(
 	);
 }
 
-export default function Build(flags: BuildFlags) {
-	const runner = useCommandRunner({
-		flags,
-		runPhase: "building",
-		filterSpecs: (specs) => {
-			const buildable = [...filterByStatus(specs, "planned"), ...filterByStatus(specs, "building")];
-			return buildable;
-		},
-		emptyMessage: "No planned specs found. Run 'toby plan' first.",
-	});
+// ── Imperative CLI helpers ────────────────────────────────────────
 
-	const [result, setResult] = useState<BuildResult | null>(null);
-	const [allResult, setAllResult] = useState<BuildAllResult | null>(null);
+export interface RunBuildOptions {
+	spec?: string;
+	all?: boolean;
+	verbose?: boolean;
+	transcript?: boolean;
+	iterations?: number;
+	cli?: string;
+	session?: string;
+}
 
-	const allCallbacks: BuildAllCallbacks = useMemo(() => ({
-		onSpecStart: runner.onSpecStartCallback,
-		onSpecComplete: () => {},
-		onPhase: runner.onPhaseCallback,
-		onIteration: runner.onIterationCallback,
-		onEvent: runner.addEvent,
-	}), [runner.onSpecStartCallback, runner.onPhaseCallback, runner.onIterationCallback, runner.addEvent]);
-
-	// Run multi-spec mode (specs resolved by useCommandRunner)
-	useEffect(() => {
-		if (runner.phase !== "multi" || runner.selectedSpecs.length === 0) return;
-		executeBuildAll(flags, allCallbacks, undefined, runner.abortSignal, runner.selectedSpecs)
-			.then((r) => { setAllResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.phase, runner.selectedSpecs]);
-
-	// Run --all mode
-	useEffect(() => {
-		if (runner.phase !== "all") return;
-		executeBuildAll(flags, allCallbacks, undefined, runner.abortSignal)
-			.then((r) => { setAllResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.phase]);
-
-	// Run single mode
-	useEffect(() => {
-		if (runner.phase !== "init") return;
-		executeBuild(runner.activeFlags, {
-			onPhase: runner.onPhaseCallback,
-			onIteration: runner.onIterationCallback,
-			onEvent: runner.addEvent,
-		}, undefined, runner.abortSignal)
-			.then((r) => { runner.setSpecName(r.specName); setResult(r); runner.handleDone(); })
-			.catch(runner.handleError);
-	}, [runner.activeFlags, runner.phase]);
-
-	if (runner.phase === "interrupted" && runner.interruptInfo) {
-		return (
-			<Box flexDirection="column">
-				<Text color="yellow">{`⚠ Building interrupted for ${runner.interruptInfo.specName}`}</Text>
-				<Text dimColor>{`  ${runner.interruptInfo.iterations} iteration(s) completed, partial status saved`}</Text>
-			</Box>
-		);
+function printBuildSummary(result: BuildResult): void {
+	if (result.error) {
+		console.log(chalk.red(`✗ ${result.error}`));
+		return;
 	}
-
-	if (runner.phase === "error") {
-		return <Text color="red">{runner.errorMessage}</Text>;
+	if (result.stopReason === "max_iterations") {
+		console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+	} else {
+		console.log(chalk.green(`✔ Build complete for ${result.specName}`));
+		console.log(`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`);
 	}
+}
 
-	if (runner.phase === "selecting") {
-		if (runner.specs.length === 0) {
-			return <Text dimColor>Loading specs...</Text>;
-		}
-		return <MultiSpecSelector specs={runner.specs} onConfirm={runner.handleMultiSpecConfirm} title="Select specs to build:" />;
-	}
-
-	if (runner.phase === "done" && allResult) {
-		const totalIter = allResult.built.reduce((s, r) => s + r.totalIterations, 0);
-		const totalTok = allResult.built.reduce((s, r) => s + r.totalTokens, 0);
-		const hasWarnings = allResult.built.some((r) => r.stopReason === "max_iterations");
-		return (
-			<Box flexDirection="column">
-				<Text color={hasWarnings ? "yellow" : "green"}>
-					{`${hasWarnings ? "⚠️" : "✓"} All specs built (${allResult.built.length} built)`}
-				</Text>
-				{allResult.built.map((r) => (
-					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
-						{r.stopReason === "max_iterations"
-							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`
-							: `  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}
-					</Text>
-				))}
-				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
-			</Box>
-		);
-	}
-
-	if (runner.phase === "done" && result) {
-		if (result.error) {
-			return (
-				<Box flexDirection="column">
-					<Text color="red">{`✗ ${result.error}`}</Text>
-				</Box>
-			);
-		}
-		if (result.stopReason === "max_iterations") {
-			return (
-				<Box flexDirection="column">
-					<Text color="yellow">
-						{`⚠️ Spec "${result.specName}" stopped: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}.`}
-					</Text>
-				</Box>
-			);
-		}
-		return (
-			<Box flexDirection="column">
-				<Text color="green">{`✓ Build complete for ${result.specName}`}</Text>
-				<Text>{`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
-			</Box>
-		);
-	}
-
-	return (
-		<Box flexDirection="column">
-			{runner.allProgress.total > 0 && (
-				<Text dimColor>{`[${runner.allProgress.current}/${runner.allProgress.total}]`}</Text>
-			)}
-			<Text dimColor>
-				{`Building: ${runner.specName || runner.activeFlags.spec} (iteration ${Math.min(runner.currentIteration, runner.maxIterations)}/${runner.maxIterations})`}
-			</Text>
-			<Text dimColor>{"─".repeat(40)}</Text>
-			<StreamOutput events={runner.events} verbose={runner.resolvedVerbose} />
-		</Box>
+function printBuildAllSummary(result: BuildAllResult): void {
+	const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
+	const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
+	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
+	console.log(
+		hasWarnings
+			? chalk.yellow(`⚠️ All specs built (${result.built.length} built)`)
+			: chalk.green(`✔ All specs built (${result.built.length} built)`),
 	);
+	for (const r of result.built) {
+		if (r.stopReason === "max_iterations") {
+			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`));
+		} else {
+			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`);
+		}
+	}
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens`));
+}
+
+function printBuildInterrupted(specName: string, completedIterations: number): void {
+	console.log(chalk.yellow(`⚠ Building interrupted for ${specName}`));
+	console.log(chalk.dim(`  ${completedIterations} iteration(s) completed, partial status saved`));
+}
+
+function makeBuildAllCallbacks(verbose: boolean): BuildAllCallbacks {
+	return {
+		onEvent: (event) => writeEvent(event, verbose),
+		onSpecStart: (name, i, total) => {
+			console.log(chalk.dim(`◇ Building ${name} (${i + 1}/${total})`));
+		},
+		onSpecComplete: (result) => {
+			if (result.stopReason === "max_iterations") {
+				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+			} else {
+				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens)${result.specDone ? " — sentinel" : ""}`));
+			}
+		},
+		onOutput: (msg) => console.log(chalk.dim(msg)),
+	};
+}
+
+async function withSigint<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+	const abortController = new AbortController();
+	const onSigint = () => abortController.abort();
+	process.on("SIGINT", onSigint);
+	try {
+		return await fn(abortController.signal);
+	} finally {
+		process.off("SIGINT", onSigint);
+	}
+}
+
+/**
+ * Imperative CLI wrapper for build command.
+ */
+export async function runBuild(opts: RunBuildOptions): Promise<void> {
+	const cwd = process.cwd();
+	const config = loadConfig(cwd);
+	const verbose = opts.verbose ?? config.verbose ?? false;
+
+	const flags: BuildFlags = {
+		spec: opts.spec,
+		all: opts.all ?? false,
+		verbose,
+		transcript: opts.transcript,
+		iterations: opts.iterations,
+		cli: opts.cli,
+		session: opts.session,
+	};
+
+	if (flags.all) {
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+
+		const buildable = sortSpecs([
+			...filterByStatus(discovered, "planned"),
+			...filterByStatus(discovered, "building"),
+		]);
+		if (buildable.length === 0) {
+			console.log("No planned specs found. Run 'toby plan' first.");
+			return;
+		}
+
+		try {
+			const result = await withSigint((signal) =>
+				executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, buildable),
+			);
+			printBuildAllSummary(result);
+		} catch (err) {
+			if (err instanceof AbortError) {
+				printBuildInterrupted(err.specName, err.completedIterations);
+			} else {
+				throw err;
+			}
+		}
+		return;
+	}
+
+	// TODO: --spec and interactive modes will be added in subsequent tasks
+	console.error(chalk.red("No --all or --spec flag provided. Use --all or --spec."));
+	process.exitCode = 1;
 }
