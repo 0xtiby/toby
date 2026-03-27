@@ -9,7 +9,6 @@ import Config, { ConfigEditor, ConfigSetBatch } from "./commands/config.js";
 import Clean from "./commands/clean.js";
 import Resume from "./commands/resume.js";
 import Welcome from "./components/Welcome.js";
-import { ensureGlobalDir } from "./lib/paths.js";
 import {
 	formatGlobalHelp,
 	formatCommandHelp,
@@ -33,8 +32,6 @@ const cli = meow("", {
 	autoHelp: false,
 	flags: MEOW_FLAGS,
 });
-
-ensureGlobalDir();
 
 // Resolve --specs as alias for --spec (--specs takes precedence)
 const resolvedSpec = cli.flags.specs ?? cli.flags.spec;
