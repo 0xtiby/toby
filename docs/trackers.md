@@ -191,9 +191,13 @@ cp templates/github/PROMPT_BUILD.md .toby/PROMPT_BUILD.md
 
 Existing task state from the old tracker won't carry over — you'll need to re-plan any in-progress specs.
 
-## Writing a custom tracker
+## Using your own tracker
 
-The template system is designed to be extended. To add your own tracker:
+You don't need a template to use a custom tracker. Just write your own `PROMPT_PLAN.md` and `PROMPT_BUILD.md` in `.toby/` — toby's [prompt override chain](prompts.md#override-chain) will pick them up automatically.
+
+## Contributing a tracker template
+
+To contribute a new tracker to the toby project:
 
 1. Create a directory under `templates/` with your tracker name
 2. Add `PROMPT_PLAN.md`, `PROMPT_BUILD.md`, and `SETUP.md`
