@@ -435,8 +435,11 @@ export async function executeBuildAll(
 						});
 						const remainingSpecs = allSpecNames.filter((name) => !doneSpecs.includes(name));
 
+						const reason = result.stopReason === "max_iterations"
+							? `maximum iteration limit reached (${result.totalIterations} iterations)`
+							: result.error ?? "incomplete";
 						callbacks.onOutput?.(
-							`Session "${sessionObj.name}" interrupted at ${spec.name} (${result.error ? "error" : "incomplete"}).`,
+							`⚠️ Spec "${spec.name}" stopped: ${reason}.`,
 						);
 						callbacks.onOutput?.(
 							`Completed: ${doneSpecs.join(", ") || "none"} (${doneSpecs.length}/${allSpecNames.length})`,
