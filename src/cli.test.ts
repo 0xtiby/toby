@@ -94,4 +94,17 @@ describe("cli", () => {
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain("unknown command");
 	});
+
+	it("--help includes help command guidance", () => {
+		const { stdout } = run("--help");
+		expect(stdout).toContain("help [command]");
+	});
+
+	it("unknown command with typo suggests correct command", () => {
+		const { stderr } = run("plna");
+		expect(stderr).toContain("Did you mean plan");
+	});
+
+	// plan --spec=nonexistent test deferred to spec 53 (plan-command-migration)
+	// because plan.tsx still imports deleted React hooks, causing module load errors
 });
