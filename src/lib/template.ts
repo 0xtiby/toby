@@ -11,30 +11,30 @@ import type {
 import { getLocalDir } from "./paths.js";
 
 /**
- * Returns the absolute path to a shipped prompt file inside the package's prompts/ directory.
- * Walks up from the current file's location until it finds a directory containing prompts/.
+ * Returns the absolute path to a shipped prompt file inside templates/prd-json/.
+ * Walks up from the current file's location until it finds a directory containing templates/.
  * This works both in development (src/lib/) and after bundling (dist/).
  */
 export function getShippedPromptPath(name: PromptName): string {
 	const thisFile = fileURLToPath(import.meta.url);
 	let dir = path.dirname(thisFile);
-	// Walk up to find the package root (directory containing prompts/)
+	// Walk up to find the package root (directory containing templates/)
 	while (dir !== path.dirname(dir)) {
-		const candidate = path.join(dir, "prompts");
+		const candidate = path.join(dir, "templates", "prd-json");
 		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
 			return path.join(candidate, `${name}.md`);
 		}
 		dir = path.dirname(dir);
 	}
-	// Fallback: assume prompts/ is sibling to the directory containing this file
-	const fallback = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
+	// Fallback: assume templates/prd-json/ is sibling to the directory containing this file
+	const fallback = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "templates", "prd-json");
 	return path.join(fallback, `${name}.md`);
 }
 
 /**
  * Resolve a prompt file path through the 2-level chain:
  * 1. Local .toby/<name>.md (project override)
- * 2. Shipped prompts/<name>.md (package default)
+ * 2. Shipped templates/prd-json/<name>.md (package default)
  *
  * Returns the first existing path. Throws if not found at any level.
  */

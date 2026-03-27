@@ -47,7 +47,7 @@ describe("resolvePromptPath (integration)", () => {
 		fs.mkdirSync(projectDir, { recursive: true });
 
 		const result = resolvePromptPath("PROMPT_PLAN", projectDir);
-		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
+		expect(result).toMatch(/templates[/\\]prd-json[/\\]PROMPT_PLAN\.md$/);
 	});
 
 	it("throws with descriptive error listing all 2 paths checked", () => {
@@ -63,7 +63,8 @@ describe("resolvePromptPath (integration)", () => {
 			expect(msg).toContain(".toby");
 			expect(msg).toContain("PROMPT_PLAN.md");
 			// Should list shipped path
-			expect(msg).toContain("prompts");
+			expect(msg).toContain("templates");
+			expect(msg).toContain("prd-json");
 			// Should have 2 path entries (local, shipped)
 			const pathLines = msg
 				.split("\n")
@@ -75,10 +76,10 @@ describe("resolvePromptPath (integration)", () => {
 });
 
 describe("getShippedPromptPath", () => {
-	it("returns absolute path ending with prompts/<name>.md", () => {
+	it("returns absolute path ending with templates/prd-json/<name>.md", () => {
 		const result = getShippedPromptPath("PROMPT_PLAN");
 		expect(path.isAbsolute(result)).toBe(true);
-		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
+		expect(result).toMatch(/templates[/\\]prd-json[/\\]PROMPT_PLAN\.md$/);
 	});
 
 	it("returns correct path for each prompt name", () => {
