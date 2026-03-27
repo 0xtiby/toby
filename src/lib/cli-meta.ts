@@ -23,6 +23,7 @@ export const MEOW_FLAGS = {
 	buildCli: { type: "string" },
 	buildModel: { type: "string" },
 	specsDir: { type: "string" },
+	tracker: { type: "string" },
 	session: { type: "string" },
 	force: { type: "boolean", default: false },
 } as const;
