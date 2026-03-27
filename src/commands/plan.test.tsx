@@ -11,6 +11,7 @@ vi.mock("../lib/specs.js", () => ({
 	discoverSpecs: vi.fn(),
 	filterByStatus: vi.fn(),
 	findSpec: vi.fn(),
+	findSpecs: vi.fn(),
 }));
 
 vi.mock("../lib/template.js", async (importOriginal) => {
@@ -78,7 +79,7 @@ vi.mock("../lib/transcript.js", () => {
 });
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, findSpecs } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
@@ -102,6 +103,7 @@ const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
 const mockDiscoverSpecs = vi.mocked(discoverSpecs);
 const mockFilterByStatus = vi.mocked(filterByStatus);
 const mockFindSpec = vi.mocked(findSpec);
+const mockFindSpecs = vi.mocked(findSpecs);
 const mockLoadPrompt = vi.mocked(loadPrompt);
 const mockRunLoop = vi.mocked(runLoop);
 const mockReadStatus = vi.mocked(readStatus);
@@ -1113,9 +1115,76 @@ describe("runPlan", () => {
 		);
 	});
 
-	it("throws for non --all mode (not yet implemented)", async () => {
+	it("--spec single name plans via executePlan", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		mockRunLoop.mockImplementation(async (options) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "sentinel" as const };
+		});
+
+		await runPlan({ spec: "01-auth", verbose: false });
+
+		expect(mockRunLoop).toHaveBeenCalledTimes(1);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Plan complete for 01-auth"),
+		);
+	});
+
+	it("--spec comma-separated plans multiple via executePlanAll", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("03-api", 3, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+		mockFindSpecs.mockReturnValue([spec1, spec2]);
+
+		await runPlan({ spec: "01-auth,03-api", verbose: false });
+
+		expect(mockRunLoop).toHaveBeenCalledTimes(2);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("All specs planned"),
+		);
+	});
+
+	it("--spec unknown name prints error with available specs", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(undefined);
+
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await runPlan({ spec: "nonexistent", verbose: false });
+
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("not found"),
+		);
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("01-auth"),
+		);
+		expect(process.exitCode).toBe(1);
+
+		// Clean up
+		process.exitCode = undefined;
+	});
+
+	it("--spec with no specs found prints friendly message", async () => {
+		mockDiscoverSpecs.mockReturnValue([]);
+
+		await runPlan({ spec: "01-auth", verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No specs found.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("throws when no flags provided (interactive not yet implemented)", async () => {
 		await expect(runPlan({ verbose: false })).rejects.toThrow(
-			"runPlan() currently only supports --all mode",
+			"No --all or --spec flag provided",
 		);
 	});
 });

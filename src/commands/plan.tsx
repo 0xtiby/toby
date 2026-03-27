@@ -3,7 +3,7 @@ import { Text, Box } from "ink";
 import chalk from "chalk";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, findSpecs } from "../lib/specs.js";
 import type { Spec } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
@@ -327,8 +327,116 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		return;
 	}
 
-	// TODO: --spec and interactive modes will be added in subsequent tasks
-	throw new Error("runPlan() currently only supports --all mode. Use --all flag.");
+	if (flags.spec) {
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+
+		// Check if comma-separated (multiple specs)
+		const isMulti = flags.spec.includes(",");
+
+		if (isMulti) {
+			let resolved: ReturnType<typeof findSpecs>;
+			try {
+				resolved = findSpecs(discovered, flags.spec);
+			} catch (err) {
+				const available = discovered.map((s) => s.name).join(", ");
+				console.error(chalk.red(`${(err as Error).message}. Available: ${available}`));
+				process.exitCode = 1;
+				return;
+			}
+
+			const abortController = new AbortController();
+			const onSigint = () => abortController.abort();
+			process.on("SIGINT", onSigint);
+
+			const callbacks: PlanAllCallbacks = {
+				onEvent: (event) => writeEvent(event, verbose),
+				onSpecStart: (name, i, total) => {
+					console.log(chalk.dim(`◇ Planning ${name} (${i + 1}/${total})`));
+				},
+				onSpecComplete: (result) => {
+					if (result.stopReason === "max_iterations") {
+						console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+					} else {
+						console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
+					}
+				},
+				onRefinement: (specName) => {
+					console.log(chalk.yellow(`Existing plan found for ${specName}`));
+					console.log(chalk.yellow("Running in refinement mode..."));
+				},
+			};
+
+			try {
+				const result = await executePlanAll(flags, callbacks, cwd, abortController.signal, resolved);
+				const hasWarnings = result.planned.some((r) => r.stopReason === "max_iterations");
+				console.log(
+					hasWarnings
+						? chalk.yellow(`⚠️ All specs planned (${result.planned.length} planned)`)
+						: chalk.green(`✔ All specs planned (${result.planned.length} planned)`),
+				);
+			} catch (err) {
+				if (err instanceof AbortError) {
+					console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
+					console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+				} else {
+					throw err;
+				}
+			} finally {
+				process.off("SIGINT", onSigint);
+			}
+			return;
+		}
+
+		// Single spec
+		const found = findSpec(discovered, flags.spec);
+		if (!found) {
+			const available = discovered.map((s) => s.name).join(", ");
+			console.error(chalk.red(`Spec '${flags.spec}' not found. Available: ${available}`));
+			process.exitCode = 1;
+			return;
+		}
+
+		const abortController = new AbortController();
+		const onSigint = () => abortController.abort();
+		process.on("SIGINT", onSigint);
+
+		const callbacks: PlanCallbacks = {
+			onEvent: (event) => writeEvent(event, verbose),
+			onIteration: (current, max) => {
+				console.log(chalk.dim(`  Iteration ${current}/${max}`));
+			},
+			onRefinement: (specName) => {
+				console.log(chalk.yellow(`Existing plan found for ${specName}`));
+				console.log(chalk.yellow("Running in refinement mode..."));
+			},
+		};
+
+		try {
+			const result = await executePlan(flags, callbacks, cwd, abortController.signal);
+			if (result.stopReason === "max_iterations") {
+				console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+			} else {
+				console.log(chalk.green(`✔ Plan complete for ${result.specName}`));
+			}
+		} catch (err) {
+			if (err instanceof AbortError) {
+				console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
+				console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+			} else {
+				throw err;
+			}
+		} finally {
+			process.off("SIGINT", onSigint);
+		}
+		return;
+	}
+
+	// TODO: interactive mode will be added in subsequent task
+	throw new Error("No --all or --spec flag provided. Use --all or --spec to plan.");
 }
 
 export default function Plan(flags: PlanFlags) {
