@@ -32,6 +32,49 @@ export function getShippedPromptPath(name: PromptName): string {
 }
 
 /**
+ * Returns the absolute path to the package's templates/ directory.
+ * Walks up from the current file's location until it finds templates/.
+ */
+export function getTemplatesDir(): string {
+	const thisFile = fileURLToPath(import.meta.url);
+	let dir = path.dirname(thisFile);
+	while (dir !== path.dirname(dir)) {
+		const candidate = path.join(dir, "templates");
+		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+			return candidate;
+		}
+		dir = path.dirname(dir);
+	}
+	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "templates");
+}
+
+/**
+ * Copy tracker prompt files (PROMPT_PLAN.md, PROMPT_BUILD.md) from
+ * templates/<tracker>/ to localDir. Skips files that already exist
+ * in the destination to preserve user customizations.
+ */
+export function copyTrackerPrompts(
+	tracker: string,
+	localDir: string,
+): { copied: string[] } {
+	const copied: string[] = [];
+	const files = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"];
+	for (const file of files) {
+		const dest = path.join(localDir, file);
+		if (fs.existsSync(dest)) continue;
+		const src = path.join(getTemplatesDir(), tracker, file);
+		if (!fs.existsSync(src)) {
+			throw new Error(
+				`Template "${tracker}/${file}" not found. Package may be corrupted.`,
+			);
+		}
+		fs.copyFileSync(src, dest);
+		copied.push(file);
+	}
+	return { copied };
+}
+
+/**
  * Resolve a prompt file path through the 2-level chain:
  * 1. Local .toby/<name>.md (project override)
  * 2. Shipped templates/prd-json/<name>.md (package default)
