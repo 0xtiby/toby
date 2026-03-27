@@ -17,7 +17,7 @@ import {
 	updateSessionState,
 } from "../lib/status.js";
 import { ensureLocalDir } from "../lib/paths.js";
-import type { CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry } from "../types.js";
+import type { CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -38,8 +38,10 @@ export interface BuildCallbacks {
 export interface BuildResult {
 	specName: string;
 	totalIterations: number;
+	maxIterations: number;
 	totalTokens: number;
 	specDone: boolean;
+	stopReason: StopReason;
 	error?: string;
 }
 
@@ -189,14 +191,14 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 		writeStatus(status, cwd);
 		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
 		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
-		return { result: { specName: spec.name, totalIterations, totalTokens, specDone: false, error: errorMsg }, status };
+		return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone: false, stopReason: loopResult.stopReason, error: errorMsg }, status };
 	}
 
 	const specDone = loopResult.stopReason === "sentinel";
 	status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
 	writeStatus(status, cwd);
 
-	return { result: { specName: spec.name, totalIterations, totalTokens, specDone }, status };
+	return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone, stopReason: loopResult.stopReason }, status };
 }
 
 /**
@@ -559,9 +561,18 @@ export default function Build(flags: BuildFlags) {
 				</Box>
 			);
 		}
+		if (result.stopReason === "max_iterations") {
+			return (
+				<Box flexDirection="column">
+					<Text color="yellow">
+						{`⚠️ Spec "${result.specName}" stopped: maximum iteration limit reached (${result.totalIterations}/${result.maxIterations} iterations). Last build state: failed.`}
+					</Text>
+				</Box>
+			);
+		}
 		return (
 			<Box flexDirection="column">
-				<Text color="green">{`✓ Build ${result.specDone ? "complete" : "paused"} for ${result.specName}`}</Text>
+				<Text color="green">{`✓ Build complete for ${result.specName}`}</Text>
 				<Text>{`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`}</Text>
 			</Box>
 		);
