@@ -4,7 +4,7 @@ Toby uses Markdown prompt templates to drive its plan and build commands. Each p
 
 ## Shipped Prompts
 
-Toby ships two prompt templates.
+Toby ships two prompt templates that use the **prd-json** tracker by default. These can be replaced with tracker-specific prompts — see [Tracker Templates](trackers.md) for details on the three built-in tracker options (prd-json, GitHub Issues, beads).
 
 ### PROMPT_PLAN
 
