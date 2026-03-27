@@ -29,3 +29,39 @@ export const MEOW_FLAGS = {
 
 /** Derived from MEOW_FLAGS — single source of truth */
 export const MEOW_FLAG_NAMES = Object.keys(MEOW_FLAGS);
+
+/**
+ * Meow v13 sets boolean flags to false even when the user doesn't pass them.
+ * This breaks ?? fallthrough to config values. Normalize flags without an
+ * explicit default back to undefined when the user didn't pass them.
+ */
+export function normalizeBooleanFlags(
+	flags: Record<string, unknown>,
+	rawArgs: string[],
+): Record<string, unknown> {
+	const result = { ...flags };
+
+	// Only scan args before a bare -- separator
+	const separatorIndex = rawArgs.indexOf("--");
+	const flagArgs =
+		separatorIndex === -1 ? rawArgs : rawArgs.slice(0, separatorIndex);
+
+	const autoDefaultedBooleans = Object.entries(MEOW_FLAGS)
+		.filter(([, def]) => def.type === "boolean" && !("default" in def))
+		.map(([name]) => name);
+
+	for (const name of autoDefaultedBooleans) {
+		const kebab = name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+		const wasExplicit = flagArgs.some(
+			(a) =>
+				a === `--${kebab}` ||
+				a === `--no-${kebab}` ||
+				a.startsWith(`--${kebab}=`),
+		);
+		if (!wasExplicit) {
+			result[name] = undefined;
+		}
+	}
+
+	return result;
+}
