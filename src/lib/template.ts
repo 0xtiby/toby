@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
 	PromptName,
+	TrackerName,
 	TemplateVars,
 	LoadPromptOptions,
 	ComputeCliVarsOptions,
@@ -11,41 +12,33 @@ import type {
 import { getLocalDir } from "./paths.js";
 
 /**
- * Returns the absolute path to a shipped prompt file inside templates/prd-json/.
- * Walks up from the current file's location until it finds a directory containing templates/.
- * This works both in development (src/lib/) and after bundling (dist/).
+ * Walk up from the current file's directory until a sibling directory named `dirName` is found.
+ * Works both in development (src/lib/) and after bundling (dist/).
  */
-export function getShippedPromptPath(name: PromptName): string {
-	const thisFile = fileURLToPath(import.meta.url);
-	let dir = path.dirname(thisFile);
-	// Walk up to find the package root (directory containing templates/)
+function findPackageDir(dirName: string): string {
+	let dir = path.dirname(fileURLToPath(import.meta.url));
 	while (dir !== path.dirname(dir)) {
-		const candidate = path.join(dir, "templates", "prd-json");
-		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-			return path.join(candidate, `${name}.md`);
-		}
-		dir = path.dirname(dir);
-	}
-	// Fallback: assume templates/prd-json/ is sibling to the directory containing this file
-	const fallback = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "templates", "prd-json");
-	return path.join(fallback, `${name}.md`);
-}
-
-/**
- * Returns the absolute path to the package's templates/ directory.
- * Walks up from the current file's location until it finds templates/.
- */
-export function getTemplatesDir(): string {
-	const thisFile = fileURLToPath(import.meta.url);
-	let dir = path.dirname(thisFile);
-	while (dir !== path.dirname(dir)) {
-		const candidate = path.join(dir, "templates");
+		const candidate = path.join(dir, dirName);
 		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
 			return candidate;
 		}
 		dir = path.dirname(dir);
 	}
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "templates");
+	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", dirName);
+}
+
+/**
+ * Returns the absolute path to the package's templates/ directory.
+ */
+export function getTemplatesDir(): string {
+	return findPackageDir("templates");
+}
+
+/**
+ * Returns the absolute path to a shipped prompt file inside templates/prd-json/.
+ */
+export function getShippedPromptPath(name: PromptName): string {
+	return path.join(getTemplatesDir(), "prd-json", `${name}.md`);
 }
 
 /**
@@ -54,7 +47,7 @@ export function getTemplatesDir(): string {
  * in the destination to preserve user customizations.
  */
 export function copyTrackerPrompts(
-	tracker: string,
+	tracker: TrackerName,
 	localDir: string,
 ): { copied: string[] } {
 	const copied: string[] = [];

@@ -15,8 +15,20 @@ import {
 	DEFAULT_SPECS_DIR,
 } from "../lib/paths.js";
 import { copyTrackerPrompts } from "../lib/template.js";
-import { CLI_NAMES, TRACKER_NAMES } from "../types.js";
-import type { TobyConfig, CliName } from "../types.js";
+import { CLI_NAMES, TRACKER_NAMES, isValidTracker } from "../types.js";
+import type { TobyConfig, CliName, TrackerName, TemplateVars } from "../types.js";
+
+const TRACKER_DESCRIPTIONS: Record<TrackerName, string> = {
+	"prd-json": "Local JSON files, no external tools required",
+	"github": "GitHub Issues via gh CLI",
+	"beads": "Local beads tracker via bd CLI",
+};
+
+const TRACKER_TEMPLATE_VARS: Record<TrackerName, TemplateVars> = {
+	"prd-json": { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
+	"github": {},
+	"beads": {},
+};
 
 export interface InitFlags {
 	version: string;
@@ -57,7 +69,7 @@ export interface InitSelections {
 	planModel: string;
 	buildCli: CliName;
 	buildModel: string;
-	tracker: string;
+	tracker: TrackerName;
 	specsDir: string;
 	transcript: boolean;
 	verbose: boolean;
@@ -74,13 +86,6 @@ export function createProject(
 	selections: InitSelections,
 	cwd: string = process.cwd(),
 ): InitResult {
-	// Validate tracker
-	if (!(TRACKER_NAMES as readonly string[]).includes(selections.tracker)) {
-		throw new Error(
-			`Unknown tracker: "${selections.tracker}". Must be one of: ${TRACKER_NAMES.join(", ")}`,
-		);
-	}
-
 	const localDir = getLocalDir(cwd);
 	const configPath = path.join(localDir, CONFIG_FILE);
 	const statusPath = path.join(localDir, STATUS_FILE);
@@ -99,10 +104,7 @@ export function createProject(
 	// Copy tracker prompt files to .toby/ (skips existing)
 	copyTrackerPrompts(selections.tracker, localDir);
 
-	// Set templateVars based on tracker choice
-	const templateVars = selections.tracker === "prd-json"
-		? { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" }
-		: {};
+	const templateVars = TRACKER_TEMPLATE_VARS[selections.tracker];
 
 	try {
 		// Write config.json (always overwrite)
@@ -208,7 +210,7 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 
 	const planCli = flags.planCli!;
 	const buildCli = flags.buildCli!;
-	const tracker = flags.tracker ?? "prd-json";
+	const trackerRaw = flags.tracker ?? "prd-json";
 
 	// Validate CLI names synchronously
 	const invalidCli = [planCli, buildCli].find(
@@ -216,7 +218,8 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 	);
 
 	// Validate tracker name synchronously
-	const invalidTracker = !(TRACKER_NAMES as readonly string[]).includes(tracker);
+	const validTracker = isValidTracker(trackerRaw);
+	const tracker: TrackerName = validTracker ? trackerRaw : "prd-json"; // fallback unused if invalid
 
 	const [status, setStatus] = useState<
 		| { type: "detecting" }
@@ -226,12 +229,12 @@ function NonInteractiveInit({ flags }: { flags: InitFlags }) {
 		| { type: "success"; result: InitResult; selections: InitSelections }
 	>(
 		invalidCli ? { type: "invalid_cli", cli: invalidCli }
-		: invalidTracker ? { type: "invalid_tracker", tracker }
+		: !validTracker ? { type: "invalid_tracker", tracker: trackerRaw }
 		: { type: "detecting" },
 	);
 
 	useEffect(() => {
-		if (invalidCli || invalidTracker) {
+		if (invalidCli || !validTracker) {
 			process.exitCode = 1;
 			exit();
 			return;
@@ -486,11 +489,7 @@ function InteractiveInit({ version }: { version: string }) {
 					<Text bold>Select task tracker:</Text>
 					<SelectInput
 						items={TRACKER_NAMES.map((name) => ({
-							label: `${name} — ${
-								name === "prd-json" ? "Local JSON files, no external tools required" :
-								name === "github" ? "GitHub Issues via gh CLI" :
-								"Local beads tracker via bd CLI"
-							}`,
+							label: `${name} — ${TRACKER_DESCRIPTIONS[name]}`,
 							value: name,
 						}))}
 						onSelect={handleTrackerSelect}
@@ -518,8 +517,8 @@ function InteractiveInit({ version }: { version: string }) {
 					<Text dimColor>  Save full plan/build transcripts to .toby/transcripts/</Text>
 					<SelectInput
 						items={[
-							{ label: "false", value: "false" },
-							{ label: "true", value: "true" },
+							{ label: "No", value: "false" },
+							{ label: "Yes", value: "true" },
 						]}
 						onSelect={handleTranscriptSelect}
 					/>
@@ -532,8 +531,8 @@ function InteractiveInit({ version }: { version: string }) {
 					<Text dimColor>  Show full CLI output including tool use and system events</Text>
 					<SelectInput
 						items={[
-							{ label: "false", value: "false" },
-							{ label: "true", value: "true" },
+							{ label: "No", value: "false" },
+							{ label: "Yes", value: "true" },
 						]}
 						onSelect={handleVerboseSelect}
 					/>

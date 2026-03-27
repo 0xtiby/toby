@@ -6,6 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import Init, { createProject, getInstalledClis, hasAllInitFlags } from "./init.js";
 import type { InitSelections, InitFlags } from "./init.js";
+import { isValidTracker } from "../types.js";
 
 // Mock spawner
 vi.mock("@0xtiby/spawner", () => ({
@@ -249,10 +250,11 @@ describe("createProject", () => {
 		expect(config.transcript).toBe(false);
 	});
 
-	it("throws for invalid tracker name", () => {
-		expect(() =>
-			createProject({ ...DEFAULT_SELECTIONS, tracker: "invalid" }, tmpDir),
-		).toThrow(/Unknown tracker: "invalid"/);
+	it("rejects invalid tracker names via isValidTracker", () => {
+		expect(isValidTracker("invalid")).toBe(false);
+		expect(isValidTracker("prd-json")).toBe(true);
+		expect(isValidTracker("github")).toBe(true);
+		expect(isValidTracker("beads")).toBe(true);
 	});
 });
 
