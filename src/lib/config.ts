@@ -3,7 +3,25 @@ import path from "node:path";
 import { ConfigSchema, CLI_NAMES } from "../types.js";
 import type { TobyConfig, CommandConfig } from "../types.js";
 import { getGlobalDir, getLocalDir, CONFIG_FILE } from "./paths.js";
-import { formatErrorWithHint } from "./help.js";
+function formatErrorWithHint(
+	message: string,
+	validValues?: string[],
+	example?: string,
+): string {
+	const lines: string[] = [];
+	if (validValues) {
+		lines.push(`✗ ${message}. Valid options: ${validValues.join(", ")}`);
+	} else {
+		lines.push(`✗ ${message}`);
+	}
+	if (example) {
+		lines.push("");
+		lines.push("Example:");
+		lines.push(`  $ ${example}`);
+	}
+	lines.push("");
+	return lines.join("\n");
+}
 
 /**
  * Read and parse a JSON config file, returning a partial config.

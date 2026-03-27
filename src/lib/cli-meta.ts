@@ -3,7 +3,12 @@
  * Extracted to avoid importing cli.ts (which has side effects).
  */
 
-import { commandHelp } from "./help.js";
-
-/** Derived from commandHelp — single source of truth */
-export const COMMAND_NAMES = Object.keys(commandHelp);
+export const COMMAND_NAMES = [
+	"plan",
+	"build",
+	"resume",
+	"init",
+	"status",
+	"config",
+	"clean",
+];
