@@ -47,6 +47,7 @@ type Phase =
 	| "build_model"
 	| "tracker"
 	| "specs_dir"
+	| "transcript"
 	| "verbose"
 	| "done";
 
@@ -350,6 +351,12 @@ function InteractiveInit({ version }: { version: string }) {
 	function handleSpecsDirSubmit(value: string) {
 		const dir = value.trim() || DEFAULT_SPECS_DIR;
 		setSelections((s) => ({ ...s, specsDir: dir }));
+		setPhase("transcript");
+	}
+
+	function handleTranscriptSelect(item: { value: string }) {
+		const transcript = item.value === "true";
+		setSelections((s) => ({ ...s, transcript }));
 		setPhase("verbose");
 	}
 
@@ -474,6 +481,20 @@ function InteractiveInit({ version }: { version: string }) {
 							onSubmit={handleSpecsDirSubmit}
 						/>
 					</Box>
+				</Box>
+			)}
+
+			{phase === "transcript" && (
+				<Box flexDirection="column">
+					<Text bold>Record session transcripts?</Text>
+					<Text dimColor>  Save full plan/build transcripts to .toby/transcripts/</Text>
+					<SelectInput
+						items={[
+							{ label: "false", value: "false" },
+							{ label: "true", value: "true" },
+						]}
+						onSelect={handleTranscriptSelect}
+					/>
 				</Box>
 			)}
 
