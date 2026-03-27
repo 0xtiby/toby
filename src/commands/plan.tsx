@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Text, Box } from "ink";
+import chalk from "chalk";
 import type { CliEvent } from "@0xtiby/spawner";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, filterByStatus, findSpec } from "../lib/specs.js";
@@ -19,6 +20,7 @@ import { formatMaxIterationsWarning } from "../lib/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
+import { writeEvent } from "../ui/stream.js";
 import { useCommandRunner } from "../hooks/useCommandRunner.js";
 import type { CommandFlags } from "../hooks/useCommandRunner.js";
 import MultiSpecSelector from "../components/MultiSpecSelector.js";
@@ -237,6 +239,96 @@ export async function executePlanAll(
 			return { planned };
 		},
 	);
+}
+
+export interface RunPlanOptions {
+	spec?: string;
+	all?: boolean;
+	verbose?: boolean;
+	transcript?: boolean;
+	iterations?: number;
+	cli?: string;
+	session?: string;
+}
+
+/**
+ * Imperative CLI wrapper for plan command.
+ * Handles --all mode with callbacks wired to stdout.
+ */
+export async function runPlan(opts: RunPlanOptions): Promise<void> {
+	const cwd = process.cwd();
+	const config = loadConfig(cwd);
+	const verbose = opts.verbose ?? config.verbose ?? false;
+
+	const flags: PlanFlags = {
+		spec: opts.spec,
+		all: opts.all ?? false,
+		verbose,
+		transcript: opts.transcript,
+		iterations: opts.iterations,
+		cli: opts.cli,
+		session: opts.session,
+	};
+
+	if (flags.all) {
+		// Discover specs — handle "no specs" gracefully
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+
+		const pending = filterByStatus(discovered, "pending");
+		if (pending.length === 0) {
+			console.log("All specs have been planned.");
+			return;
+		}
+
+		const abortController = new AbortController();
+		const onSigint = () => abortController.abort();
+		process.on("SIGINT", onSigint);
+
+		const callbacks: PlanAllCallbacks = {
+			onEvent: (event) => writeEvent(event, verbose),
+			onSpecStart: (name, i, total) => {
+				console.log(chalk.dim(`◇ Planning ${name} (${i + 1}/${total})`));
+			},
+			onSpecComplete: (result) => {
+				if (result.stopReason === "max_iterations") {
+					console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+				} else {
+					console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
+				}
+			},
+			onRefinement: (specName) => {
+				console.log(chalk.yellow(`Existing plan found for ${specName}`));
+				console.log(chalk.yellow("Running in refinement mode..."));
+			},
+		};
+
+		try {
+			const result = await executePlanAll(flags, callbacks, cwd, abortController.signal, pending);
+			const hasWarnings = result.planned.some((r) => r.stopReason === "max_iterations");
+			console.log(
+				hasWarnings
+					? chalk.yellow(`⚠️ All specs planned (${result.planned.length} planned)`)
+					: chalk.green(`✔ All specs planned (${result.planned.length} planned)`),
+			);
+		} catch (err) {
+			if (err instanceof AbortError) {
+				console.log(chalk.yellow(`⚠ Planning interrupted for ${err.specName}`));
+				console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+			} else {
+				throw err;
+			}
+		} finally {
+			process.off("SIGINT", onSigint);
+		}
+		return;
+	}
+
+	// TODO: --spec and interactive modes will be added in subsequent tasks
+	throw new Error("runPlan() currently only supports --all mode. Use --all flag.");
 }
 
 export default function Plan(flags: PlanFlags) {

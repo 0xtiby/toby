@@ -41,13 +41,8 @@ function resolveSpecFlags(opts: Record<string, unknown>) {
 // ── plan ────────────────────────────────────────────────────────
 specOptions(program.command("plan").description("Plan specs with AI loop engine"))
 	.action(async (opts) => {
-		const { executePlan, executePlanAll } = await import("./commands/plan.js");
-		const flags = resolveSpecFlags(opts);
-		if (flags.all) {
-			await executePlanAll(flags);
-		} else {
-			await executePlan(flags);
-		}
+		const { runPlan } = await import("./commands/plan.js");
+		await runPlan(resolveSpecFlags(opts));
 	});
 
 // ── build ───────────────────────────────────────────────────────

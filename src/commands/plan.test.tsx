@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "ink-testing-library";
 
 vi.mock("../lib/config.js", () => ({
@@ -36,6 +36,22 @@ vi.mock("../lib/paths.js", () => ({
 	ensureLocalDir: vi.fn(),
 }));
 
+vi.mock("../ui/stream.js", () => ({
+	writeEvent: vi.fn(),
+}));
+
+vi.mock("../hooks/useCommandRunner.js", () => ({
+	useCommandRunner: vi.fn(),
+}));
+
+vi.mock("../components/MultiSpecSelector.js", () => ({
+	default: vi.fn(),
+}));
+
+vi.mock("../components/StreamOutput.js", () => ({
+	default: vi.fn(),
+}));
+
 vi.mock("../lib/transcript.js", () => {
 	const openTranscript = vi.fn();
 	return {
@@ -68,7 +84,8 @@ import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus } from "../lib/status.js";
 import { openTranscript } from "../lib/transcript.js";
-import { executePlan, executePlanAll } from "./plan.js";
+import { executePlan, executePlanAll, runPlan } from "./plan.js";
+import { writeEvent } from "../ui/stream.js";
 import { AbortError } from "../lib/errors.js";
 import Plan from "./plan.js";
 import type { PlanFlags } from "./plan.js";
@@ -977,6 +994,129 @@ describe("Plan component", () => {
 			expect(output).toContain("1/2");
 			expect(output).not.toContain("✓");
 		});
+	});
+});
+
+const mockWriteEvent = vi.mocked(writeEvent);
+
+describe("runPlan", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupDefaults();
+		vi.spyOn(console, "log").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("--all mode plans pending specs and prints summary", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		const spec2 = makeSpec("02-api", 2, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1, spec2]);
+		mockFindSpec.mockImplementation((specs, query) => specs.find((s) => s.name === query));
+
+		await runPlan({ all: true, verbose: false });
+
+		// executePlanAll should have been called (via runLoop)
+		expect(mockRunLoop).toHaveBeenCalledTimes(2);
+		// Summary printed
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("All specs planned"),
+		);
+	});
+
+	it("--all mode with no specs prints friendly message", async () => {
+		mockDiscoverSpecs.mockReturnValue([]);
+
+		await runPlan({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No specs found.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("--all mode with no pending specs prints friendly message", async () => {
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+
+		await runPlan({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("All specs have been planned.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("--all mode wires onEvent to writeEvent", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		const testEvent = { type: "text", timestamp: 1, content: "hello" } as never;
+		mockRunLoop.mockImplementation(async (options) => {
+			options.onEvent?.(testEvent);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await runPlan({ all: true, verbose: false });
+
+		expect(mockWriteEvent).toHaveBeenCalledWith(testEvent, false);
+	});
+
+	it("--all mode handles SIGINT gracefully", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		mockRunLoop.mockImplementation(async (options) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "aborted" as const };
+		});
+
+		await runPlan({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Planning interrupted"),
+		);
+	});
+
+	it("--all mode prints onRefinement message", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+		mockReadStatus.mockReturnValue({
+			specs: {
+				"01-auth": {
+					status: "planned",
+					plannedAt: null,
+					iterations: [
+						{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+					],
+				},
+			},
+		});
+
+		await runPlan({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Existing plan found for 01-auth"),
+		);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("refinement mode"),
+		);
+	});
+
+	it("throws for non --all mode (not yet implemented)", async () => {
+		await expect(runPlan({ verbose: false })).rejects.toThrow(
+			"runPlan() currently only supports --all mode",
+		);
 	});
 });
 
