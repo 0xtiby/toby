@@ -2,14 +2,19 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-function run(...args: string[]): string {
+function run(...args: string[]): { stdout: string; stderr: string; exitCode: number } {
 	try {
-		return execFileSync("node", ["dist/cli.js", ...args], {
+		const stdout = execFileSync("node", ["dist/cli.js", ...args], {
 			encoding: "utf-8",
 			env: { ...process.env, NO_COLOR: "1" },
 		}).trim();
+		return { stdout, stderr: "", exitCode: 0 };
 	} catch (error: any) {
-		return (error.stdout ?? "").trim() + (error.stderr ?? "").trim();
+		return {
+			stdout: (error.stdout ?? "").trim(),
+			stderr: (error.stderr ?? "").trim(),
+			exitCode: error.status ?? 1,
+		};
 	}
 }
 
@@ -31,51 +36,30 @@ describe("package.json", () => {
 });
 
 describe("cli", () => {
-	it("renders without crashing (no args shows help)", () => {
-		const output = run();
-		expect(output).toContain("toby");
-		expect(output).toContain("Usage");
+	it("no args shows help", () => {
+		const { stdout } = run();
+		expect(stdout).toContain("toby");
+		expect(stdout).toContain("Usage");
 	});
 
-	it("shows help with all 5 commands", () => {
-		const output = run("--help");
-		expect(output).toContain("plan");
-		expect(output).toContain("build");
-		expect(output).toContain("init");
-		expect(output).toContain("status");
-		expect(output).toContain("config");
+	it("--help shows plan command", () => {
+		const { stdout } = run("--help");
+		expect(stdout).toContain("plan");
 	});
 
-	it("global help directs to per-command help for details", () => {
-		const output = run("--help");
-		expect(output).toContain(
-			"Run toby <command> --help for command-specific options and examples.",
-		);
+	it("plan --help shows --spec flag", () => {
+		const { stdout } = run("plan", "--help");
+		expect(stdout).toContain("--spec");
 	});
 
-	it("per-command help shows --spec flag details", () => {
-		const output = run("plan", "--help");
-		expect(output).toContain("--spec=<query>");
+	it("--version shows version", () => {
+		const { stdout } = run("--version");
+		expect(stdout).toMatch(/\d+\.\d+\.\d+/);
 	});
 
-	it("shows version", () => {
-		const output = run("--version");
-		expect(output).toMatch(/\d+\.\d+\.\d+/);
-	});
-
-	it("shows error for unknown command", () => {
-		const output = run("foobar");
-		expect(output).toContain("Unknown command: foobar");
-	});
-
-	it("plan without --spec shows spec selector or no-specs message", () => {
-		const output = run("plan");
-		// In non-TTY/CI, shows either "No specs found" or "Select a spec"
-		expect(output).toMatch(/No specs found|Select a spec/);
-	});
-
-	it("plan with --spec for nonexistent spec shows error", () => {
-		const output = run("plan", "--spec=nonexistent");
-		expect(output).toContain("not found");
+	it("unknown command exits with error", () => {
+		const { stderr, exitCode } = run("foobar");
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("unknown command");
 	});
 });

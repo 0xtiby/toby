@@ -1,10 +1,16 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/cli.tsx"],
+  entry: ["src/cli.ts"],
   format: ["esm"],
   target: "node18",
   clean: true,
   shims: true,
-  banner: { js: "#!/usr/bin/env node" },
+  external: [
+    "react",
+    "ink",
+    "react-devtools-core",
+    /hooks\//,
+    /components\//,
+  ],
 });
