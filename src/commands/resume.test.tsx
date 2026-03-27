@@ -308,8 +308,10 @@ describe("Resume component", () => {
 			built: [{
 				specName: "43-resume-command",
 				totalIterations: 3,
+				maxIterations: 10,
 				totalTokens: 1500,
 				specDone: true,
+				stopReason: "sentinel" as const,
 				error: undefined,
 			}],
 		});
@@ -321,6 +323,45 @@ describe("Resume component", () => {
 			expect(output).toContain("Resume complete");
 			expect(output).toContain("43-resume-command");
 			expect(output).toContain("3 iterations");
+		});
+	});
+
+	it("shows max_iterations warning per spec in done summary", async () => {
+		const status = makeStatus();
+		mockReadStatus.mockReturnValue(status);
+		mockHasResumableSession.mockReturnValue(true);
+		mockUpdateSessionState.mockReturnValue({ ...status, session: { ...status.session!, state: "active" } });
+
+		mockExecuteBuildAll.mockResolvedValue({
+			built: [
+				{
+					specName: "01-auth",
+					totalIterations: 10,
+					maxIterations: 10,
+					totalTokens: 5000,
+					specDone: false,
+					stopReason: "max_iterations" as const,
+				},
+				{
+					specName: "02-api",
+					totalIterations: 3,
+					maxIterations: 10,
+					totalTokens: 1500,
+					specDone: true,
+					stopReason: "sentinel" as const,
+				},
+			],
+		});
+
+		const { lastFrame } = render(<Resume />);
+
+		await vi.waitFor(() => {
+			const output = lastFrame()!;
+			expect(output).toContain("⚠️");
+			expect(output).toContain("max iteration limit reached");
+			expect(output).toContain("10/10");
+			expect(output).toContain("02-api: 3 iterations");
+			expect(output).toContain("[done]");
 		});
 	});
 });
