@@ -113,8 +113,8 @@ function printResumeSummary(result: BuildAllResult): void {
 	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
 	console.log(
 		hasWarnings
-			? chalk.yellow(`⚠️ Resume complete (${result.built.length} spec(s) built)`)
-			: chalk.green(`✔ Resume complete (${result.built.length} spec(s) built)`),
+			? chalk.yellow(`⚠️ All remaining specs built (${result.built.length} spec(s)). Session cleared.`)
+			: chalk.green(`✔ All remaining specs built (${result.built.length} spec(s)). Session cleared.`),
 	);
 	for (const r of result.built) {
 		if (r.stopReason === "max_iterations") {
@@ -177,6 +177,7 @@ export async function runResume(opts: RunResumeOptions): Promise<void> {
 		if (err instanceof AbortError) {
 			console.log(chalk.yellow(`⚠ Building interrupted for ${err.specName}`));
 			console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+			console.log(chalk.dim("  Session saved. Resume with: toby resume"));
 		} else if (err instanceof Error) {
 			console.error(chalk.red(err.message));
 		} else {

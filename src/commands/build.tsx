@@ -502,8 +502,8 @@ function printBuildAllSummary(result: BuildAllResult): void {
 	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
 	console.log(
 		hasWarnings
-			? chalk.yellow(`⚠️ All specs built (${result.built.length} built)`)
-			: chalk.green(`✔ All specs built (${result.built.length} built)`),
+			? chalk.yellow(`⚠️ All specs built (${result.built.length} built). Session cleared.`)
+			: chalk.green(`✔ All specs built (${result.built.length} built). Session cleared.`),
 	);
 	for (const r of result.built) {
 		if (r.stopReason === "max_iterations") {
@@ -518,6 +518,7 @@ function printBuildAllSummary(result: BuildAllResult): void {
 function printBuildInterrupted(specName: string, completedIterations: number): void {
 	console.log(chalk.yellow(`⚠ Building interrupted for ${specName}`));
 	console.log(chalk.dim(`  ${completedIterations} iteration(s) completed, partial status saved`));
+	console.log(chalk.dim("  Session saved. Resume with: toby resume"));
 }
 
 function makeBuildAllCallbacks(verbose: boolean): BuildAllCallbacks {
