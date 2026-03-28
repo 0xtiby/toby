@@ -194,7 +194,7 @@ function setupDefaults() {
 			iteration: 1,
 			sessionId: "sess-1",
 			exitCode: 0,
-			tokensUsed: 150,
+			tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 			model: "claude-sonnet-4-6",
 			durationMs: 1000,
 			sentinelDetected: false,
@@ -322,7 +322,7 @@ describe("executeBuild", () => {
 					status: "building",
 					plannedAt: null,
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 				},
 			},
@@ -337,7 +337,7 @@ describe("executeBuild", () => {
 	it("returns error summary on fatal error during iteration", async () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -386,8 +386,8 @@ describe("executeBuild", () => {
 					status: "building",
 					plannedAt: null,
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 				},
 			},
@@ -408,7 +408,7 @@ describe("executeBuild", () => {
 	it("marks spec as done when sentinel detected", async () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -455,7 +455,7 @@ describe("executeBuild", () => {
 				iteration: 1,
 				sessionId: "sess-1",
 				exitCode: 0,
-				tokensUsed: 150,
+				tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6",
 				durationMs: 1000,
 				sentinelDetected: false,
@@ -481,7 +481,7 @@ describe("executeBuild", () => {
 				iteration: 1,
 				sessionId: "sess-1",
 				exitCode: 0,
-				tokensUsed: 150,
+				tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6",
 				durationMs: 1000,
 				sentinelDetected: false,
@@ -590,7 +590,7 @@ describe("runBuild", () => {
 		mockRunLoop.mockImplementation(async (options) => {
 			options.onEvent?.(testEvent);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -612,7 +612,7 @@ describe("runBuild", () => {
 
 		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -634,7 +634,7 @@ describe("runBuild", () => {
 
 		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -743,7 +743,7 @@ describe("integration: full build flow with mocked spawner", () => {
 					iteration: i,
 					sessionId: `sess-${i}`,
 					exitCode: 0,
-					tokensUsed: 200,
+					tokensUsed: 200, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6",
 					durationMs: 1000,
 					sentinelDetected: i === 4,
@@ -779,7 +779,7 @@ describe("integration: full build flow with mocked spawner", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 100, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 500, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -824,7 +824,7 @@ describe("integration: full build flow with mocked spawner", () => {
 			const iterations = [];
 			for (let i = 1; i <= 2; i++) {
 				const iterResult = {
-					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 150,
+					iteration: i, sessionId: `sess-${i}`, exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -1119,7 +1119,7 @@ describe("executeBuildAll", () => {
 		// Use sentinel so all specs complete (stop-on-error won't break the loop)
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1154,7 +1154,7 @@ describe("executeBuildAll", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -1184,7 +1184,7 @@ describe("executeBuildAll", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -1362,7 +1362,7 @@ describe("executeBuildAll", () => {
 		// Use sentinel so remaining specs complete
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1379,7 +1379,7 @@ describe("executeBuildAll", () => {
 					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 					stopReason: "sentinel",
 				},
@@ -1422,19 +1422,19 @@ describe("executeBuildAll", () => {
 				"01-auth": {
 					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null }],
 					stopReason: "sentinel",
 				},
 				"02-api": {
 					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null }],
 					stopReason: "sentinel",
 				},
 				"03-ui": {
 					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
-					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 }],
+					iterations: [{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null }],
 					stopReason: "sentinel",
 				},
 				"04-data": {
@@ -1454,7 +1454,7 @@ describe("executeBuildAll", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
@@ -1487,7 +1487,7 @@ describe("executeBuildAll", () => {
 		// Use sentinel so all specs complete without interruption summary
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1504,7 +1504,7 @@ describe("executeBuildAll", () => {
 					status: "building",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 					stopReason: "sentinel",
 				},
@@ -1536,7 +1536,7 @@ describe("session lifecycle", () => {
 					status: "done",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 					stopReason: "sentinel",
 				},
@@ -1563,7 +1563,7 @@ describe("session lifecycle", () => {
 	it("executeBuild clears session on sentinel success", async () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1580,7 +1580,7 @@ describe("session lifecycle", () => {
 	it("executeBuild marks session interrupted on error", async () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(1, null);
@@ -1618,7 +1618,7 @@ describe("session lifecycle", () => {
 		// Both specs complete with sentinel
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1670,7 +1670,7 @@ describe("session lifecycle", () => {
 			if (specIndex === 2) {
 				// Second spec errors
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(1, null);
@@ -1679,7 +1679,7 @@ describe("session lifecycle", () => {
 			}
 			// First spec succeeds
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1715,7 +1715,7 @@ describe("session lifecycle", () => {
 			if (specIndex === 2) {
 				// Second spec hits max_iterations
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50,
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(1, null);
@@ -1723,7 +1723,7 @@ describe("session lifecycle", () => {
 				return { iterations: [iterResult], stopReason: "max_iterations" as const };
 			}
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1755,7 +1755,7 @@ describe("session lifecycle", () => {
 			specIndex++;
 			if (specIndex === 2) {
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50,
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(1, null);
@@ -1763,7 +1763,7 @@ describe("session lifecycle", () => {
 				return { iterations: [iterResult], stopReason: "max_iterations" as const };
 			}
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1797,7 +1797,7 @@ describe("session lifecycle", () => {
 			if (specIndex === 2) {
 				// Second spec (02-api) errors
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
+					iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50, inputTokens: 100, outputTokens: 50, cost: 0.01,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationStart?.(1, null);
@@ -1806,7 +1806,7 @@ describe("session lifecycle", () => {
 			}
 			// First spec (01-auth) succeeds
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
@@ -1902,8 +1902,8 @@ describe("session lifecycle", () => {
 					status: "building",
 					plannedAt: "2026-03-20T00:00:00.000Z",
 					iterations: [
-						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: "2026-03-20T00:02:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						{ type: "build", iteration: 1, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:00:00.000Z", completedAt: "2026-03-20T00:01:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
+						{ type: "build", iteration: 2, sessionId: "s1", state: "complete", cli: "claude", model: "default", startedAt: "2026-03-20T00:01:00.000Z", completedAt: "2026-03-20T00:02:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100, inputTokens: null, outputTokens: null, cost: null },
 					],
 				},
 			},
@@ -1913,7 +1913,7 @@ describe("session lifecycle", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			options.getPrompt(1);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationStart?.(1, null);
@@ -2044,7 +2044,7 @@ describe("executeBuildAll transcript", () => {
 		// Use sentinel so both specs run
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: 100, outputTokens: 50, cost: 0.01,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationStart?.(1, null);
