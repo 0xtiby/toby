@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 import { Command } from "commander";
-import { ensureGlobalDir } from "./lib/paths.js";
+
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -126,8 +126,6 @@ program
 		const { runClean } = await import("./commands/clean.js");
 		await runClean({ force: opts.force });
 	});
-
-ensureGlobalDir();
 
 // No subcommand → welcome screen (TTY) or help text (non-TTY)
 if (process.argv.length <= 2) {

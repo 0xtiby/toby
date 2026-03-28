@@ -5,6 +5,13 @@ import { z } from "zod";
 export const CLI_NAMES = ["claude", "codex", "opencode"] as const;
 export type CliName = (typeof CLI_NAMES)[number];
 
+export const TRACKER_NAMES = ["prd-json", "github", "beads"] as const;
+export type TrackerName = (typeof TRACKER_NAMES)[number];
+
+export function isValidTracker(value: string): value is TrackerName {
+	return (TRACKER_NAMES as readonly string[]).includes(value);
+}
+
 export const CommandConfigSchema = z.object({
 	cli: z.enum(CLI_NAMES).default("claude"),
 	model: z.string().default("default"),

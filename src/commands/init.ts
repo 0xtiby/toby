@@ -12,8 +12,9 @@ import {
 	STATUS_FILE,
 	DEFAULT_SPECS_DIR,
 } from "../lib/paths.js";
+import { copyTrackerPrompts } from "../lib/template.js";
 import { CLI_NAMES } from "../types.js";
-import type { CliName, TobyConfig } from "../types.js";
+import type { CliName, TrackerName, TemplateVars, TobyConfig } from "../types.js";
 import { isTTY } from "../ui/tty.js";
 import { handleCancel } from "../ui/prompt.js";
 
@@ -27,12 +28,20 @@ export interface InitFlags {
 	force?: boolean;
 }
 
+const TRACKER_TEMPLATE_VARS: Record<TrackerName, TemplateVars> = {
+	"prd-json": { PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json" },
+	"github": {},
+	"beads": {},
+};
+
 export interface InitSelections {
 	planCli: CliName;
 	planModel: string;
 	buildCli: CliName;
 	buildModel: string;
+	tracker?: TrackerName;
 	specsDir: string;
+	transcript?: boolean;
 	verbose: boolean;
 }
 
@@ -62,6 +71,12 @@ export function createProject(
 		throw new Error(msg);
 	}
 
+	// Copy tracker prompt files to .toby/ (skips existing)
+	const tracker = selections.tracker ?? "prd-json";
+	copyTrackerPrompts(tracker, localDir);
+
+	const templateVars = TRACKER_TEMPLATE_VARS[tracker];
+
 	try {
 		const config: Partial<TobyConfig> = {
 			plan: {
@@ -76,9 +91,8 @@ export function createProject(
 			},
 			specsDir: selections.specsDir,
 			verbose: selections.verbose,
-			templateVars: {
-				PRD_PATH: ".toby/{{SPEC_NAME}}.prd.json",
-			},
+			transcript: selections.transcript ?? false,
+			templateVars,
 		};
 		writeConfig(config, configPath);
 	} catch (err) {

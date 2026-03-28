@@ -5,6 +5,8 @@ import os from "node:os";
 import {
 	resolvePromptPath,
 	getShippedPromptPath,
+	getTemplatesDir,
+	copyTrackerPrompts,
 	loadPrompt,
 	computeSpecSlug,
 	computeCliVars,
@@ -12,25 +14,22 @@ import {
 	resolveTemplateVars,
 	generateSessionName,
 } from "../template.js";
+import { TRACKER_NAMES } from "../../types.js";
+import type { TrackerName } from "../../types.js";
 
 /**
  * Integration tests for prompt resolution and loading.
- * Uses real temp directories to test the 3-level resolution chain.
+ * Uses real temp directories to test the 2-level resolution chain.
  */
 
 describe("resolvePromptPath (integration)", () => {
 	let tmpDir: string;
-	let origHome: string;
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-tpl-"));
-		origHome = process.env.HOME ?? os.homedir();
-		// Point HOME to tmpDir so global ~/.toby resolves inside our temp dir
-		process.env.HOME = tmpDir;
 	});
 
 	afterEach(() => {
-		process.env.HOME = origHome;
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		vi.restoreAllMocks();
 	});
@@ -47,50 +46,15 @@ describe("resolvePromptPath (integration)", () => {
 		expect(result).toBe(path.join(localDir, "PROMPT_PLAN.md"));
 	});
 
-	it("falls back to global ~/.toby when no local override", () => {
-		const globalDir = path.join(tmpDir, ".toby");
-		fs.mkdirSync(globalDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(globalDir, "PROMPT_PLAN.md"),
-			"global content",
-		);
-
+	it("falls back to shipped prompt when no local override exists", () => {
 		const projectDir = path.join(tmpDir, "project");
 		fs.mkdirSync(projectDir, { recursive: true });
 
 		const result = resolvePromptPath("PROMPT_PLAN", projectDir);
-		expect(result).toBe(path.join(globalDir, "PROMPT_PLAN.md"));
+		expect(result).toMatch(/templates[/\\]prd-json[/\\]PROMPT_PLAN\.md$/);
 	});
 
-	it("falls back to shipped prompt when no overrides exist", () => {
-		const projectDir = path.join(tmpDir, "project");
-		fs.mkdirSync(projectDir, { recursive: true });
-
-		const result = resolvePromptPath("PROMPT_PLAN", projectDir);
-		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
-	});
-
-	it("prefers local over global", () => {
-		const projectDir = path.join(tmpDir, "project");
-		const localDir = path.join(projectDir, ".toby");
-		const globalDir = path.join(tmpDir, ".toby");
-
-		fs.mkdirSync(localDir, { recursive: true });
-		fs.mkdirSync(globalDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(localDir, "PROMPT_BUILD.md"),
-			"local override",
-		);
-		fs.writeFileSync(
-			path.join(globalDir, "PROMPT_BUILD.md"),
-			"global override",
-		);
-
-		const result = resolvePromptPath("PROMPT_BUILD", projectDir);
-		expect(result).toBe(path.join(localDir, "PROMPT_BUILD.md"));
-	});
-
-	it("throws with descriptive error listing all 3 paths checked", () => {
+	it("throws with descriptive error listing all 2 paths checked", () => {
 		vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
 		try {
@@ -103,22 +67,23 @@ describe("resolvePromptPath (integration)", () => {
 			expect(msg).toContain(".toby");
 			expect(msg).toContain("PROMPT_PLAN.md");
 			// Should list shipped path
-			expect(msg).toContain("prompts");
-			// Should have 3 path entries (local, global, shipped)
+			expect(msg).toContain("templates");
+			expect(msg).toContain("prd-json");
+			// Should have 2 path entries (local, shipped)
 			const pathLines = msg
 				.split("\n")
 				.filter((l) => l.trim().startsWith("- "));
-			expect(pathLines).toHaveLength(3);
+			expect(pathLines).toHaveLength(2);
 		}
 	});
 
 });
 
 describe("getShippedPromptPath", () => {
-	it("returns absolute path ending with prompts/<name>.md", () => {
+	it("returns absolute path ending with templates/prd-json/<name>.md", () => {
 		const result = getShippedPromptPath("PROMPT_PLAN");
 		expect(path.isAbsolute(result)).toBe(true);
-		expect(result).toMatch(/prompts[/\\]PROMPT_PLAN\.md$/);
+		expect(result).toMatch(/templates[/\\]prd-json[/\\]PROMPT_PLAN\.md$/);
 	});
 
 	it("returns correct path for each prompt name", () => {
@@ -378,5 +343,139 @@ describe("generateSessionName", () => {
 	it("produces different names across multiple calls", () => {
 		const names = new Set(Array.from({ length: 20 }, () => generateSessionName()));
 		expect(names.size).toBeGreaterThan(1);
+	});
+});
+
+/**
+ * Shipped prompt structure validation tests.
+ * Migrated from prompts/prompts.test.ts — now targets templates/prd-json/.
+ */
+describe("shipped prompt files (templates/prd-json/)", () => {
+	const PROMPT_FILES = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"] as const;
+
+	function getShippedDir(): string {
+		return path.resolve(path.dirname(getShippedPromptPath("PROMPT_PLAN")));
+	}
+
+	function readShippedPrompt(file: string): string {
+		return fs.readFileSync(path.join(getShippedDir(), file), "utf-8");
+	}
+
+	function extractVars(content: string): string[] {
+		const matches = content.matchAll(/\{\{(\w+)\}\}/g);
+		return [...new Set([...matches].map((m) => m[1]))];
+	}
+
+	it.each(PROMPT_FILES)("%s exists and is readable", (file) => {
+		expect(() => fs.accessSync(path.join(getShippedDir(), file))).not.toThrow();
+	});
+
+	it.each(PROMPT_FILES)("%s is non-empty markdown", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content.length).toBeGreaterThan(0);
+		expect(content).toContain("#");
+	});
+
+	it.each(PROMPT_FILES)("%s contains :::TOBY_DONE::: sentinel", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content).toContain(":::TOBY_DONE:::");
+	});
+
+	it.each(PROMPT_FILES)("%s uses {{VAR_NAME}} syntax (no single-brace vars)", (file) => {
+		const content = readShippedPrompt(file);
+		const singleBrace = content.match(/(?<!\{)\{([A-Z_]+)\}(?!\})/g);
+		expect(singleBrace).toBeNull();
+	});
+
+	it.each(PROMPT_FILES)("%s does not start with frontmatter", (file) => {
+		const content = readShippedPrompt(file);
+		expect(content.startsWith("---")).toBe(false);
+	});
+
+	it.each(PROMPT_FILES)("%s does not contain dead vars", (file) => {
+		const content = readShippedPrompt(file);
+		const deadVars = ["BRANCH", "WORKTREE", "EPIC_NAME", "IS_LAST_SPEC", "IS_EPIC", "SPEC_CONTENT"];
+		for (const v of deadVars) {
+			expect(content).not.toContain(`{{${v}}}`);
+		}
+	});
+
+	it("PROMPT_PLAN.md contains expected variables", () => {
+		const vars = extractVars(readShippedPrompt("PROMPT_PLAN.md"));
+		for (const v of ["SPEC_NAME", "ITERATION", "PRD_PATH", "SPECS_DIR"]) {
+			expect(vars).toContain(v);
+		}
+	});
+
+	it("PROMPT_BUILD.md contains expected variables", () => {
+		const vars = extractVars(readShippedPrompt("PROMPT_BUILD.md"));
+		for (const v of ["SPEC_NAME", "ITERATION", "SPECS_DIR", "SPEC_INDEX", "SPEC_COUNT", "SESSION", "SPECS"]) {
+			expect(vars).toContain(v);
+		}
+	});
+
+	it("shipped directory resolves to templates/prd-json/", () => {
+		const dir = getShippedDir();
+		expect(dir).toMatch(/templates[/\\]prd-json$/);
+	});
+});
+
+describe("getTemplatesDir", () => {
+	it("returns absolute path ending with /templates", () => {
+		const dir = getTemplatesDir();
+		expect(path.isAbsolute(dir)).toBe(true);
+		expect(dir).toMatch(/templates$/);
+	});
+
+	it("contains prd-json, github, and beads subdirectories", () => {
+		const dir = getTemplatesDir();
+		for (const tracker of ["prd-json", "github", "beads"]) {
+			expect(fs.existsSync(path.join(dir, tracker))).toBe(true);
+		}
+	});
+});
+
+describe("copyTrackerPrompts", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toby-copy-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("copies both prompt files when destination is empty", () => {
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual(["PROMPT_PLAN.md", "PROMPT_BUILD.md"]);
+		expect(fs.existsSync(path.join(tmpDir, "PROMPT_PLAN.md"))).toBe(true);
+		expect(fs.existsSync(path.join(tmpDir, "PROMPT_BUILD.md"))).toBe(true);
+	});
+
+	it("skips copy when destination files already exist", () => {
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "custom plan");
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_BUILD.md"), "custom build");
+
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual([]);
+		expect(fs.readFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "utf-8")).toBe("custom plan");
+	});
+
+	it("copies only missing files when one already exists", () => {
+		fs.writeFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "custom");
+
+		const { copied } = copyTrackerPrompts("prd-json", tmpDir);
+		expect(copied).toEqual(["PROMPT_BUILD.md"]);
+		expect(fs.readFileSync(path.join(tmpDir, "PROMPT_PLAN.md"), "utf-8")).toBe("custom");
+	});
+
+	it("works for each tracker type", () => {
+		for (const tracker of TRACKER_NAMES) {
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), `toby-${tracker}-`));
+			const { copied } = copyTrackerPrompts(tracker, dir);
+			expect(copied).toHaveLength(2);
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

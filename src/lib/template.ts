@@ -3,39 +3,74 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
 	PromptName,
+	TrackerName,
 	TemplateVars,
 	LoadPromptOptions,
 	ComputeCliVarsOptions,
 } from "../types.js";
 
-import { getLocalDir, getGlobalDir } from "./paths.js";
+import { getLocalDir } from "./paths.js";
 
 /**
- * Returns the absolute path to a shipped prompt file inside the package's prompts/ directory.
- * Walks up from the current file's location until it finds a directory containing prompts/.
- * This works both in development (src/lib/) and after bundling (dist/).
+ * Walk up from the current file's directory until a sibling directory named `dirName` is found.
+ * Works both in development (src/lib/) and after bundling (dist/).
  */
-export function getShippedPromptPath(name: PromptName): string {
-	const thisFile = fileURLToPath(import.meta.url);
-	let dir = path.dirname(thisFile);
-	// Walk up to find the package root (directory containing prompts/)
+function findPackageDir(dirName: string): string {
+	let dir = path.dirname(fileURLToPath(import.meta.url));
 	while (dir !== path.dirname(dir)) {
-		const candidate = path.join(dir, "prompts");
+		const candidate = path.join(dir, dirName);
 		if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-			return path.join(candidate, `${name}.md`);
+			return candidate;
 		}
 		dir = path.dirname(dir);
 	}
-	// Fallback: assume prompts/ is sibling to the directory containing this file
-	const fallback = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
-	return path.join(fallback, `${name}.md`);
+	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", dirName);
 }
 
 /**
- * Resolve a prompt file path through the 3-level chain:
+ * Returns the absolute path to the package's templates/ directory.
+ */
+export function getTemplatesDir(): string {
+	return findPackageDir("templates");
+}
+
+/**
+ * Returns the absolute path to a shipped prompt file inside templates/prd-json/.
+ */
+export function getShippedPromptPath(name: PromptName): string {
+	return path.join(getTemplatesDir(), "prd-json", `${name}.md`);
+}
+
+/**
+ * Copy tracker prompt files (PROMPT_PLAN.md, PROMPT_BUILD.md) from
+ * templates/<tracker>/ to localDir. Skips files that already exist
+ * in the destination to preserve user customizations.
+ */
+export function copyTrackerPrompts(
+	tracker: TrackerName,
+	localDir: string,
+): { copied: string[] } {
+	const copied: string[] = [];
+	const files = ["PROMPT_PLAN.md", "PROMPT_BUILD.md"];
+	for (const file of files) {
+		const dest = path.join(localDir, file);
+		if (fs.existsSync(dest)) continue;
+		const src = path.join(getTemplatesDir(), tracker, file);
+		if (!fs.existsSync(src)) {
+			throw new Error(
+				`Template "${tracker}/${file}" not found. Package may be corrupted.`,
+			);
+		}
+		fs.copyFileSync(src, dest);
+		copied.push(file);
+	}
+	return { copied };
+}
+
+/**
+ * Resolve a prompt file path through the 2-level chain:
  * 1. Local .toby/<name>.md (project override)
- * 2. Global ~/.toby/<name>.md (user override)
- * 3. Shipped prompts/<name>.md (package default)
+ * 2. Shipped templates/prd-json/<name>.md (package default)
  *
  * Returns the first existing path. Throws if not found at any level.
  */
@@ -43,7 +78,6 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 	const filename = `${name}.md`;
 	const candidates = [
 		path.join(getLocalDir(cwd), filename),
-		path.join(getGlobalDir(), filename),
 		getShippedPromptPath(name),
 	];
 
