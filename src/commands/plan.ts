@@ -425,8 +425,14 @@ export async function runPlan(opts: RunPlanOptions): Promise<void> {
 		return;
 	}
 
+	const pending = filterByStatus(discovered, "pending");
+	if (pending.length === 0) {
+		console.log("No pending specs to plan. All specs have been planned.");
+		return;
+	}
+
 	const status = readStatus(cwd);
-	const selected = await selectSpecs(discovered, status.specs);
+	const selected = await selectSpecs(pending, status.specs);
 
 	if (selected.length === 0) {
 		console.log("No specs selected.");
