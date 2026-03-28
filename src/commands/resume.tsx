@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text, useApp } from "ink";
+import chalk from "chalk";
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec } from "../lib/specs.js";
 import { readStatus, updateSessionState, hasResumableSession, writeStatus } from "../lib/status.js";
 import { executeBuildAll } from "./build.js";
 import type { BuildFlags } from "./build.js";
-import type { BuildAllCallbacks, BuildAllResult } from "./build.js";
+import type { BuildAllCallbacks, BuildAllResult, BuildResult } from "./build.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
+import { writeEvent } from "../ui/stream.js";
+import { AbortError } from "../lib/errors.js";
 
 export interface ResumeFlags {
 	iterations?: number;
@@ -98,76 +99,90 @@ export async function executeResume(
 	return executeBuildAll(buildFlags, callbacks, cwd, abortSignal, specsToResume);
 }
 
-type ResumePhase = "loading" | "building" | "done" | "error";
+// ── Imperative CLI helpers ────────────────────────────────────────
 
-export default function Resume(props: ResumeFlags) {
-	const { exit } = useApp();
-	const [phase, setPhase] = useState<ResumePhase>("loading");
-	const [messages, setMessages] = useState<string[]>([]);
-	const [result, setResult] = useState<BuildAllResult | null>(null);
-	const [errorMessage, setErrorMessage] = useState("");
-	const abortController = useRef(new AbortController());
+export interface RunResumeOptions {
+	iterations?: number;
+	verbose?: boolean;
+	transcript?: boolean;
+}
 
-	useEffect(() => {
-		const callbacks: BuildAllCallbacks = {
-			onOutput: (msg) => setMessages((prev) => [...prev, msg]),
-		};
-
-		setPhase("building");
-		executeResume(props, callbacks, undefined, abortController.current.signal)
-			.then((r) => {
-				setResult(r);
-				setPhase("done");
-			})
-			.catch((err: Error) => {
-				if (abortController.current.signal.aborted) return;
-				setErrorMessage(err.message);
-				setPhase("error");
-			});
-
-		return () => {
-			abortController.current.abort();
-		};
-	}, []);
-
-	useEffect(() => {
-		if (phase === "done" || phase === "error") {
-			const timer = setTimeout(() => exit(), 100);
-			return () => clearTimeout(timer);
-		}
-	}, [phase, exit]);
-
-	if (phase === "error") {
-		return <Text color="red">{errorMessage}</Text>;
-	}
-
-	if (phase === "done" && result) {
-		const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
-		const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
-		return (
-			<Box flexDirection="column">
-				{messages.map((msg, i) => (
-					<Text key={i} dimColor>{msg}</Text>
-				))}
-				<Text color="green">{`✓ Resume complete (${result.built.length} spec(s) built)`}</Text>
-				{result.built.map((r) => (
-					<Text key={r.specName} color={r.stopReason === "max_iterations" ? "yellow" : undefined}>
-						{r.stopReason === "max_iterations"
-							? `  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}, ${r.totalTokens} tokens`
-							: `  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`}
-					</Text>
-				))}
-				<Text dimColor>{`  Total: ${totalIter} iterations, ${totalTok} tokens`}</Text>
-			</Box>
-		);
-	}
-
-	return (
-		<Box flexDirection="column">
-			{messages.map((msg, i) => (
-				<Text key={i} dimColor>{msg}</Text>
-			))}
-			<Text dimColor>Resuming build...</Text>
-		</Box>
+function printResumeSummary(result: BuildAllResult): void {
+	const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
+	const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
+	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
+	console.log(
+		hasWarnings
+			? chalk.yellow(`⚠️ Resume complete (${result.built.length} spec(s) built)`)
+			: chalk.green(`✔ Resume complete (${result.built.length} spec(s) built)`),
 	);
+	for (const r of result.built) {
+		if (r.stopReason === "max_iterations") {
+			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}, ${r.totalTokens} tokens`));
+		} else {
+			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`);
+		}
+	}
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens`));
+}
+
+function makeResumeCallbacks(verbose: boolean): BuildAllCallbacks {
+	return {
+		onEvent: (event) => writeEvent(event, verbose),
+		onOutput: (msg) => console.log(chalk.dim(msg)),
+		onSpecStart: (name, i, total) => {
+			console.log(chalk.dim(`◇ Building ${name} (${i + 1}/${total})`));
+		},
+		onSpecComplete: (result: BuildResult) => {
+			if (result.stopReason === "max_iterations") {
+				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
+			} else {
+				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens)${result.specDone ? " — sentinel" : ""}`));
+			}
+		},
+	};
+}
+
+/**
+ * Imperative CLI wrapper for resume command.
+ */
+export async function runResume(opts: RunResumeOptions): Promise<void> {
+	const cwd = process.cwd();
+	const status = readStatus(cwd);
+
+	if (!hasResumableSession(status)) {
+		console.log("No active session to resume.");
+		return;
+	}
+
+	const session = status.session!;
+	console.log(chalk.dim(`◇ Resuming session "${session.name}"`));
+
+	const config = loadConfig(cwd);
+	const verbose = opts.verbose ?? config.verbose ?? false;
+
+	const abortController = new AbortController();
+	const onSigint = () => abortController.abort();
+	process.on("SIGINT", onSigint);
+
+	try {
+		const result = await executeResume(
+			{ iterations: opts.iterations, verbose, transcript: opts.transcript },
+			makeResumeCallbacks(verbose),
+			cwd,
+			abortController.signal,
+		);
+		printResumeSummary(result);
+	} catch (err) {
+		if (err instanceof AbortError) {
+			console.log(chalk.yellow(`⚠ Building interrupted for ${err.specName}`));
+			console.log(chalk.dim(`  ${err.completedIterations} iteration(s) completed, partial status saved`));
+		} else if (err instanceof Error) {
+			console.error(chalk.red(err.message));
+		} else {
+			throw err;
+		}
+	} finally {
+		process.off("SIGINT", onSigint);
+	}
 }
