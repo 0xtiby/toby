@@ -71,6 +71,9 @@ export const IterationSchema = z.object({
 	exitCode: z.number().int().nullable(),
 	taskCompleted: z.string().nullable(),
 	tokensUsed: z.number().int().nullable(),
+	inputTokens: z.number().int().nullable().default(null),
+	outputTokens: z.number().int().nullable().default(null),
+	cost: z.number().nullable().default(null),
 });
 
 export const StopReasonSchema = z.enum([
