@@ -95,7 +95,7 @@ describe("runStatus", () => {
 		const text = output.join("\n");
 		expect(text).toContain("01-auth");
 		expect(text).toContain("02-database");
-		expect(text).toContain("5000");
+		expect(text).toContain("5,000");
 		expect(text).toContain("Total:");
 	});
 
@@ -130,7 +130,7 @@ describe("runStatus", () => {
 		expect(text).toContain("01-auth");
 		expect(text).toContain("plan");
 		expect(text).toContain("build");
-		expect(text).toContain("4100");
+		expect(text).toContain("4,100");
 		expect(text).toContain("Iterations: 2");
 	});
 
