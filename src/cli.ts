@@ -48,13 +48,8 @@ specOptions(program.command("plan").description("Plan specs with AI loop engine"
 // ── build ───────────────────────────────────────────────────────
 specOptions(program.command("build").description("Build tasks one-per-spawn with AI"))
 	.action(async (opts) => {
-		const { executeBuild, executeBuildAll } = await import("./commands/build.js");
-		const flags = resolveSpecFlags(opts);
-		if (flags.all) {
-			await executeBuildAll(flags);
-		} else {
-			await executeBuild(flags);
-		}
+		const { runBuild } = await import("./commands/build.js");
+		await runBuild(resolveSpecFlags(opts));
 	});
 
 // ── resume ──────────────────────────────────────────────────────
@@ -65,8 +60,8 @@ program
 	.option("--verbose", "Show all events")
 	.option("--transcript", "Enable transcript recording")
 	.action(async (opts) => {
-		const { executeResume } = await import("./commands/resume.js");
-		await executeResume({
+		const { runResume } = await import("./commands/resume.js");
+		await runResume({
 			iterations: opts.iterations,
 			verbose: opts.verbose,
 			transcript: opts.transcript,
