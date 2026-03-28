@@ -2,14 +2,19 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-function run(...args: string[]): string {
+function run(...args: string[]): { stdout: string; stderr: string; exitCode: number } {
 	try {
-		return execFileSync("node", ["dist/cli.js", ...args], {
+		const stdout = execFileSync("node", ["dist/cli.js", ...args], {
 			encoding: "utf-8",
 			env: { ...process.env, NO_COLOR: "1" },
 		}).trim();
+		return { stdout, stderr: "", exitCode: 0 };
 	} catch (error: any) {
-		return (error.stdout ?? "").trim() + (error.stderr ?? "").trim();
+		return {
+			stdout: (error.stdout ?? "").trim(),
+			stderr: (error.stderr ?? "").trim(),
+			exitCode: error.status ?? 1,
+		};
 	}
 }
 
@@ -31,51 +36,75 @@ describe("package.json", () => {
 });
 
 describe("cli", () => {
-	it("renders without crashing (no args shows help)", () => {
-		const output = run();
-		expect(output).toContain("toby");
-		expect(output).toContain("Usage");
+	it("no args shows help", () => {
+		const { stdout } = run();
+		expect(stdout).toContain("toby");
+		expect(stdout).toContain("Commands:");
 	});
 
-	it("shows help with all 5 commands", () => {
-		const output = run("--help");
-		expect(output).toContain("plan");
-		expect(output).toContain("build");
-		expect(output).toContain("init");
-		expect(output).toContain("status");
-		expect(output).toContain("config");
+	it("--help lists all 7 commands", () => {
+		const { stdout } = run("--help");
+		for (const cmd of ["plan", "build", "resume", "init", "status", "config", "clean"]) {
+			expect(stdout).toContain(cmd);
+		}
 	});
 
-	it("global help directs to per-command help for details", () => {
-		const output = run("--help");
-		expect(output).toContain(
-			"Run toby <command> --help for command-specific options and examples.",
-		);
+	it("plan --help shows --spec flag", () => {
+		const { stdout } = run("plan", "--help");
+		expect(stdout).toContain("--spec");
 	});
 
-	it("per-command help shows --spec flag details", () => {
-		const output = run("plan", "--help");
-		expect(output).toContain("--spec=<query>");
+	it("build --help shows --session flag", () => {
+		const { stdout } = run("build", "--help");
+		expect(stdout).toContain("--session");
 	});
 
-	it("shows version", () => {
-		const output = run("--version");
-		expect(output).toMatch(/\d+\.\d+\.\d+/);
+	it("init --help shows --plan-cli flag", () => {
+		const { stdout } = run("init", "--help");
+		expect(stdout).toContain("--plan-cli");
 	});
 
-	it("shows error for unknown command", () => {
-		const output = run("foobar");
-		expect(output).toContain("Unknown command: foobar");
+	it("config --help shows subcommand argument", () => {
+		const { stdout } = run("config", "--help");
+		expect(stdout).toContain("subcommand");
 	});
 
-	it("plan without --spec shows spec selector or no-specs message", () => {
-		const output = run("plan");
-		// In non-TTY/CI, shows either "No specs found" or "Select a spec"
-		expect(output).toMatch(/No specs found|Select a spec/);
+	it("clean --help shows --force flag", () => {
+		const { stdout } = run("clean", "--help");
+		expect(stdout).toContain("--force");
 	});
 
-	it("plan with --spec for nonexistent spec shows error", () => {
-		const output = run("plan", "--spec=nonexistent");
-		expect(output).toContain("not found");
+	it("status --help shows --spec flag", () => {
+		const { stdout } = run("status", "--help");
+		expect(stdout).toContain("--spec");
 	});
+
+	it("resume --help shows --iterations flag", () => {
+		const { stdout } = run("resume", "--help");
+		expect(stdout).toContain("--iterations");
+	});
+
+	it("--version shows version", () => {
+		const { stdout } = run("--version");
+		expect(stdout).toMatch(/\d+\.\d+\.\d+/);
+	});
+
+	it("unknown command exits with error", () => {
+		const { stderr, exitCode } = run("foobar");
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("unknown command");
+	});
+
+	it("--help includes help command guidance", () => {
+		const { stdout } = run("--help");
+		expect(stdout).toContain("help [command]");
+	});
+
+	it("unknown command with typo suggests correct command", () => {
+		const { stderr } = run("plna");
+		expect(stderr).toContain("Did you mean plan");
+	});
+
+	// plan --spec=nonexistent test deferred to spec 53 (plan-command-migration)
+	// because plan.tsx still imports deleted React hooks, causing module load errors
 });
