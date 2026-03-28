@@ -37,9 +37,9 @@ export async function confirmAction(message: string): Promise<boolean> {
 	return result as boolean;
 }
 
-export function handleCancel(value: unknown): void {
+export function handleCancel(value: unknown, message = "Operation cancelled."): void {
 	if (clack.isCancel(value)) {
-		clack.cancel("Operation cancelled.");
+		clack.cancel(message);
 		process.exit(0);
 	}
 }

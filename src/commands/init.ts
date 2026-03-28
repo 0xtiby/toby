@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 import * as clack from "@clack/prompts";
-import { detectAll, listModels } from "@0xtiby/spawner";
+import { detectAll } from "@0xtiby/spawner";
 import { writeConfig } from "../lib/config.js";
+import { loadModelOptions } from "../lib/cli-detect.js";
+import type { CliDetection, DetectAllResult } from "../lib/cli-detect.js";
 import {
 	getLocalDir,
 	CONFIG_FILE,
@@ -13,6 +15,7 @@ import {
 import { CLI_NAMES } from "../types.js";
 import type { CliName, TobyConfig } from "../types.js";
 import { isTTY } from "../ui/tty.js";
+import { handleCancel } from "../ui/prompt.js";
 
 export interface InitFlags {
 	planCli?: string;
@@ -23,15 +26,6 @@ export interface InitFlags {
 	verbose?: boolean;
 	force?: boolean;
 }
-
-interface CliDetection {
-	installed: boolean;
-	version: string | null;
-	authenticated: boolean;
-	binaryPath: string | null;
-}
-
-type DetectAllResult = Record<CliName, CliDetection>;
 
 export interface InitSelections {
 	planCli: CliName;
@@ -167,25 +161,8 @@ export async function runInit(flags: InitFlags): Promise<void> {
 	await runInteractive(flags);
 }
 
-async function loadModelOptions(
-	cli: CliName,
-): Promise<{ value: string; label: string }[]> {
-	try {
-		const models = await listModels({ cli });
-		return [
-			{ value: "default", label: "default" },
-			...models.map((m) => ({ value: m.id, label: `${m.name} (${m.id})` })),
-		];
-	} catch {
-		return [{ value: "default", label: "default" }];
-	}
-}
-
 function checkCancel(value: unknown): void {
-	if (clack.isCancel(value)) {
-		clack.cancel("Setup cancelled.");
-		process.exit(0);
-	}
+	handleCancel(value, "Setup cancelled.");
 }
 
 async function runInteractive(flags: InitFlags): Promise<void> {

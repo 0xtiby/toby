@@ -24,6 +24,7 @@ import type { TranscriptWriter } from "../lib/transcript.js";
 import { writeEvent } from "../ui/stream.js";
 import { isTTY } from "../ui/tty.js";
 import { selectSpecs } from "../ui/prompt.js";
+import { withSigint } from "../ui/signal.js";
 
 export type BuildFlags = CommandFlags;
 
@@ -538,17 +539,6 @@ function makeBuildAllCallbacks(verbose: boolean): BuildAllCallbacks {
 	};
 }
 
-async function withSigint<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
-	const abortController = new AbortController();
-	const onSigint = () => abortController.abort();
-	process.on("SIGINT", onSigint);
-	try {
-		return await fn(abortController.signal);
-	} finally {
-		process.off("SIGINT", onSigint);
-	}
-}
-
 /**
  * Imperative CLI wrapper for build command.
  */
@@ -567,7 +557,49 @@ export async function runBuild(opts: RunBuildOptions): Promise<void> {
 		session: opts.session,
 	};
 
+	// Resolve specs to build
+	let specsToRun: Spec[] | undefined;
+	let runSingle = false;
+
 	if (flags.all) {
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+		specsToRun = sortSpecs([
+			...filterByStatus(discovered, "planned"),
+			...filterByStatus(discovered, "building"),
+		]);
+		if (specsToRun.length === 0) {
+			console.log("No planned specs found. Run 'toby plan' first.");
+			return;
+		}
+	} else if (flags.spec?.includes(",")) {
+		const discovered = discoverSpecs(cwd, config);
+		if (discovered.length === 0) {
+			console.log("No specs found.");
+			return;
+		}
+		try {
+			specsToRun = findSpecs(discovered, flags.spec);
+		} catch (err) {
+			const available = discovered.map((s) => s.name).join(", ");
+			console.error(chalk.red(`${(err as Error).message}. Available: ${available}`));
+			process.exitCode = 1;
+			return;
+		}
+	} else if (flags.spec) {
+		// Single spec — delegate to executeBuild which validates status
+		runSingle = true;
+	} else {
+		// Interactive mode — TTY only
+		if (!isTTY()) {
+			console.error(chalk.red("No --all or --spec flag provided. Use --all or --spec in non-interactive mode."));
+			process.exitCode = 1;
+			return;
+		}
+
 		const discovered = discoverSpecs(cwd, config);
 		if (discovered.length === 0) {
 			console.log("No specs found.");
@@ -583,94 +615,16 @@ export async function runBuild(opts: RunBuildOptions): Promise<void> {
 			return;
 		}
 
-		try {
-			const result = await withSigint((signal) =>
-				executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, buildable),
-			);
-			printBuildAllSummary(result);
-		} catch (err) {
-			if (err instanceof AbortError) {
-				printBuildInterrupted(err.specName, err.completedIterations);
-			} else {
-				throw err;
-			}
+		const status = readStatus(cwd);
+		const selected = await selectSpecs(buildable, status.specs);
+		if (selected.length === 0) {
+			console.log("No specs selected.");
+			return;
 		}
-		return;
+		specsToRun = selected as Spec[];
 	}
 
-	if (flags.spec) {
-		const discovered = discoverSpecs(cwd, config);
-		if (discovered.length === 0) {
-			console.log("No specs found.");
-			return;
-		}
-
-		// Comma-separated → multiple specs
-		if (flags.spec.includes(",")) {
-			let resolved: ReturnType<typeof findSpecs>;
-			try {
-				resolved = findSpecs(discovered, flags.spec);
-			} catch (err) {
-				const available = discovered.map((s) => s.name).join(", ");
-				console.error(chalk.red(`${(err as Error).message}. Available: ${available}`));
-				process.exitCode = 1;
-				return;
-			}
-
-			// Validate each spec status
-			const status = readStatus(cwd);
-			for (const spec of resolved) {
-				const entry = status.specs[spec.name];
-				if (entry?.status === "done") {
-					console.error(chalk.red(`Spec '${spec.name}' is already done. Reset its status in .toby/status.json to rebuild.`));
-					process.exitCode = 1;
-					return;
-				}
-				if (!entry || (entry.status !== "planned" && entry.status !== "building")) {
-					console.error(chalk.red(`Spec '${spec.name}' has not been planned yet. Run 'toby plan --spec ${spec.name}' first.`));
-					process.exitCode = 1;
-					return;
-				}
-			}
-
-			try {
-				const result = await withSigint((signal) =>
-					executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, resolved),
-				);
-				printBuildAllSummary(result);
-			} catch (err) {
-				if (err instanceof AbortError) {
-					printBuildInterrupted(err.specName, err.completedIterations);
-				} else {
-					throw err;
-				}
-			}
-			return;
-		}
-
-		// Single spec
-		const found = findSpec(discovered, flags.spec);
-		if (!found) {
-			const available = discovered.map((s) => s.name).join(", ");
-			console.error(chalk.red(`Spec '${flags.spec}' not found. Available: ${available}`));
-			process.exitCode = 1;
-			return;
-		}
-
-		// Validate spec status
-		const status = readStatus(cwd);
-		const entry = status.specs[found.name];
-		if (entry?.status === "done") {
-			console.error(chalk.red(`Spec '${found.name}' is already done. Reset its status in .toby/status.json to rebuild.`));
-			process.exitCode = 1;
-			return;
-		}
-		if (!entry || (entry.status !== "planned" && entry.status !== "building")) {
-			console.error(chalk.red(`Spec '${found.name}' has not been planned yet. Run 'toby plan --spec ${found.name}' first.`));
-			process.exitCode = 1;
-			return;
-		}
-
+	if (runSingle) {
 		const callbacks: BuildCallbacks = {
 			onEvent: (event) => writeEvent(event, verbose),
 			onIteration: (current, max) => {
@@ -686,6 +640,9 @@ export async function runBuild(opts: RunBuildOptions): Promise<void> {
 		} catch (err) {
 			if (err instanceof AbortError) {
 				printBuildInterrupted(err.specName, err.completedIterations);
+			} else if (err instanceof Error) {
+				console.error(chalk.red(err.message));
+				process.exitCode = 1;
 			} else {
 				throw err;
 			}
@@ -693,41 +650,9 @@ export async function runBuild(opts: RunBuildOptions): Promise<void> {
 		return;
 	}
 
-	// Interactive mode — TTY only
-	if (!isTTY()) {
-		console.error(chalk.red("No --all or --spec flag provided. Use --all or --spec in non-interactive mode."));
-		process.exitCode = 1;
-		return;
-	}
-
-	const discovered = discoverSpecs(cwd, config);
-	if (discovered.length === 0) {
-		console.log("No specs found.");
-		return;
-	}
-
-	const buildable = sortSpecs([
-		...filterByStatus(discovered, "planned"),
-		...filterByStatus(discovered, "building"),
-	]);
-	if (buildable.length === 0) {
-		console.log("No planned specs found. Run 'toby plan' first.");
-		return;
-	}
-
-	const status = readStatus(cwd);
-	const selected = await selectSpecs(buildable, status.specs);
-
-	if (selected.length === 0) {
-		console.log("No specs selected.");
-		return;
-	}
-
-	const selectedSpecs = selected as Spec[];
-
 	try {
 		const result = await withSigint((signal) =>
-			executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, selectedSpecs),
+			executeBuildAll(flags, makeBuildAllCallbacks(verbose), cwd, signal, specsToRun),
 		);
 		printBuildAllSummary(result);
 	} catch (err) {

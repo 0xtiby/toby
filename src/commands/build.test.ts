@@ -670,7 +670,7 @@ describe("runBuild", () => {
 		await runBuild({ spec: "auth", verbose: false });
 
 		expect(console.error).toHaveBeenCalledWith(
-			expect.stringContaining("has not been planned yet"),
+			expect.stringContaining("No plan found"),
 		);
 	});
 

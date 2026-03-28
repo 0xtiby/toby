@@ -16,8 +16,7 @@ const program = new Command()
 // ── Shared flag helpers ─────────────────────────────────────────
 function specOptions(cmd: Command): Command {
 	return cmd
-		.option("--spec <name>", "Spec name or number")
-		.option("--specs <name>", "Alias for --spec")
+		.option("--spec, --specs <name>", "Spec name or number")
 		.option("--all", "Plan all pending specs")
 		.option("--verbose", "Show all events")
 		.option("--cli <cli>", "Override CLI tool")
@@ -28,7 +27,7 @@ function specOptions(cmd: Command): Command {
 
 function resolveSpecFlags(opts: Record<string, unknown>) {
 	return {
-		spec: (opts.specs ?? opts.spec) as string | undefined,
+		spec: opts.spec as string | undefined,
 		all: (opts.all as boolean) ?? false,
 		verbose: (opts.verbose as boolean) ?? false,
 		transcript: opts.transcript as boolean | undefined,

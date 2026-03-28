@@ -96,7 +96,7 @@ export function writeConfig(
 }
 
 /** CLI flag overrides for command config */
-export interface CommandFlags {
+export interface CommandFlagOverrides {
 	cli?: "claude" | "codex" | "opencode";
 	model?: string;
 	iterations?: number;
@@ -122,7 +122,7 @@ export function validateCliName(cli: string | undefined): void {
 export function resolveCommandConfig(
 	config: TobyConfig,
 	command: "plan" | "build",
-	flags: CommandFlags = {},
+	flags: CommandFlagOverrides = {},
 ): CommandConfig {
 	validateCliName(flags.cli);
 	const base = config[command];

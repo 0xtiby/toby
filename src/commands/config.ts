@@ -2,12 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import * as clack from "@clack/prompts";
 import chalk from "chalk";
-import { detectAll, listModels } from "@0xtiby/spawner";
+import { detectAll } from "@0xtiby/spawner";
 import { loadConfig, writeConfig } from "../lib/config.js";
+import { loadModelOptions } from "../lib/cli-detect.js";
+import type { CliDetection, DetectAllResult } from "../lib/cli-detect.js";
 import { getLocalDir, CONFIG_FILE } from "../lib/paths.js";
 import { ConfigSchema, CLI_NAMES } from "../types.js";
 import type { TobyConfig, CliName } from "../types.js";
 import { isTTY } from "../ui/tty.js";
+import { handleCancel } from "../ui/prompt.js";
 
 /** All valid dot-notation keys and their expected types */
 export const VALID_KEYS: Record<string, "string" | "number" | "boolean" | "string[]"> = {
@@ -227,31 +230,7 @@ export function configSetBatch(pairs: string[]): void {
 }
 
 function checkCancel(value: unknown): void {
-	if (clack.isCancel(value)) {
-		clack.cancel("Config editor cancelled.");
-		process.exit(0);
-	}
-}
-
-interface CliDetection {
-	installed: boolean;
-	version: string | null;
-	authenticated: boolean;
-	binaryPath: string | null;
-}
-
-type DetectAllResult = Record<CliName, CliDetection>;
-
-async function loadModelOptions(cli: CliName): Promise<{ value: string; label: string }[]> {
-	try {
-		const models = await listModels({ cli });
-		return [
-			{ value: "default", label: "default" },
-			...models.map((m) => ({ value: m.id, label: `${m.name} (${m.id})` })),
-		];
-	} catch {
-		return [{ value: "default", label: "default" }];
-	}
+	handleCancel(value, "Config editor cancelled.");
 }
 
 async function promptForValue(key: string, currentValue: unknown): Promise<unknown> {

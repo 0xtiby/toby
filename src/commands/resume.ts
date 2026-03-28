@@ -8,6 +8,7 @@ import type { BuildAllCallbacks, BuildAllResult, BuildResult } from "./build.js"
 import { formatMaxIterationsWarning } from "../lib/format.js";
 import { writeEvent } from "../ui/stream.js";
 import { AbortError } from "../lib/errors.js";
+import { withSigint } from "../ui/signal.js";
 
 export interface ResumeFlags {
 	iterations?: number;
@@ -161,16 +162,14 @@ export async function runResume(opts: RunResumeOptions): Promise<void> {
 	const config = loadConfig(cwd);
 	const verbose = opts.verbose ?? config.verbose ?? false;
 
-	const abortController = new AbortController();
-	const onSigint = () => abortController.abort();
-	process.on("SIGINT", onSigint);
-
 	try {
-		const result = await executeResume(
-			{ iterations: opts.iterations, verbose, transcript: opts.transcript },
-			makeResumeCallbacks(verbose),
-			cwd,
-			abortController.signal,
+		const result = await withSigint((signal) =>
+			executeResume(
+				{ iterations: opts.iterations, verbose, transcript: opts.transcript },
+				makeResumeCallbacks(verbose),
+				cwd,
+				signal,
+			),
 		);
 		printResumeSummary(result);
 	} catch (err) {
@@ -183,7 +182,5 @@ export async function runResume(opts: RunResumeOptions): Promise<void> {
 		} else {
 			throw err;
 		}
-	} finally {
-		process.off("SIGINT", onSigint);
 	}
 }

@@ -6,11 +6,4 @@ export default defineConfig({
   target: "node18",
   clean: true,
   shims: true,
-  external: [
-    "react",
-    "ink",
-    "react-devtools-core",
-    /hooks\//,
-    /components\//,
-  ],
 });

@@ -21,6 +21,7 @@ import type { TranscriptWriter } from "../lib/transcript.js";
 import { writeEvent } from "../ui/stream.js";
 import { isTTY } from "../ui/tty.js";
 import { selectSpecs } from "../ui/prompt.js";
+import { withSigint } from "../ui/signal.js";
 
 export type PlanFlags = CommandFlags;
 
@@ -294,17 +295,6 @@ function makePlanAllCallbacks(verbose: boolean): PlanAllCallbacks {
 			console.log(chalk.yellow("Running in refinement mode..."));
 		},
 	};
-}
-
-async function withSigint<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
-	const abortController = new AbortController();
-	const onSigint = () => abortController.abort();
-	process.on("SIGINT", onSigint);
-	try {
-		return await fn(abortController.signal);
-	} finally {
-		process.off("SIGINT", onSigint);
-	}
 }
 
 /**

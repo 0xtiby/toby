@@ -52,18 +52,18 @@ function printHelp(version: string): void {
 async function dispatch(command: string, version: string): Promise<void> {
 	switch (command) {
 		case "plan": {
-			const { executePlan } = await import("./plan.js");
-			await executePlan({});
+			const { runPlan } = await import("./plan.js");
+			await runPlan({});
 			break;
 		}
 		case "build": {
-			const { executeBuild } = await import("./build.js");
-			await executeBuild({});
+			const { runBuild } = await import("./build.js");
+			await runBuild({});
 			break;
 		}
 		case "resume": {
-			const { executeResume } = await import("./resume.js");
-			await executeResume({});
+			const { runResume } = await import("./resume.js");
+			await runResume({});
 			break;
 		}
 		case "status": {
