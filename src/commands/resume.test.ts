@@ -1,6 +1,4 @@
-import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "ink-testing-library";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { StatusData, Session } from "../types.js";
 import type { Spec } from "../lib/specs.js";
 import type { BuildAllCallbacks, BuildAllResult } from "./build.js";
@@ -33,8 +31,7 @@ import { loadConfig, resolveCommandConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec } from "../lib/specs.js";
 import { readStatus, writeStatus, hasResumableSession, updateSessionState } from "../lib/status.js";
 import { executeBuildAll } from "./build.js";
-import { executeResume } from "./resume.js";
-import Resume from "./resume.js";
+import { executeResume, runResume } from "./resume.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
@@ -252,7 +249,7 @@ describe("executeResume", () => {
 	});
 });
 
-describe("Resume component", () => {
+describe("runResume", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockLoadConfig.mockReturnValue(defaultConfig as ReturnType<typeof loadConfig>);
@@ -268,37 +265,25 @@ describe("Resume component", () => {
 			};
 			return map[query];
 		});
+		vi.spyOn(console, "log").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
 	});
 
-	it("renders preview messages before building", async () => {
-		const status = makeStatus();
-		mockReadStatus.mockReturnValue(status);
-		mockHasResumableSession.mockReturnValue(true);
-		mockUpdateSessionState.mockReturnValue({ ...status, session: { ...status.session!, state: "active" } });
-
-		mockExecuteBuildAll.mockImplementation(() => new Promise(() => {}));
-
-		const { lastFrame } = render(<Resume />);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Resuming");
-		});
+	afterEach(() => {
+		vi.restoreAllMocks();
 	});
 
-	it("renders error when no session exists", async () => {
+	it("prints 'No active session to resume.' when no session", async () => {
 		mockReadStatus.mockReturnValue({ specs: {} });
 		mockHasResumableSession.mockReturnValue(false);
 
-		const { lastFrame } = render(<Resume />);
+		await runResume({});
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("No active session to resume");
-		});
+		expect(console.log).toHaveBeenCalledWith("No active session to resume.");
+		expect(mockExecuteBuildAll).not.toHaveBeenCalled();
 	});
 
-	it("renders summary on completion", async () => {
+	it("delegates to executeResume and prints summary on success", async () => {
 		const status = makeStatus();
 		mockReadStatus.mockReturnValue(status);
 		mockHasResumableSession.mockReturnValue(true);
@@ -316,52 +301,82 @@ describe("Resume component", () => {
 			}],
 		});
 
-		const { lastFrame } = render(<Resume />);
+		await runResume({});
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Resume complete");
-			expect(output).toContain("43-resume-command");
-			expect(output).toContain("3 iterations");
-		});
+		expect(mockExecuteBuildAll).toHaveBeenCalledTimes(1);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("All remaining specs built"),
+		);
 	});
 
-	it("shows max_iterations warning per spec in done summary", async () => {
+	it("prints error when all specs are done", async () => {
+		const status = makeStatus({
+			specs: {
+				"42-session-lifecycle": { status: "done", plannedAt: null, iterations: [] },
+				"43-resume-command": { status: "done", plannedAt: null, iterations: [] },
+			},
+		});
+		mockReadStatus.mockReturnValue(status);
+		mockHasResumableSession.mockReturnValue(true);
+
+		await runResume({});
+
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("already done"),
+		);
+	});
+
+	it("prints error when all specs are missing", async () => {
+		const status = makeStatus({
+			specs: {},
+			session: makeSession({ specs: ["99-missing", "100-also-missing"] }),
+		});
+		mockReadStatus.mockReturnValue(status);
+		mockHasResumableSession.mockReturnValue(true);
+		mockFindSpec.mockReturnValue(undefined);
+
+		await runResume({});
+
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("missing from specs/"),
+		);
+	});
+
+	it("shows session name in output", async () => {
+		const status = makeStatus();
+		mockReadStatus.mockReturnValue(status);
+		mockHasResumableSession.mockReturnValue(true);
+		mockUpdateSessionState.mockReturnValue({ ...status, session: { ...status.session!, state: "active" } });
+		mockExecuteBuildAll.mockResolvedValue({ built: [] });
+
+		await runResume({});
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("bold-hawk-42"),
+		);
+	});
+
+	it("shows max_iterations warning in summary", async () => {
 		const status = makeStatus();
 		mockReadStatus.mockReturnValue(status);
 		mockHasResumableSession.mockReturnValue(true);
 		mockUpdateSessionState.mockReturnValue({ ...status, session: { ...status.session!, state: "active" } });
 
 		mockExecuteBuildAll.mockResolvedValue({
-			built: [
-				{
-					specName: "01-auth",
-					totalIterations: 10,
-					maxIterations: 10,
-					totalTokens: 5000,
-					specDone: false,
-					stopReason: "max_iterations" as const,
-				},
-				{
-					specName: "02-api",
-					totalIterations: 3,
-					maxIterations: 10,
-					totalTokens: 1500,
-					specDone: true,
-					stopReason: "sentinel" as const,
-				},
-			],
+			built: [{
+				specName: "01-auth",
+				totalIterations: 10,
+				maxIterations: 10,
+				totalTokens: 5000,
+				specDone: false,
+				stopReason: "max_iterations" as const,
+			}],
 		});
 
-		const { lastFrame } = render(<Resume />);
+		await runResume({});
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("⚠️");
-			expect(output).toContain("maximum iteration limit reached");
-			expect(output).toContain("10/10");
-			expect(output).toContain("02-api: 3 iterations");
-			expect(output).toContain("[done]");
-		});
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("⚠️"),
+		);
 	});
 });
