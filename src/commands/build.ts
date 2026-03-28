@@ -40,6 +40,7 @@ export interface BuildResult {
 	totalIterations: number;
 	maxIterations: number;
 	totalTokens: number;
+	totalCost: number;
 	specDone: boolean;
 	stopReason: StopReason;
 	error?: string;
@@ -191,20 +192,21 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 
 	const totalIterations = loopResult.iterations.length;
 	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+	const totalCost = loopResult.iterations.reduce((sum, r) => sum + (r.cost ?? 0), 0);
 
 	if (loopResult.stopReason === "error") {
 		status = updateSpecStatus(status, spec.name, "building");
 		writeStatus(status, cwd);
 		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
 		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
-		return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone: false, stopReason: loopResult.stopReason, error: errorMsg }, status };
+		return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, totalCost, specDone: false, stopReason: loopResult.stopReason, error: errorMsg }, status };
 	}
 
 	const specDone = loopResult.stopReason === "sentinel";
 	status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
 	writeStatus(status, cwd);
 
-	return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone, stopReason: loopResult.stopReason }, status };
+	return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, totalCost, specDone, stopReason: loopResult.stopReason }, status };
 }
 
 /**

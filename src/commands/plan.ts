@@ -36,6 +36,8 @@ export interface PlanResult {
 	specName: string;
 	totalIterations: number;
 	maxIterations: number;
+	totalTokens: number;
+	totalCost: number;
 	stopReason: StopReason;
 }
 
@@ -154,10 +156,15 @@ export async function executePlan(
 			status = updateSpecStatus(status, found.name, "planned");
 			writeStatus(status, cwd);
 
+			const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+			const totalCost = loopResult.iterations.reduce((sum, r) => sum + (r.cost ?? 0), 0);
+
 			return {
 				specName: found.name,
 				totalIterations: loopResult.iterations.length,
 				maxIterations: commandConfig.iterations,
+				totalTokens,
+				totalCost,
 				stopReason: loopResult.stopReason,
 			};
 		},
