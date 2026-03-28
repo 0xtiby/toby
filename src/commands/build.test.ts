@@ -1,6 +1,4 @@
-import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "ink-testing-library";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CliEvent } from "@0xtiby/spawner";
 
 vi.mock("../lib/config.js", () => ({
@@ -12,8 +10,21 @@ vi.mock("../lib/specs.js", () => ({
 	discoverSpecs: vi.fn(),
 	filterByStatus: vi.fn(),
 	findSpec: vi.fn(),
+	findSpecs: vi.fn(),
 	loadSpecContent: vi.fn(),
 	sortSpecs: vi.fn(),
+}));
+
+vi.mock("../ui/stream.js", () => ({
+	writeEvent: vi.fn(),
+}));
+
+vi.mock("../ui/tty.js", () => ({
+	isTTY: vi.fn(() => true),
+}));
+
+vi.mock("../ui/prompt.js", () => ({
+	selectSpecs: vi.fn(),
 }));
 
 vi.mock("../lib/template.js", () => ({
@@ -85,16 +96,18 @@ vi.mock("../lib/transcript.js", () => {
 });
 
 import { loadConfig, resolveCommandConfig } from "../lib/config.js";
-import { discoverSpecs, filterByStatus, findSpec, loadSpecContent, sortSpecs } from "../lib/specs.js";
+import { discoverSpecs, filterByStatus, findSpec, findSpecs, loadSpecContent, sortSpecs } from "../lib/specs.js";
 import { loadPrompt, computeCliVars, resolveTemplateVars, computeSpecSlug, generateSessionName } from "../lib/template.js";
 import { runLoop } from "../lib/loop.js";
 import type { LoopOptions } from "../lib/loop.js";
 import { readStatus, writeStatus, addIteration, updateSpecStatus, createSession, clearSession, updateSessionState } from "../lib/status.js";
 import { openTranscript } from "../lib/transcript.js";
-import { executeBuild, executeBuildAll } from "./build.js";
+import { executeBuild, executeBuildAll, runBuild } from "./build.js";
 import { AbortError } from "../lib/errors.js";
-import Build from "./build.js";
 import type { BuildFlags } from "./build.js";
+import { writeEvent } from "../ui/stream.js";
+import { isTTY } from "../ui/tty.js";
+import { selectSpecs } from "../ui/prompt.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
@@ -509,65 +522,117 @@ describe("executeBuild", () => {
 	});
 });
 
-describe("Build component", () => {
+const mockWriteEvent = vi.mocked(writeEvent);
+const mockIsTTY = vi.mocked(isTTY);
+const mockSelectSpecs = vi.mocked(selectSpecs);
+const mockFindSpecs = vi.mocked(findSpecs);
+
+function makeSpec(name: string, num: number, status: "pending" | "planned" | "building" | "done") {
+	return { name, path: `/project/specs/${name}.md`, order: { num, suffix: null }, status };
+}
+
+describe("runBuild", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		setupDefaults();
+		vi.spyOn(console, "log").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
 	});
 
-	it("renders spec selector when no --spec flag provided", async () => {
-		const plannedSpec = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "planned" as const };
-		mockDiscoverSpecs.mockReturnValue([plannedSpec]);
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
 
-		const { lastFrame } = render(
-			<Build all={false} verbose={false} />,
+	it("--all mode builds planned specs and prints summary", async () => {
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([spec1]);
+		mockSortSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		await runBuild({ all: true, verbose: false });
+
+		expect(mockRunLoop).toHaveBeenCalledTimes(1);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("All specs built"),
 		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Select specs to build");
-			expect(output).toContain("01-auth");
-		});
 	});
 
-	it("shows error when no planned specs exist", async () => {
-		const pendingSpec = { name: "01-auth", path: "/project/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const };
-		mockDiscoverSpecs.mockReturnValue([pendingSpec]);
+	it("--all mode with no specs prints friendly message", async () => {
+		mockDiscoverSpecs.mockReturnValue([]);
 
-		const { lastFrame } = render(
-			<Build all={false} verbose={false} />,
+		await runBuild({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No specs found.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("--all mode with no planned specs prints friendly message", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([]);
+		mockSortSpecs.mockReturnValue([]);
+
+		await runBuild({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith("No planned specs found. Run 'toby plan' first.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
+	});
+
+	it("--all mode wires onEvent to writeEvent", async () => {
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([spec1]);
+		mockSortSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		const testEvent = { type: "text", timestamp: 1, content: "hello" } as never;
+		mockRunLoop.mockImplementation(async (options) => {
+			options.onEvent?.(testEvent);
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "max_iterations" as const };
+		});
+
+		await runBuild({ all: true, verbose: false });
+
+		expect(mockWriteEvent).toHaveBeenCalledWith(testEvent, false);
+	});
+
+	it("--all mode handles SIGINT gracefully", async () => {
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([spec1]);
+		mockSortSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+
+		mockRunLoop.mockImplementation(async (options) => {
+			const iterResult = {
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
+			};
+			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
+			options.onIterationComplete?.(iterResult);
+			return { iterations: [iterResult], stopReason: "aborted" as const };
+		});
+
+		await runBuild({ all: true, verbose: false });
+
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Building interrupted"),
 		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("No planned specs found");
-		});
 	});
 
-	it("only shows planned and building specs in selector", async () => {
-		const specs = [
-			{ name: "01-auth", path: "/p/specs/01-auth.md", order: { num: 1, suffix: null }, status: "pending" as const },
-			{ name: "02-api", path: "/p/specs/02-api.md", order: { num: 2, suffix: null }, status: "planned" as const },
-			{ name: "03-ui", path: "/p/specs/03-ui.md", order: { num: 3, suffix: null }, status: "building" as const },
-			{ name: "04-done", path: "/p/specs/04-done.md", order: { num: 4, suffix: null }, status: "done" as const },
-		];
-		mockDiscoverSpecs.mockReturnValue(specs);
+	it("--spec with single name calls executeBuild", async () => {
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
 
-		const { lastFrame } = render(
-			<Build all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("02-api");
-			expect(output).toContain("03-ui");
-			expect(output).not.toContain("01-auth");
-			expect(output).not.toContain("04-done");
-		});
-	});
-
-	it("completion summary shows iterations and tokens for sentinel", async () => {
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
+		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
 				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
@@ -577,190 +642,90 @@ describe("Build component", () => {
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
 
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
+		await runBuild({ spec: "auth", verbose: false });
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Build complete");
-			expect(output).toContain("Iterations: 1");
-			expect(output).toContain("Tokens: 500");
-		});
+		expect(mockRunLoop).toHaveBeenCalledTimes(1);
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("Build complete"),
+		);
 	});
 
-	it("max_iterations shows warning instead of success", async () => {
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 500,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("⚠️");
-			expect(output).toContain("maximum iteration limit reached");
-			expect(output).toContain("1/10");
-			expect(output).not.toContain("✓");
-		});
-	});
-
-	it("shows error when spec not found", async () => {
+	it("--spec with unknown name prints error", async () => {
+		mockDiscoverSpecs.mockReturnValue([makeSpec("01-auth", 1, "planned")]);
 		mockFindSpec.mockReturnValue(undefined);
 
-		const { lastFrame } = render(
-			<Build spec="nonexistent" all={false} verbose={false} />,
-		);
+		await runBuild({ spec: "nonexistent", verbose: false });
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("not found");
-		});
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("not found"),
+		);
 	});
 
-	it("shows error when no plan in status.json", async () => {
+	it("--spec with pending spec prints plan-first error", async () => {
+		const spec1 = makeSpec("01-auth", 1, "pending");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
 		mockReadStatus.mockReturnValue({ specs: {} });
 
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
+		await runBuild({ spec: "auth", verbose: false });
 
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("No plan found");
-		});
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("has not been planned yet"),
+		);
 	});
 
-	it("shows error summary on fatal error", async () => {
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 1, tokensUsed: 50,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "error" as const };
+	it("--spec with done spec prints already-done error", async () => {
+		const spec1 = makeSpec("01-auth", 1, "done");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
+		mockReadStatus.mockReturnValue({
+			specs: { "01-auth": { status: "done", plannedAt: null, iterations: [] } },
 		});
 
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
+		await runBuild({ spec: "auth", verbose: false });
+
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("already done"),
 		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Build failed");
-		});
 	});
 
-	it("default mode filters tool call events from output", async () => {
-		let resolveLoop: (value: unknown) => void;
-		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+	it("non-TTY without flags prints error", async () => {
+		mockIsTTY.mockReturnValue(false);
 
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const textEvent: CliEvent = { type: "text", timestamp: Date.now(), content: "Building auth" } as CliEvent;
-			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Read" } } as CliEvent;
-			options.onEvent?.(textEvent);
-			options.onEvent?.(toolEvent);
-			await loopPromise;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
+		await runBuild({ verbose: false });
 
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("--all or --spec"),
 		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Building auth");
-			expect(output).not.toContain("Read");
-		});
-
-		resolveLoop!(undefined);
 	});
 
-	it("--verbose shows all event types including tool calls", async () => {
-		let resolveLoop: (value: unknown) => void;
-		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+	it("TTY with no flags prompts multiselect", async () => {
+		mockIsTTY.mockReturnValue(true);
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([spec1]);
+		mockSortSpecs.mockReturnValue([spec1]);
+		mockSelectSpecs.mockResolvedValue([spec1]);
+		mockFindSpec.mockReturnValue(spec1);
 
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const textEvent: CliEvent = { type: "text", timestamp: Date.now(), content: "Building auth" } as CliEvent;
-			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Read" } } as CliEvent;
-			options.onEvent?.(textEvent);
-			options.onEvent?.(toolEvent);
-			await loopPromise;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
+		await runBuild({ verbose: false });
 
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={true} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Building auth");
-			expect(output).toContain("Read");
-		});
-
-		resolveLoop!(undefined);
+		expect(mockSelectSpecs).toHaveBeenCalled();
+		expect(mockRunLoop).toHaveBeenCalled();
 	});
 
-	it("config verbose setting used when flag not provided", async () => {
-		mockLoadConfig.mockReturnValue({
-			plan: { cli: "claude", model: "default", iterations: 2 },
-			build: { cli: "claude", model: "default", iterations: 10 },
-			specsDir: "specs",
-			excludeSpecs: ["README.md"],
-			verbose: true,
-			transcript: false,
-			templateVars: {},
-		});
+	it("TTY multiselect with no selection prints friendly message", async () => {
+		mockIsTTY.mockReturnValue(true);
+		const spec1 = makeSpec("01-auth", 1, "planned");
+		mockDiscoverSpecs.mockReturnValue([spec1]);
+		mockFilterByStatus.mockReturnValue([spec1]);
+		mockSortSpecs.mockReturnValue([spec1]);
+		mockSelectSpecs.mockResolvedValue([]);
 
-		let resolveLoop: (value: unknown) => void;
-		const loopPromise = new Promise((resolve) => { resolveLoop = resolve; });
+		await runBuild({ verbose: false });
 
-		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const toolEvent: CliEvent = { type: "tool_use", timestamp: Date.now(), content: undefined, tool: { name: "Bash" } } as CliEvent;
-			options.onEvent?.(toolEvent);
-			await loopPromise;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
-			options.onIterationStart?.(iterResult.iteration, iterResult.sessionId);
-			options.onIterationComplete?.(iterResult);
-			return { iterations: [iterResult], stopReason: "max_iterations" as const };
-		});
-
-		const { lastFrame } = render(
-			<Build spec="auth" all={false} verbose={false} />,
-		);
-
-		await vi.waitFor(() => {
-			const output = lastFrame()!;
-			expect(output).toContain("Bash");
-		});
-
-		resolveLoop!(undefined);
+		expect(console.log).toHaveBeenCalledWith("No specs selected.");
+		expect(mockRunLoop).not.toHaveBeenCalled();
 	});
 });
 
