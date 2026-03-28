@@ -18,6 +18,7 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { CommandFlags, CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
+import { formatCost } from "../ui/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -501,13 +502,15 @@ function printBuildSummary(result: BuildResult): void {
 		console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 	} else {
 		console.log(chalk.green(`✔ Build complete for ${result.specName}`));
-		console.log(`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`);
+		const costSuffix = result.totalCost > 0 ? `, Cost: ${formatCost(result.totalCost)}` : "";
+		console.log(`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}${costSuffix}`);
 	}
 }
 
 function printBuildAllSummary(result: BuildAllResult): void {
 	const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
 	const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
+	const totalCost = result.built.reduce((s, r) => s + r.totalCost, 0);
 	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
 	console.log(
 		hasWarnings
@@ -518,10 +521,12 @@ function printBuildAllSummary(result: BuildAllResult): void {
 		if (r.stopReason === "max_iterations") {
 			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`));
 		} else {
-			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`);
+			const costSuffix = r.totalCost > 0 ? `, ${formatCost(r.totalCost)}` : "";
+			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${costSuffix}${r.specDone ? " [done]" : ""}`);
 		}
 	}
-	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens`));
+	const totalCostSuffix = totalCost > 0 ? `, ${formatCost(totalCost)}` : "";
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens${totalCostSuffix}`));
 }
 
 function printBuildInterrupted(specName: string, completedIterations: number): void {
@@ -540,7 +545,8 @@ function makeBuildAllCallbacks(verbose: boolean): BuildAllCallbacks {
 			if (result.stopReason === "max_iterations") {
 				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 			} else {
-				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens)${result.specDone ? " — sentinel" : ""}`));
+				const costSuffix = result.totalCost > 0 ? `, ${formatCost(result.totalCost)}` : "";
+				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens${costSuffix})${result.specDone ? " — sentinel" : ""}`));
 			}
 		},
 		onOutput: (msg) => console.log(chalk.dim(msg)),
