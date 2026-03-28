@@ -134,6 +134,9 @@ export async function executePlan(
 						exitCode: iterResult.exitCode,
 						taskCompleted: null,
 						tokensUsed: iterResult.tokensUsed,
+						inputTokens: iterResult.inputTokens,
+						outputTokens: iterResult.outputTokens,
+						cost: iterResult.cost,
 					};
 					iterationStartTime = new Date().toISOString();
 					status = addIteration(status, found.name, iteration);

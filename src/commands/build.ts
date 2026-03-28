@@ -126,6 +126,9 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				exitCode: null,
 				taskCompleted: null,
 				tokensUsed: null,
+				inputTokens: null,
+				outputTokens: null,
+				cost: null,
 			};
 			status = addIteration(status, spec.name, iterationRecord);
 			writeStatus(status, cwd);
@@ -152,6 +155,9 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				completedAt: new Date().toISOString(),
 				exitCode: iterResult.exitCode,
 				tokensUsed: iterResult.tokensUsed,
+				inputTokens: iterResult.inputTokens,
+				outputTokens: iterResult.outputTokens,
+				cost: iterResult.cost,
 			};
 			status = {
 				...status,
