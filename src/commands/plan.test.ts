@@ -154,7 +154,7 @@ function setupDefaults() {
 			iteration: 1,
 			sessionId: "sess-1",
 			exitCode: 0,
-			tokensUsed: 150,
+			tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 			model: "claude-sonnet-4-6",
 			durationMs: 1000,
 			sentinelDetected: false,
@@ -473,7 +473,7 @@ describe("executePlan", () => {
 			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 				options.onEvent?.({ type: "text", timestamp: 1, content: "hello" } as never);
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationComplete?.(iterResult);
@@ -502,7 +502,7 @@ describe("executePlan", () => {
 
 			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 				};
 				options.onIterationComplete?.(iterResult);
@@ -530,7 +530,7 @@ describe("executePlan", () => {
 					iteration: 1,
 					sessionId: "sess-1",
 					exitCode: 0,
-					tokensUsed: 150,
+					tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 					model: "claude-sonnet-4-6",
 					durationMs: 1000,
 					sentinelDetected: false,
@@ -593,7 +593,7 @@ describe("executePlanAll", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			callCount++;
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000,
 				sentinelDetected: callCount === 1,
 			};
@@ -764,7 +764,7 @@ describe("error handling edge cases", () => {
 				iteration: 1,
 				sessionId: "sess-1",
 				exitCode: 0,
-				tokensUsed: 150,
+				tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6",
 				durationMs: 1000,
 				sentinelDetected: false,
@@ -789,7 +789,7 @@ describe("error handling edge cases", () => {
 				iteration: 1,
 				sessionId: "sess-1",
 				exitCode: 0,
-				tokensUsed: 150,
+				tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6",
 				durationMs: 1000,
 				sentinelDetected: false,
@@ -839,7 +839,7 @@ describe("error handling edge cases", () => {
 				iteration: 1,
 				sessionId: "sess-1",
 				exitCode: 0,
-				tokensUsed: 150,
+				tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6",
 				durationMs: 1000,
 				sentinelDetected: false,
@@ -927,7 +927,7 @@ describe("runPlan", () => {
 		mockRunLoop.mockImplementation(async (options) => {
 			options.onEvent?.(testEvent);
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationComplete?.(iterResult);
@@ -946,7 +946,7 @@ describe("runPlan", () => {
 
 		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
 			};
 			options.onIterationComplete?.(iterResult);
@@ -1013,7 +1013,7 @@ describe("runPlan", () => {
 		mockRunLoop.mockImplementation(async (options) => {
 			callCount++;
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000,
 				sentinelDetected: callCount === 1,
 			};
@@ -1043,7 +1043,7 @@ describe("runPlan", () => {
 
 		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationComplete?.(iterResult);
@@ -1076,7 +1076,7 @@ describe("runPlan", () => {
 
 		mockRunLoop.mockImplementation(async (options) => {
 			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
+				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150, inputTokens: null, outputTokens: null, cost: null,
 				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
 			};
 			options.onIterationComplete?.(iterResult);
@@ -1252,6 +1252,8 @@ describe("integration: full plan flow with mocked spawner", () => {
 		expect(result.specName).toBe("01-auth");
 		expect(result.totalIterations).toBe(2);
 		expect(result.maxIterations).toBe(2);
+		expect(result.totalTokens).toBe(350); // 150 + 200
+		expect(result.totalCost).toBe(0); // all null costs → 0
 		expect(result.stopReason).toBe("max_iterations");
 		expect(result).not.toHaveProperty("taskCount");
 		expect(result).not.toHaveProperty("prdPath");
