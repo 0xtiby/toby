@@ -1,0 +1,64 @@
+{
+  "spec": "46-fix-meow-boolean-flag-defaults.md",
+  "createdAt": "2026-03-27T00:00:00Z",
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "Add normalizeBooleanFlags helper to cli-meta.ts",
+      "description": "Export a pure function that detects which boolean flags lack an explicit `default` in MEOW_FLAGS, checks rawArgs for explicit usage (--flag, --no-flag, --flag=value), and sets unmentioned ones to undefined. Respects the -- separator.",
+      "acceptanceCriteria": [
+        "normalizeBooleanFlags is exported from src/lib/cli-meta.ts",
+        "Flags with explicit `default` (verbose, help, all, force) are never modified",
+        "Flags without `default` (transcript) are set to undefined when not in rawArgs",
+        "Flags without `default` are preserved when --flag, --no-flag, or --flag=value appears in rawArgs",
+        "Arguments after a bare `--` separator are ignored during detection",
+        "camelCase flag names are converted to kebab-case for argv matching"
+      ],
+      "files": [
+        "src/lib/cli-meta.ts (modify) — verified via Glob"
+      ],
+      "dependencies": [],
+      "status": "done",
+      "priority": 1
+    },
+    {
+      "id": "task-002",
+      "title": "Replace transcript-specific prototype in cli.tsx with generic normalizeBooleanFlags call",
+      "description": "Remove lines 42-49 (the rawArgs/explicitTranscript hack) and replace with a call to normalizeBooleanFlags(cli.flags, process.argv.slice(2)). Update the import to include normalizeBooleanFlags.",
+      "acceptanceCriteria": [
+        "Import of normalizeBooleanFlags added to existing cli-meta import",
+        "Lines 42-49 (rawArgs, explicitTranscript, old flags assignment) are removed",
+        "flags is constructed as { ...normalizeBooleanFlags(cli.flags, process.argv.slice(2)), spec: resolvedSpec }",
+        "No other changes to cli.tsx — command rendering and downstream consumers remain untouched"
+      ],
+      "files": [
+        "src/cli.tsx (modify) — verified via Glob"
+      ],
+      "dependencies": ["task-001"],
+      "status": "done",
+      "priority": 1
+    },
+    {
+      "id": "task-003",
+      "title": "Add unit tests for normalizeBooleanFlags",
+      "description": "Create cli-meta.test.ts with tests covering all edge cases: no flag passed (undefined), --transcript (true), --no-transcript (false), --transcript=true/false, -- separator, verbose unchanged, and no-op when no auto-defaulted booleans exist.",
+      "acceptanceCriteria": [
+        "Test file created at src/lib/__tests__/cli-meta.test.ts",
+        "Test: rawArgs ['plan', '--spec=foo'] → transcript is undefined",
+        "Test: rawArgs ['plan', '--transcript'] → transcript is true",
+        "Test: rawArgs ['plan', '--no-transcript'] → transcript is false",
+        "Test: rawArgs ['plan', '--transcript=true'] → transcript is true",
+        "Test: rawArgs ['plan', '--transcript=false'] → transcript is false",
+        "Test: rawArgs ['plan', '--', '--transcript'] → transcript is undefined (separator respected)",
+        "Test: rawArgs ['plan', '--verbose'] → verbose is unchanged (has explicit default)",
+        "All tests pass"
+      ],
+      "files": [
+        "src/lib/__tests__/cli-meta.test.ts (create) — parent dir verified via Glob"
+      ],
+      "dependencies": ["task-001"],
+      "status": "done",
+      "priority": 1
+    }
+  ]
+}
