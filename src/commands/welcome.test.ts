@@ -71,6 +71,9 @@ describe("runWelcome", () => {
 			done: 1,
 			totalIterations: 6,
 			totalTokens: 24750,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 		vi.mocked(clack.select).mockResolvedValue("status");
 		vi.mocked(runStatus).mockResolvedValue();

@@ -91,6 +91,9 @@ describe("computeProjectStats", () => {
 			done: 0,
 			totalIterations: 0,
 			totalTokens: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 
@@ -123,6 +126,9 @@ describe("computeProjectStats", () => {
 			done: 1,
 			totalIterations: 3,
 			totalTokens: 15000,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 
@@ -216,6 +222,9 @@ describe("computeProjectStats", () => {
 			done: 0,
 			totalIterations: 0,
 			totalTokens: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 });
