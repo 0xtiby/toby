@@ -303,10 +303,30 @@ describe("runLoop integration", () => {
 			sessionId: "s1",
 			exitCode: 0,
 			tokensUsed: 150,
+			inputTokens: 100,
+			outputTokens: 50,
+			cost: 0.01,
 			model: "claude-opus-4-6",
 			durationMs: 2500,
 			sentinelDetected: false,
 		});
 		expect(results[1].iteration).toBe(2);
+	});
+
+	it("usage fields default to null when not provided by spawner", async () => {
+		mockSpawn.mockImplementation(() =>
+			makeMockProc(
+				[],
+				makeCliResult({ usage: undefined }),
+			),
+		);
+
+		const results: IterationResult[] = [];
+		await runLoop(baseOptions({ maxIterations: 1, onIterationComplete: (r) => results.push(r) }));
+
+		expect(results[0].tokensUsed).toBeNull();
+		expect(results[0].inputTokens).toBeNull();
+		expect(results[0].outputTokens).toBeNull();
+		expect(results[0].cost).toBeNull();
 	});
 });
