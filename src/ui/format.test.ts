@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { banner, formatTokens, formatDuration, specBadge, formatStatusTable, formatDetailTable, formatCost } from "./format.js";
+import { banner, formatTokens, formatDuration, specBadge, formatStatusTable, formatDetailTable, formatCost, costSuffix, sumResults } from "./format.js";
 import type { SpecStatusEntry } from "../types.js";
 
 describe("banner", () => {
@@ -75,6 +75,47 @@ describe("formatCost", () => {
 		expect(formatCost(0.4231)).toBe("$0.42");
 		expect(formatCost(1.5)).toBe("$1.50");
 		expect(formatCost(10.999)).toBe("$11.00");
+	});
+
+	it("shows 4 decimal places for sub-cent values", () => {
+		expect(formatCost(0.003)).toBe("$0.0030");
+		expect(formatCost(0.0001)).toBe("$0.0001");
+		expect(formatCost(0.0099)).toBe("$0.0099");
+	});
+
+	it("uses 2 decimal places at the $0.01 boundary", () => {
+		expect(formatCost(0.01)).toBe("$0.01");
+	});
+});
+
+describe("costSuffix", () => {
+	it("returns empty string when cost is zero", () => {
+		expect(costSuffix(0)).toBe("");
+	});
+
+	it("returns formatted cost with default prefix", () => {
+		expect(costSuffix(1.50)).toBe(", $1.50");
+	});
+
+	it("accepts custom prefix", () => {
+		expect(costSuffix(1.50, { prefix: " · " })).toBe(" · $1.50");
+	});
+});
+
+describe("sumResults", () => {
+	it("sums totalIterations, totalTokens, totalCost", () => {
+		const results = [
+			{ totalIterations: 3, totalTokens: 1000, totalCost: 0.10 },
+			{ totalIterations: 2, totalTokens: 500, totalCost: 0.05 },
+		];
+		const result = sumResults(results);
+		expect(result.totalIter).toBe(5);
+		expect(result.totalTok).toBe(1500);
+		expect(result.totalCost).toBeCloseTo(0.15);
+	});
+
+	it("returns zeros for empty array", () => {
+		expect(sumResults([])).toEqual({ totalIter: 0, totalTok: 0, totalCost: 0 });
 	});
 });
 
