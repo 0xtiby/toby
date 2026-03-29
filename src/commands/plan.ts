@@ -15,6 +15,7 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { CommandFlags, Iteration, StopReason } from "../types.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
+import { costSuffix, sumResults, formatTokens } from "../ui/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -36,6 +37,8 @@ export interface PlanResult {
 	specName: string;
 	totalIterations: number;
 	maxIterations: number;
+	totalTokens: number;
+	totalCost: number;
 	stopReason: StopReason;
 }
 
@@ -134,6 +137,9 @@ export async function executePlan(
 						exitCode: iterResult.exitCode,
 						taskCompleted: null,
 						tokensUsed: iterResult.tokensUsed,
+						inputTokens: iterResult.inputTokens,
+						outputTokens: iterResult.outputTokens,
+						cost: iterResult.cost,
 					};
 					iterationStartTime = new Date().toISOString();
 					status = addIteration(status, found.name, iteration);
@@ -151,10 +157,15 @@ export async function executePlan(
 			status = updateSpecStatus(status, found.name, "planned");
 			writeStatus(status, cwd);
 
+			const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+			const totalCost = loopResult.iterations.reduce((sum, r) => sum + (r.cost ?? 0), 0);
+
 			return {
 				specName: found.name,
 				totalIterations: loopResult.iterations.length,
 				maxIterations: commandConfig.iterations,
+				totalTokens,
+				totalCost,
 				stopReason: loopResult.stopReason,
 			};
 		},
@@ -252,7 +263,7 @@ function printSummary(result: PlanResult): void {
 	if (result.stopReason === "max_iterations") {
 		console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 	} else {
-		console.log(chalk.green(`✔ Plan complete for ${result.specName}`));
+		console.log(chalk.green(`✔ Plan complete for ${result.specName} (${result.totalIterations} iterations, ${formatTokens(result.totalTokens)} tokens${costSuffix(result.totalCost)})`));
 	}
 }
 
@@ -267,9 +278,11 @@ function printAllSummary(result: PlanAllResult): void {
 		if (r.stopReason === "max_iterations") {
 			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`));
 		} else {
-			console.log(`  ${r.specName}`);
+			console.log(`  ✔ ${r.specName} planned (${r.totalIterations} iterations, ${formatTokens(r.totalTokens)} tokens${costSuffix(r.totalCost)})`);
 		}
 	}
+	const { totalIter, totalTok, totalCost: tc } = sumResults(result.planned);
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${formatTokens(totalTok)} tokens${costSuffix(tc)}`));
 }
 
 function printInterrupted(specName: string, completedIterations: number): void {
@@ -287,7 +300,7 @@ function makePlanAllCallbacks(verbose: boolean): PlanAllCallbacks {
 			if (result.stopReason === "max_iterations") {
 				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 			} else {
-				console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations)`));
+				console.log(chalk.green(`✔ ${result.specName} planned (${result.totalIterations} iterations, ${formatTokens(result.totalTokens)} tokens${costSuffix(result.totalCost)})`));
 			}
 		},
 		onRefinement: (specName) => {

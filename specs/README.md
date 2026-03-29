@@ -56,3 +56,16 @@
 | [Session Object Model](./41-session-object-model.md) | `src/types.ts`, `src/lib/status.ts` | Replace flat sessionName/lastCli with structured session object in status.json |
 | [Session Lifecycle](./42-session-lifecycle.md) | `src/commands/build.tsx`, `src/lib/status.ts` | Session creation, cleanup on success, interruption on error, stop-on-error, done guard |
 | [Resume Command](./43-resume-command.md) | `src/commands/resume.tsx`, `src/cli.tsx` | Dedicated command to resume interrupted build sessions on same branch |
+| [Remove Global Config](./44-remove-global-config.md) | `src/lib/config.ts`, `src/lib/paths.ts` | Remove global config support |
+| [Unify Templates](./45-unify-templates.md) | `src/lib/template.ts` | Unify template system |
+| [Fix Meow Boolean Flags](./46-fix-meow-boolean-flag-defaults.md) | `src/cli.tsx` | Fix meow boolean flag defaults |
+| [Max Iterations Exit Message](./47-max-iterations-exit-message.md) | `src/lib/format.ts` | Improved max iterations exit message |
+| **Migration: Ink → Commander + Clack + Ora + Chalk** | | |
+| [Dependency Cleanup & Shared Utilities](./48-dependency-cleanup-shared-utilities.md) | `src/ui/`, `package.json`, `tsconfig.json` | Remove ink/react/meow, add commander/clack/ora/chalk, create shared ui/ module |
+| [CLI Entry Point & Arg Parsing](./49-cli-entry-point-arg-parsing.md) | `src/cli.ts` | Replace meow + Ink render() with commander for command registration and flag parsing |
+| [Status, Clean & Welcome Migration](./50-status-clean-welcome-migration.md) | `src/commands/status.ts`, `src/commands/clean.ts`, `src/commands/welcome.ts` | Replace Ink output with chalk formatting, remove HamsterWheel, clack select for welcome |
+| [Init Command Migration](./51-init-command-migration.md) | `src/commands/init.ts` | Replace Ink wizard with @clack/prompts sequential flow |
+| [Config Command Migration](./52-config-command-migration.md) | `src/commands/config.ts` | Replace Ink ConfigEditor with @clack/prompts, plain stdout for get/set |
+| [Plan Command Migration](./53-plan-command-migration.md) | `src/commands/plan.ts` | Replace Ink Plan component with async function, clack multiselect, ora, chalk streaming |
+| [Build & Resume Migration](./54-build-resume-command-migration.md) | `src/commands/build.ts`, `src/commands/resume.ts` | Replace Ink Build/Resume components with async functions, shared executeBuild logic |
+| [Detailed Token & Cost Tracking](./57-detailed-token-cost-tracking.md) | `src/types.ts`, `src/lib/loop.ts`, `src/lib/stats.ts`, `src/ui/format.ts`, `src/commands/` | Capture input/output tokens and cost from spawner, display everywhere |

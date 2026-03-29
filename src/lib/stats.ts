@@ -13,6 +13,9 @@ export interface ProjectStats {
 	done: number;
 	totalIterations: number;
 	totalTokens: number;
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	totalCost: number;
 }
 
 /**
@@ -49,10 +52,16 @@ export function computeProjectStats(cwd?: string): ProjectStats | null {
 
 	let totalIterations = 0;
 	let totalTokens = 0;
+	let totalInputTokens = 0;
+	let totalOutputTokens = 0;
+	let totalCost = 0;
 	for (const entry of Object.values(statusData.specs)) {
 		totalIterations += entry.iterations.length;
 		for (const iter of entry.iterations) {
 			totalTokens += iter.tokensUsed ?? 0;
+			totalInputTokens += iter.inputTokens ?? 0;
+			totalOutputTokens += iter.outputTokens ?? 0;
+			totalCost += iter.cost ?? 0;
 		}
 	}
 
@@ -64,5 +73,8 @@ export function computeProjectStats(cwd?: string): ProjectStats | null {
 		done: counts.done,
 		totalIterations,
 		totalTokens,
+		totalInputTokens,
+		totalOutputTokens,
+		totalCost,
 	};
 }

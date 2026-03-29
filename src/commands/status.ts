@@ -4,7 +4,7 @@ import { loadConfig } from "../lib/config.js";
 import { discoverSpecs, findSpec } from "../lib/specs.js";
 import { readStatus, getSpecStatus } from "../lib/status.js";
 import { getLocalDir } from "../lib/paths.js";
-import { formatStatusTable, formatDetailTable, formatTokens } from "../ui/format.js";
+import { formatStatusTable, formatDetailTable, formatTokens, formatCost } from "../ui/format.js";
 import type { StatusData } from "../types.js";
 
 const NARROW_THRESHOLD = 40;
@@ -58,14 +58,16 @@ function printOverview(version: string, cwd: string): void {
 	const termWidth = process.stdout.columns ?? 80;
 	const rows = specs.map((s) => {
 		const entry = getSpecStatus(statusData, s.name);
-		const tokens = entry.iterations.reduce(
-			(sum, iter) => sum + (iter.tokensUsed ?? 0),
-			0,
-		);
+		const tokens = entry.iterations.reduce((sum, iter) => sum + (iter.tokensUsed ?? 0), 0);
+		const inputTokens = entry.iterations.reduce((sum, iter) => sum + (iter.inputTokens ?? 0), 0);
+		const outputTokens = entry.iterations.reduce((sum, iter) => sum + (iter.outputTokens ?? 0), 0);
+		const iterCosts = entry.iterations.map((iter) => iter.cost);
+		const hasCost = iterCosts.some((c) => c != null);
+		const cost = hasCost ? iterCosts.reduce((sum, c) => sum + (c ?? 0), 0) : null;
 		const name = termWidth < NARROW_THRESHOLD
 			? s.name.slice(0, 15) + (s.name.length > 15 ? "…" : "")
 			: s.name;
-		return { name, status: entry.status, tokens, iterations: entry.iterations.length };
+		return { name, status: entry.status, iterations: entry.iterations.length, inputTokens, outputTokens, tokens, cost };
 	});
 
 	console.log("");
@@ -73,10 +75,13 @@ function printOverview(version: string, cwd: string): void {
 
 	const totalTokens = rows.reduce((sum, r) => sum + r.tokens, 0);
 	const totalIterations = rows.reduce((sum, r) => sum + r.iterations, 0);
+	const totalCost = rows.reduce((sum, r) => sum + (r.cost ?? 0), 0);
+	let totalsLine = `Total: ${specs.length} specs · ${totalIterations} iterations · ${formatTokens(totalTokens)} tokens`;
+	if (totalCost > 0) {
+		totalsLine += ` · ${formatCost(totalCost)}`;
+	}
 	console.log("");
-	console.log(
-		chalk.dim(`Total: ${specs.length} specs · ${totalIterations} iterations · ${formatTokens(totalTokens)} tokens`),
-	);
+	console.log(chalk.dim(totalsLine));
 }
 
 function printDetail(specQuery: string, cwd: string): void {

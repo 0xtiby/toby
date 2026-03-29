@@ -1,18 +1,14 @@
 {
   "plan": {
     "cli": "claude",
-    "model": "default",
+    "model": "claude-sonnet-4-6",
     "iterations": 2
   },
   "build": {
     "cli": "claude",
-    "model": "default",
-    "iterations": 10
+    "model": "claude-sonnet-4-6",
+    "iterations": 20
   },
   "specsDir": "specs",
-  "verbose": false,
-  "transcript": false,
-  "templateVars": {
-    "PRD_PATH": ".toby/{{SPEC_NAME}}.prd.json"
-  }
+  "verbose": false
 }

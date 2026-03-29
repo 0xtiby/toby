@@ -47,6 +47,9 @@ function makeIter(overrides: Record<string, unknown> = {}) {
 		startedAt: "2026-01-01T00:00:00Z",
 		completedAt: "2026-01-01T00:01:00Z",
 		tokensUsed: 1000,
+		inputTokens: null,
+		outputTokens: null,
+		cost: null,
 		exitCode: 0,
 		taskCompleted: null,
 		...overrides,
@@ -95,8 +98,46 @@ describe("runStatus", () => {
 		const text = output.join("\n");
 		expect(text).toContain("01-auth");
 		expect(text).toContain("02-database");
-		expect(text).toContain("5000");
+		expect(text).toContain("5,000");
 		expect(text).toContain("Total:");
+		expect(text).toContain("Input");
+		expect(text).toContain("Output");
+		expect(text).toContain("Cost");
+	});
+
+	it("shows cost in totals line when totalCost > 0", async () => {
+		initToby();
+		addSpec("01-auth");
+		setStatus({
+			"01-auth": {
+				status: "done",
+				plannedAt: null,
+				iterations: [makeIter({ tokensUsed: 3000, inputTokens: 2000, outputTokens: 1000, cost: 0.25 })],
+			},
+		});
+		await runStatus({ version: "1.0.0" });
+		const text = output.join("\n");
+		expect(text).toContain("$0.25");
+		// Totals line includes cost inline (e.g. "Total: ... · $0.25")
+		const totalLine = text.split("\n").find((l) => l.includes("Total:"));
+		expect(totalLine).toContain("$0.25");
+	});
+
+	it("omits Cost from totals when all costs are null", async () => {
+		initToby();
+		addSpec("01-auth");
+		setStatus({
+			"01-auth": {
+				status: "done",
+				plannedAt: null,
+				iterations: [makeIter({ tokensUsed: 2000 })],
+			},
+		});
+		await runStatus({ version: "1.0.0" });
+		const lines = output.join("\n").split("\n");
+		const totalLine = lines.find((l) => l.includes("Total:"));
+		expect(totalLine).toBeDefined();
+		expect(totalLine).not.toContain("Cost:");
 	});
 
 	it("shows version in overview", async () => {
@@ -130,7 +171,7 @@ describe("runStatus", () => {
 		expect(text).toContain("01-auth");
 		expect(text).toContain("plan");
 		expect(text).toContain("build");
-		expect(text).toContain("4100");
+		expect(text).toContain("4,100");
 		expect(text).toContain("Iterations: 2");
 	});
 

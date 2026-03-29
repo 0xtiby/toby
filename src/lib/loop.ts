@@ -27,6 +27,9 @@ export interface IterationResult {
 	sessionId: string | null;
 	exitCode: number;
 	tokensUsed: number | null;
+	inputTokens: number | null;
+	outputTokens: number | null;
+	cost: number | null;
 	model: string | null;
 	durationMs: number;
 	sentinelDetected: boolean;
@@ -109,6 +112,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 			sessionId: cliResult.sessionId,
 			exitCode: cliResult.exitCode,
 			tokensUsed: cliResult.usage?.totalTokens ?? null,
+			inputTokens: cliResult.usage?.inputTokens ?? null,
+			outputTokens: cliResult.usage?.outputTokens ?? null,
+			cost: cliResult.usage?.cost ?? null,
 			model: cliResult.model,
 			durationMs: cliResult.durationMs,
 			sentinelDetected,

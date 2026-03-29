@@ -94,6 +94,42 @@ const makeSpec = (name: string, num: number, status: "pending" | "planned" | "bu
 	status,
 });
 
+function makeIterResult(overrides: Record<string, unknown> = {}) {
+	return {
+		iteration: 1,
+		sessionId: "sess-1",
+		exitCode: 0,
+		tokensUsed: 150,
+		inputTokens: null as number | null,
+		outputTokens: null as number | null,
+		cost: null as number | null,
+		model: "claude-sonnet-4-6",
+		durationMs: 1000,
+		sentinelDetected: false,
+		...overrides,
+	};
+}
+
+function makePlanIter(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "plan" as const,
+		iteration: 1,
+		sessionId: "s1",
+		state: "complete" as const,
+		cli: "claude",
+		model: "default",
+		startedAt: "2026-03-19T00:00:00.000Z",
+		completedAt: "2026-03-19T00:00:00.000Z",
+		exitCode: 0,
+		taskCompleted: null,
+		tokensUsed: 100,
+		inputTokens: null as number | null,
+		outputTokens: null as number | null,
+		cost: null as number | null,
+		...overrides,
+	};
+}
+
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockResolveCommandConfig = vi.mocked(resolveCommandConfig);
 const mockDiscoverSpecs = vi.mocked(discoverSpecs);
@@ -150,15 +186,7 @@ function setupDefaults() {
 	mockUpdateSpecStatus.mockImplementation((status) => status);
 
 	mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-		const iterResult = {
-			iteration: 1,
-			sessionId: "sess-1",
-			exitCode: 0,
-			tokensUsed: 150,
-			model: "claude-sonnet-4-6",
-			durationMs: 1000,
-			sentinelDetected: false,
-		};
+		const iterResult = makeIterResult();
 		options.onIterationComplete?.(iterResult);
 		return {
 			iterations: [iterResult],
@@ -348,7 +376,7 @@ describe("executePlan", () => {
 						status: "planned",
 						plannedAt: null,
 						iterations: [
-							{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+							makePlanIter(),
 						],
 					},
 				},
@@ -367,8 +395,8 @@ describe("executePlan", () => {
 						status: "planned",
 						plannedAt: null,
 						iterations: [
-							{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
-							{ type: "plan", iteration: 2, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+							makePlanIter(),
+							makePlanIter({ iteration: 2 }),
 						],
 					},
 				},
@@ -472,10 +500,7 @@ describe("executePlan", () => {
 
 			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 				options.onEvent?.({ type: "text", timestamp: 1, content: "hello" } as never);
-				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-				};
+				const iterResult = makeIterResult();
 				options.onIterationComplete?.(iterResult);
 				return { iterations: [iterResult], stopReason: "max_iterations" as const };
 			});
@@ -501,10 +526,7 @@ describe("executePlan", () => {
 			mockOpenTranscript.mockReturnValue(mockWriter);
 
 			mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-				const iterResult = {
-					iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-					model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-				};
+				const iterResult = makeIterResult();
 				options.onIterationComplete?.(iterResult);
 				return { iterations: [iterResult], stopReason: "aborted" as const };
 			});
@@ -526,15 +548,7 @@ describe("executePlan", () => {
 				options.onEvent?.({ type: "tool_use", timestamp: 2, tool: { name: "Read" } } as never);
 				options.onEvent?.({ type: "text", timestamp: 3, content: "world" } as never);
 
-				const iterResult = {
-					iteration: 1,
-					sessionId: "sess-1",
-					exitCode: 0,
-					tokensUsed: 150,
-					model: "claude-sonnet-4-6",
-					durationMs: 1000,
-					sentinelDetected: false,
-				};
+				const iterResult = makeIterResult();
 				options.onIterationComplete?.(iterResult);
 				return { iterations: [iterResult], stopReason: "max_iterations" as const };
 			});
@@ -592,11 +606,7 @@ describe("executePlanAll", () => {
 		let callCount = 0;
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			callCount++;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000,
-				sentinelDetected: callCount === 1,
-			};
+			const iterResult = makeIterResult({ sentinelDetected: callCount === 1 });
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -760,15 +770,7 @@ describe("error handling edge cases", () => {
 		const controller = new AbortController();
 
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1,
-				sessionId: "sess-1",
-				exitCode: 0,
-				tokensUsed: 150,
-				model: "claude-sonnet-4-6",
-				durationMs: 1000,
-				sentinelDetected: false,
-			};
+			const iterResult = makeIterResult();
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -785,15 +787,7 @@ describe("error handling edge cases", () => {
 		const controller = new AbortController();
 
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
-			const iterResult = {
-				iteration: 1,
-				sessionId: "sess-1",
-				exitCode: 0,
-				tokensUsed: 150,
-				model: "claude-sonnet-4-6",
-				durationMs: 1000,
-				sentinelDetected: false,
-			};
+			const iterResult = makeIterResult();
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -835,15 +829,7 @@ describe("error handling edge cases", () => {
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			// Verify signal was passed through
 			expect(options.abortSignal).toBe(controller.signal);
-			const iterResult = {
-				iteration: 1,
-				sessionId: "sess-1",
-				exitCode: 0,
-				tokensUsed: 150,
-				model: "claude-sonnet-4-6",
-				durationMs: 1000,
-				sentinelDetected: false,
-			};
+			const iterResult = makeIterResult();
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -926,10 +912,7 @@ describe("runPlan", () => {
 		const testEvent = { type: "text", timestamp: 1, content: "hello" } as never;
 		mockRunLoop.mockImplementation(async (options) => {
 			options.onEvent?.(testEvent);
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
+			const iterResult = makeIterResult();
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "max_iterations" as const };
 		});
@@ -945,10 +928,7 @@ describe("runPlan", () => {
 		mockFindSpec.mockReturnValue(spec1);
 
 		mockRunLoop.mockImplementation(async (options) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: false,
-			};
+			const iterResult = makeIterResult();
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "aborted" as const };
 		});
@@ -970,7 +950,7 @@ describe("runPlan", () => {
 					status: "planned",
 					plannedAt: null,
 					iterations: [
-						{ type: "plan", iteration: 1, sessionId: "s1", cli: "claude", model: "default", startedAt: "2026-03-19T00:00:00.000Z", completedAt: "2026-03-19T00:00:00.000Z", exitCode: 0, taskCompleted: null, tokensUsed: 100 },
+						makePlanIter(),
 					],
 				},
 			},
@@ -1012,11 +992,7 @@ describe("runPlan", () => {
 		let callCount = 0;
 		mockRunLoop.mockImplementation(async (options) => {
 			callCount++;
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000,
-				sentinelDetected: callCount === 1,
-			};
+			const iterResult = makeIterResult({ sentinelDetected: callCount === 1 });
 			options.onIterationComplete?.(iterResult);
 			return {
 				iterations: [iterResult],
@@ -1042,10 +1018,7 @@ describe("runPlan", () => {
 		mockFindSpec.mockReturnValue(spec1);
 
 		mockRunLoop.mockImplementation(async (options) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
-			};
+			const iterResult = makeIterResult({ sentinelDetected: true });
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
@@ -1075,10 +1048,7 @@ describe("runPlan", () => {
 		mockFindSpec.mockReturnValue(spec1);
 
 		mockRunLoop.mockImplementation(async (options) => {
-			const iterResult = {
-				iteration: 1, sessionId: "sess-1", exitCode: 0, tokensUsed: 150,
-				model: "claude-sonnet-4-6", durationMs: 1000, sentinelDetected: true,
-			};
+			const iterResult = makeIterResult({ sentinelDetected: true });
 			options.onIterationComplete?.(iterResult);
 			return { iterations: [iterResult], stopReason: "sentinel" as const };
 		});
@@ -1205,21 +1175,21 @@ describe("integration: full plan flow with mocked spawner", () => {
 		mockAddIteration.mockReturnValue(updatedStatus);
 		mockUpdateSpecStatus.mockReturnValue(updatedStatus);
 
-		// Simulate spawner running 2 iterations
+		// Simulate spawner running 2 iterations with non-null cost
 		let iterationCount = 0;
 		mockRunLoop.mockImplementation(async (options: LoopOptions) => {
 			const iterations = [];
 			for (let i = 1; i <= 2; i++) {
 				iterationCount++;
-				const iterResult = {
+				const iterResult = makeIterResult({
 					iteration: i,
 					sessionId: `sess-${i}`,
-					exitCode: 0,
 					tokensUsed: 100 + i * 50,
-					model: "claude-sonnet-4-6",
+					inputTokens: 80 + i * 30,
+					outputTokens: 20 + i * 20,
+					cost: 0.005 * i,
 					durationMs: 1000 * i,
-					sentinelDetected: false,
-				};
+				});
 				options.onIterationComplete?.(iterResult);
 				iterations.push(iterResult);
 			}
@@ -1252,6 +1222,8 @@ describe("integration: full plan flow with mocked spawner", () => {
 		expect(result.specName).toBe("01-auth");
 		expect(result.totalIterations).toBe(2);
 		expect(result.maxIterations).toBe(2);
+		expect(result.totalTokens).toBe(350); // 150 + 200
+		expect(result.totalCost).toBeCloseTo(0.015); // 0.005 + 0.01
 		expect(result.stopReason).toBe("max_iterations");
 		expect(result).not.toHaveProperty("taskCount");
 		expect(result).not.toHaveProperty("prdPath");

@@ -18,6 +18,7 @@ import {
 import { ensureLocalDir } from "../lib/paths.js";
 import type { CommandFlags, CliName, Iteration, IterationState, TemplateVars, PromptName, StatusData, SpecFile, SpecStatusEntry, StopReason } from "../types.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
+import { costSuffix, sumResults } from "../ui/format.js";
 import { AbortError } from "../lib/errors.js";
 import { withTranscript } from "../lib/transcript.js";
 import type { TranscriptWriter } from "../lib/transcript.js";
@@ -40,6 +41,7 @@ export interface BuildResult {
 	totalIterations: number;
 	maxIterations: number;
 	totalTokens: number;
+	totalCost: number;
 	specDone: boolean;
 	stopReason: StopReason;
 	error?: string;
@@ -126,6 +128,9 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				exitCode: null,
 				taskCompleted: null,
 				tokensUsed: null,
+				inputTokens: null,
+				outputTokens: null,
+				cost: null,
 			};
 			status = addIteration(status, spec.name, iterationRecord);
 			writeStatus(status, cwd);
@@ -152,6 +157,9 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 				completedAt: new Date().toISOString(),
 				exitCode: iterResult.exitCode,
 				tokensUsed: iterResult.tokensUsed,
+				inputTokens: iterResult.inputTokens,
+				outputTokens: iterResult.outputTokens,
+				cost: iterResult.cost,
 			};
 			status = {
 				...status,
@@ -185,20 +193,21 @@ async function runSpecBuild(options: RunSpecBuildOptions): Promise<{ result: Bui
 
 	const totalIterations = loopResult.iterations.length;
 	const totalTokens = loopResult.iterations.reduce((sum, r) => sum + (r.tokensUsed ?? 0), 0);
+	const totalCost = loopResult.iterations.reduce((sum, r) => sum + (r.cost ?? 0), 0);
 
 	if (loopResult.stopReason === "error") {
 		status = updateSpecStatus(status, spec.name, "building");
 		writeStatus(status, cwd);
 		const lastIter = loopResult.iterations[loopResult.iterations.length - 1];
 		const errorMsg = `Build failed after ${totalIterations} iteration(s). Last exit code: ${lastIter?.exitCode ?? "unknown"}`;
-		return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone: false, stopReason: loopResult.stopReason, error: errorMsg }, status };
+		return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, totalCost, specDone: false, stopReason: loopResult.stopReason, error: errorMsg }, status };
 	}
 
 	const specDone = loopResult.stopReason === "sentinel";
 	status = updateSpecStatus(status, spec.name, specDone ? "done" : "building");
 	writeStatus(status, cwd);
 
-	return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, specDone, stopReason: loopResult.stopReason }, status };
+	return { result: { specName: spec.name, totalIterations, maxIterations: iterations, totalTokens, totalCost, specDone, stopReason: loopResult.stopReason }, status };
 }
 
 /**
@@ -493,13 +502,12 @@ function printBuildSummary(result: BuildResult): void {
 		console.log(chalk.yellow(`⚠️ Spec "${result.specName}": ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 	} else {
 		console.log(chalk.green(`✔ Build complete for ${result.specName}`));
-		console.log(`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}`);
+		console.log(`  Iterations: ${result.totalIterations}, Tokens: ${result.totalTokens}${costSuffix(result.totalCost, { prefix: ", Cost: " })}`);
 	}
 }
 
 function printBuildAllSummary(result: BuildAllResult): void {
-	const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
-	const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
+	const { totalIter, totalTok, totalCost } = sumResults(result.built);
 	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
 	console.log(
 		hasWarnings
@@ -510,10 +518,10 @@ function printBuildAllSummary(result: BuildAllResult): void {
 		if (r.stopReason === "max_iterations") {
 			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}`));
 		} else {
-			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`);
+			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${costSuffix(r.totalCost)}${r.specDone ? " [done]" : ""}`);
 		}
 	}
-	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens`));
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens${costSuffix(totalCost)}`));
 }
 
 function printBuildInterrupted(specName: string, completedIterations: number): void {
@@ -532,7 +540,7 @@ function makeBuildAllCallbacks(verbose: boolean): BuildAllCallbacks {
 			if (result.stopReason === "max_iterations") {
 				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 			} else {
-				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens)${result.specDone ? " — sentinel" : ""}`));
+				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens${costSuffix(result.totalCost)})${result.specDone ? " — sentinel" : ""}`));
 			}
 		},
 		onOutput: (msg) => console.log(chalk.dim(msg)),

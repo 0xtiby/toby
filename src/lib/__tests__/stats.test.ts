@@ -72,6 +72,9 @@ describe("computeProjectStats", () => {
 			exitCode: 0,
 			taskCompleted: "task-1",
 			tokensUsed: 5000,
+			inputTokens: 3000,
+			outputTokens: 2000,
+			cost: 0.10,
 			...overrides,
 		};
 	}
@@ -91,6 +94,9 @@ describe("computeProjectStats", () => {
 			done: 0,
 			totalIterations: 0,
 			totalTokens: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 
@@ -123,6 +129,9 @@ describe("computeProjectStats", () => {
 			done: 1,
 			totalIterations: 3,
 			totalTokens: 15000,
+			totalInputTokens: 9000,
+			totalOutputTokens: 6000,
+			totalCost: expect.closeTo(0.30, 5),
 		});
 	});
 
@@ -191,6 +200,44 @@ describe("computeProjectStats", () => {
 		expect(stats!.totalTokens).toBe(350);
 	});
 
+	it("aggregates totalInputTokens, totalOutputTokens, totalCost across iterations", () => {
+		writeSpecFile("01-auth.md");
+		writeStatusJson({
+			"01-auth": {
+				status: "done",
+				iterations: [
+					makeIteration({ inputTokens: 1000, outputTokens: 500, cost: 0.05 }),
+					makeIteration({ iteration: 2, inputTokens: 2000, outputTokens: 800, cost: 0.10 }),
+				],
+			},
+		});
+
+		const stats = computeProjectStats(tmpDir);
+		expect(stats).not.toBeNull();
+		expect(stats!.totalInputTokens).toBe(3000);
+		expect(stats!.totalOutputTokens).toBe(1300);
+		expect(stats!.totalCost).toBeCloseTo(0.15);
+	});
+
+	it("treats null inputTokens/outputTokens/cost as 0 in aggregation", () => {
+		writeSpecFile("01-auth.md");
+		writeStatusJson({
+			"01-auth": {
+				status: "done",
+				iterations: [
+					makeIteration({ inputTokens: null, outputTokens: null, cost: null }),
+					makeIteration({ iteration: 2, inputTokens: 500, outputTokens: 200, cost: 0.02 }),
+				],
+			},
+		});
+
+		const stats = computeProjectStats(tmpDir);
+		expect(stats).not.toBeNull();
+		expect(stats!.totalInputTokens).toBe(500);
+		expect(stats!.totalOutputTokens).toBe(200);
+		expect(stats!.totalCost).toBeCloseTo(0.02);
+	});
+
 	it("returns totalTokens 0 when no iterations exist", () => {
 		writeSpecFile("01-auth.md");
 		writeStatusJson({
@@ -216,6 +263,9 @@ describe("computeProjectStats", () => {
 			done: 0,
 			totalIterations: 0,
 			totalTokens: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 });

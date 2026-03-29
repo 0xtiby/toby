@@ -6,41 +6,67 @@ export function banner(version: string, stats?: ProjectStats | null): string {
 	const lines: string[] = [];
 	lines.push(chalk.hex("#f0a030").bold(`toby v${version}`));
 	if (stats) {
-		lines.push(
+		let statsLine =
 			`${chalk.dim("Specs:")} ${stats.totalSpecs}` +
 			` ${chalk.dim("·")} ${chalk.dim("Planned:")} ${stats.planned}` +
 			` ${chalk.dim("·")} ${chalk.dim("Done:")} ${stats.done}` +
-			` ${chalk.dim("·")} ${chalk.dim("Tokens:")} ${formatTokens(stats.totalTokens)}`,
-		);
+			` ${chalk.dim("·")} ${chalk.dim("Tokens:")} ${formatTokens(stats.totalTokens)}`;
+		if (stats.totalCost > 0) {
+			statsLine += ` ${chalk.dim("·")} ${chalk.dim("Cost:")} ${formatCost(stats.totalCost)}`;
+		}
+		lines.push(statsLine);
+	}
+	return lines.join("\n");
+}
+
+interface Column<T> {
+	header: string;
+	value: (row: T) => string;
+	/** Optional display transform (e.g. chalk coloring) that may add invisible chars. Raw `value` is used for width calc. */
+	display?: (row: T, raw: string) => string;
+}
+
+function renderTable<T>(columns: Column<T>[], rows: T[]): string {
+	const pad = (s: string, len: number) => s + " ".repeat(Math.max(0, len - s.length));
+	const rawValues = rows.map((row) => columns.map((col) => col.value(row)));
+	const widths = columns.map((col, ci) =>
+		Math.max(col.header.length, ...rawValues.map((vals) => vals[ci].length)),
+	);
+
+	const headerLine = " " + columns.map((col, ci) => pad(col.header, widths[ci])).join(" │ ") + " ";
+	const separator = widths.map((w) => "─".repeat(w + 2)).join("┼");
+
+	const lines: string[] = [chalk.bold(headerLine), chalk.dim(separator)];
+	for (let ri = 0; ri < rows.length; ri++) {
+		const cells = columns.map((col, ci) => {
+			const raw = rawValues[ri][ci];
+			const displayed = col.display ? col.display(rows[ri], raw) : raw;
+			const extra = displayed.length - raw.length;
+			return pad(displayed, widths[ci] + extra);
+		});
+		lines.push(" " + cells.join(" │ ") + " ");
 	}
 	return lines.join("\n");
 }
 
 export function formatStatusTable(
-	rows: { name: string; status: string; iterations: number; tokens: number }[],
+	rows: { name: string; status: string; iterations: number; inputTokens: number; outputTokens: number; tokens: number; cost: number | null }[],
 ): string {
-	const headers = { name: "Spec", status: "Status", iterations: "Iter", tokens: "Tokens" };
-	const w = {
-		name: Math.max(headers.name.length, ...rows.map((r) => r.name.length)),
-		status: Math.max(headers.status.length, ...rows.map((r) => r.status.length)),
-		iterations: Math.max(headers.iterations.length, ...rows.map((r) => String(r.iterations).length)),
-		tokens: Math.max(headers.tokens.length, ...rows.map((r) => String(r.tokens).length)),
-	};
-
-	const pad = (s: string, len: number) => s + " ".repeat(Math.max(0, len - s.length));
-	const headerLine = ` ${pad(headers.name, w.name)} │ ${pad(headers.status, w.status)} │ ${pad(headers.iterations, w.iterations)} │ ${pad(headers.tokens, w.tokens)} `;
-	const separator = `${"─".repeat(w.name + 2)}┼${"─".repeat(w.status + 2)}┼${"─".repeat(w.iterations + 2)}┼${"─".repeat(w.tokens + 2)}`;
-
-	const lines: string[] = [
-		chalk.bold(headerLine),
-		chalk.dim(separator),
+	const columns: Column<(typeof rows)[number]>[] = [
+		{ header: "Spec", value: (r) => r.name },
+		{ header: "Status", value: (r) => r.status, display: (r) => specBadge(r.status) },
+		{ header: "Iter", value: (r) => String(r.iterations) },
+		{ header: "Input", value: (r) => formatTokens(r.inputTokens) },
+		{ header: "Output", value: (r) => formatTokens(r.outputTokens) },
+		{ header: "Tokens", value: (r) => formatTokens(r.tokens) },
+		{ header: "Cost", value: (r) => formatCost(r.cost) },
 	];
-	for (const row of rows) {
-		lines.push(
-			` ${pad(row.name, w.name)} │ ${pad(specBadge(row.status), w.status + (specBadge(row.status).length - row.status.length))} │ ${pad(String(row.iterations), w.iterations)} │ ${pad(String(row.tokens), w.tokens)} `,
-		);
-	}
-	return lines.join("\n");
+	return renderTable(columns, rows);
+}
+
+interface DetailRow {
+	iter: SpecStatusEntry["iterations"][number];
+	index: number;
 }
 
 export function formatDetailTable(
@@ -55,50 +81,56 @@ export function formatDetailTable(
 	if (entry.iterations.length === 0) {
 		lines.push(chalk.dim("No iterations yet"));
 	} else {
-		const headers = { index: "#", type: "Type", cli: "CLI", tokens: "Tokens", duration: "Duration", exitCode: "Exit" };
-		const rows = entry.iterations.map((iter, i) => ({
-			index: String(i + 1),
-			type: iter.type,
-			cli: iter.cli,
-			tokens: iter.tokensUsed != null ? String(iter.tokensUsed) : "—",
-			duration: formatDuration(
-				iter.completedAt
-					? new Date(iter.completedAt).getTime() - new Date(iter.startedAt).getTime()
-					: 0,
-			),
-			exitCode: iter.exitCode != null ? String(iter.exitCode) : "—",
-		}));
-
-		const w = {
-			index: Math.max(headers.index.length, ...rows.map((r) => r.index.length)),
-			type: Math.max(headers.type.length, ...rows.map((r) => r.type.length)),
-			cli: Math.max(headers.cli.length, ...rows.map((r) => r.cli.length)),
-			tokens: Math.max(headers.tokens.length, ...rows.map((r) => r.tokens.length)),
-			duration: Math.max(headers.duration.length, ...rows.map((r) => r.duration.length)),
-			exitCode: Math.max(headers.exitCode.length, ...rows.map((r) => r.exitCode.length)),
-		};
-
-		const pad = (s: string, len: number) => s + " ".repeat(Math.max(0, len - s.length));
-		const headerLine = ` ${pad(headers.index, w.index)} │ ${pad(headers.type, w.type)} │ ${pad(headers.cli, w.cli)} │ ${pad(headers.tokens, w.tokens)} │ ${pad(headers.duration, w.duration)} │ ${pad(headers.exitCode, w.exitCode)} `;
-		const separator = `${"─".repeat(w.index + 2)}┼${"─".repeat(w.type + 2)}┼${"─".repeat(w.cli + 2)}┼${"─".repeat(w.tokens + 2)}┼${"─".repeat(w.duration + 2)}┼${"─".repeat(w.exitCode + 2)}`;
-
-		lines.push(chalk.bold(headerLine));
-		lines.push(chalk.dim(separator));
-		for (const row of rows) {
-			lines.push(
-				` ${pad(row.index, w.index)} │ ${pad(row.type, w.type)} │ ${pad(row.cli, w.cli)} │ ${pad(row.tokens, w.tokens)} │ ${pad(row.duration, w.duration)} │ ${pad(row.exitCode, w.exitCode)} `,
-			);
-		}
+		const columns: Column<DetailRow>[] = [
+			{ header: "#", value: (r) => String(r.index + 1) },
+			{ header: "Type", value: (r) => r.iter.type },
+			{ header: "CLI", value: (r) => r.iter.cli },
+			{ header: "Input", value: (r) => r.iter.inputTokens != null ? formatTokens(r.iter.inputTokens) : "—" },
+			{ header: "Output", value: (r) => r.iter.outputTokens != null ? formatTokens(r.iter.outputTokens) : "—" },
+			{ header: "Tokens", value: (r) => r.iter.tokensUsed != null ? formatTokens(r.iter.tokensUsed) : "—" },
+			{ header: "Cost", value: (r) => formatCost(r.iter.cost) },
+			{ header: "Duration", value: (r) => formatDuration(r.iter.completedAt ? new Date(r.iter.completedAt).getTime() - new Date(r.iter.startedAt).getTime() : 0) },
+			{ header: "Exit", value: (r) => r.iter.exitCode != null ? String(r.iter.exitCode) : "—" },
+		];
+		const detailRows = entry.iterations.map((iter, i) => ({ iter, index: i }));
+		lines.push(renderTable(columns, detailRows));
 	}
 
 	lines.push("");
-	const totalTokens = entry.iterations.reduce(
-		(sum, iter) => sum + (iter.tokensUsed ?? 0),
-		0,
-	);
+	const totalTokens = entry.iterations.reduce((sum, iter) => sum + (iter.tokensUsed ?? 0), 0);
+	const totalInputTokens = entry.iterations.reduce((sum, iter) => sum + (iter.inputTokens ?? 0), 0);
+	const totalOutputTokens = entry.iterations.reduce((sum, iter) => sum + (iter.outputTokens ?? 0), 0);
+	const totalCost = entry.iterations.reduce((sum, iter) => sum + (iter.cost ?? 0), 0);
+	const hasCostData = entry.iterations.some((iter) => iter.cost != null);
+
 	lines.push(`Iterations: ${entry.iterations.length}`);
-	lines.push(`Tokens used: ${totalTokens}`);
+	lines.push(`Input tokens: ${formatTokens(totalInputTokens)}`);
+	lines.push(`Output tokens: ${formatTokens(totalOutputTokens)}`);
+	lines.push(`Tokens used: ${formatTokens(totalTokens)}`);
+	if (hasCostData) {
+		lines.push(`Cost: ${formatCost(totalCost)}`);
+	}
 	return lines.join("\n");
+}
+
+export function sumResults<T extends { totalIterations: number; totalTokens: number; totalCost: number }>(
+	results: T[],
+): { totalIter: number; totalTok: number; totalCost: number } {
+	return {
+		totalIter: results.reduce((s, r) => s + r.totalIterations, 0),
+		totalTok: results.reduce((s, r) => s + r.totalTokens, 0),
+		totalCost: results.reduce((s, r) => s + r.totalCost, 0),
+	};
+}
+
+export function costSuffix(cost: number, { prefix = ", " } = {}): string {
+	return cost > 0 ? `${prefix}${formatCost(cost)}` : "";
+}
+
+export function formatCost(n: number | null): string {
+	if (n == null) return "—";
+	if (n > 0 && n < 0.01) return `$${n.toFixed(4)}`;
+	return `$${n.toFixed(2)}`;
 }
 
 export function formatTokens(n: number): string {

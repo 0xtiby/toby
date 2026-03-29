@@ -6,6 +6,7 @@ import { executeBuildAll } from "./build.js";
 import type { BuildFlags } from "./build.js";
 import type { BuildAllCallbacks, BuildAllResult, BuildResult } from "./build.js";
 import { formatMaxIterationsWarning } from "../lib/format.js";
+import { costSuffix, sumResults } from "../ui/format.js";
 import { writeEvent } from "../ui/stream.js";
 import { AbortError } from "../lib/errors.js";
 import { withSigint } from "../ui/signal.js";
@@ -109,8 +110,7 @@ export interface RunResumeOptions {
 }
 
 function printResumeSummary(result: BuildAllResult): void {
-	const totalIter = result.built.reduce((s, r) => s + r.totalIterations, 0);
-	const totalTok = result.built.reduce((s, r) => s + r.totalTokens, 0);
+	const { totalIter, totalTok, totalCost } = sumResults(result.built);
 	const hasWarnings = result.built.some((r) => r.stopReason === "max_iterations");
 	console.log(
 		hasWarnings
@@ -121,10 +121,10 @@ function printResumeSummary(result: BuildAllResult): void {
 		if (r.stopReason === "max_iterations") {
 			console.log(chalk.yellow(`  ⚠️ ${r.specName}: ${formatMaxIterationsWarning(r.totalIterations, r.maxIterations)}, ${r.totalTokens} tokens`));
 		} else {
-			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${r.specDone ? " [done]" : ""}`);
+			console.log(`  ${r.specName}: ${r.totalIterations} iterations, ${r.totalTokens} tokens${costSuffix(r.totalCost)}${r.specDone ? " [done]" : ""}`);
 		}
 	}
-	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens`));
+	console.log(chalk.dim(`  Total: ${totalIter} iterations, ${totalTok} tokens${costSuffix(totalCost)}`));
 }
 
 function makeResumeCallbacks(verbose: boolean): BuildAllCallbacks {
@@ -138,7 +138,7 @@ function makeResumeCallbacks(verbose: boolean): BuildAllCallbacks {
 			if (result.stopReason === "max_iterations") {
 				console.log(chalk.yellow(`⚠️ ${result.specName}: ${formatMaxIterationsWarning(result.totalIterations, result.maxIterations)}`));
 			} else {
-				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens)${result.specDone ? " — sentinel" : ""}`));
+				console.log(chalk.green(`✔ ${result.specName} done (${result.totalIterations} iterations, ${result.totalTokens} tokens${costSuffix(result.totalCost)})${result.specDone ? " — sentinel" : ""}`));
 			}
 		},
 	};
