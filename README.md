@@ -7,7 +7,7 @@
 
 ## What It Does
 
-You write a markdown spec describing what you want built. Toby sends it to an AI CLI that plans the implementation, then iteratively builds it — generating code, running validation, and committing results until the spec is complete. You get working code from a plain-English description, with full visibility into every step.
+You write a markdown spec describing what you want built. Toby sends it to an AI CLI that plans the implementation, then iteratively builds it - generating code, running validation, and committing results until the spec is complete. You get working code from a plain-English description, with full visibility into every step.
 
 ## Quick Start
 
@@ -53,15 +53,15 @@ Toby follows a three-phase loop:
                                               └───────────────────┘
 ```
 
-1. **Spec** — You write a markdown file describing what you want built (features, acceptance criteria, constraints).
-2. **Plan** — Toby sends your spec to an AI CLI, which analyzes the codebase and produces a structured implementation plan.
-3. **Build** — Toby iteratively executes each task through the AI CLI, running validation between iterations.
+1. **Spec** - You write a markdown file describing what you want built (features, acceptance criteria, constraints).
+2. **Plan** - Toby sends your spec to an AI CLI, which analyzes the codebase and produces a structured implementation plan.
+3. **Build** - Toby iteratively executes each task through the AI CLI, running validation between iterations.
 
 During build, the AI signals completion by emitting a sentinel value (`:::TOBY_DONE:::`) and toby stops the loop. Other stop reasons: `max_iterations` (hit the limit), `error` (non-retryable failure), or `aborted` (user interrupted).
 
 ## Writing Specs
 
-Specs are freeform markdown files in your `specsDir` (default: `specs/`). There is no required structure — write whatever helps the AI understand the feature.
+Specs are freeform markdown files in your `specsDir` (default: `specs/`). There is no required structure - write whatever helps the AI understand the feature.
 
 Use a numeric prefix to control execution order: `NN-slug.md` (e.g., `01-setup.md`, `02-data-model.md`, `15a-auth-api.md`). Unnumbered specs sort alphabetically after numbered ones.
 
@@ -115,7 +115,7 @@ Enable transcript recording with `--transcript` or `toby config set transcript t
 
 ### Crash Recovery
 
-If a build is interrupted, toby detects the incomplete iteration on the next run and automatically resumes — reusing the session name, worktree, and conversation context. If you hit the iteration limit, just re-run the same command or increase it with `--iterations`. See [docs/sessions.md](docs/sessions.md) for details on resume behavior and CLI switching.
+If a build is interrupted, toby detects the incomplete iteration on the next run and automatically resumes - reusing the session name, worktree, and conversation context. If you hit the iteration limit, just re-run the same command or increase it with `--iterations`. See [docs/sessions.md](docs/sessions.md) for details on resume behavior and CLI switching.
 
 ## Development
 
@@ -135,10 +135,10 @@ pnpm unlink --global @0xtiby/toby
 
 ## Documentation
 
-- [CLI & Config Reference](docs/reference.md) — all commands, flags, and config options
-- [Prompt Authoring Guide](docs/prompts.md) — prompt templates, variables, and custom overrides
-- [Writing Specs](docs/specs.md) — spec format, naming conventions, and ordering
-- [Sessions & Transcripts](docs/sessions.md) — session naming, crash recovery, and transcript recording
+- [CLI & Config Reference](docs/reference.md) - all commands, flags, and config options
+- [Prompt Authoring Guide](docs/prompts.md) - prompt templates, variables, and custom overrides
+- [Writing Specs](docs/specs.md) - spec format, naming conventions, and ordering
+- [Sessions & Transcripts](docs/sessions.md) - session naming, crash recovery, and transcript recording
 
 ## License
 
