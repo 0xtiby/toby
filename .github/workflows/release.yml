@@ -32,9 +32,6 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Upgrade npm for OIDC trusted publishing
-        run: corepack enable && corepack prepare npm@latest --activate
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
