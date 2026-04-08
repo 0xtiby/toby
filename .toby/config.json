@@ -1,14 +1,13 @@
 {
   "plan": {
     "cli": "claude",
-    "model": "claude-sonnet-4-6",
+    "model": "default",
     "iterations": 2
   },
   "build": {
     "cli": "claude",
-    "model": "claude-sonnet-4-6",
-    "iterations": 20
+    "model": "default",
+    "iterations": 10
   },
-  "specsDir": "specs",
-  "verbose": false
+  "specsDir": "../projects-specs/toby"
 }
