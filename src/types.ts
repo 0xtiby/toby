@@ -121,7 +121,7 @@ export type SpecStatusEntry = z.infer<typeof SpecStatusEntrySchema>;
 
 // ── Prompt Template (spec 05) ─────────────────────────────────────
 
-export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD";
+export type PromptName = "PROMPT_PLAN" | "PROMPT_BUILD" | "PROMPT_SYNC";
 
 export type TemplateVars = Record<string, string>;
 
