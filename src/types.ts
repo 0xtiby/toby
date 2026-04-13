@@ -26,9 +26,15 @@ export const BuildConfigSchema = CommandConfigSchema.extend({
 	iterations: z.number().int().positive().default(10),
 });
 
+export const SyncConfigSchema = z.object({
+	cli: z.enum(CLI_NAMES).optional(),
+	model: z.string().optional(),
+});
+
 export const ConfigSchema = z.object({
 	plan: PlanConfigSchema.default({}),
 	build: BuildConfigSchema.default({}),
+	sync: SyncConfigSchema.optional(),
 	specsDir: z.string().default("specs"),
 	excludeSpecs: z.array(z.string()).default(["README.md"]),
 	verbose: z.boolean().default(false),
@@ -38,6 +44,7 @@ export const ConfigSchema = z.object({
 
 export type TobyConfig = z.infer<typeof ConfigSchema>;
 export type CommandConfig = z.infer<typeof CommandConfigSchema>;
+export type SyncConfig = z.infer<typeof SyncConfigSchema>;
 
 // ── Spec Discovery (spec 03) ──────────────────────────────────────
 
