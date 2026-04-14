@@ -127,6 +127,22 @@ program
 		await runClean({ force: opts.force });
 	});
 
+// ── sync ────────────────────────────────────────────────────────
+program
+	.command("sync")
+	.description("Fetch specs from external sources via PROMPT_SYNC.md")
+	.option("--cli <cli>", "Override CLI tool")
+	.option("--model <model>", "Override model")
+	.option("--verbose", "Show all events")
+	.action(async (opts) => {
+		const { runSync } = await import("./commands/sync.js");
+		await runSync({
+			cli: opts.cli,
+			model: opts.model,
+			verbose: opts.verbose,
+		});
+	});
+
 // No subcommand → welcome screen (TTY) or help text (non-TTY)
 if (process.argv.length <= 2) {
 	const { runWelcome } = await import("./commands/welcome.js");
