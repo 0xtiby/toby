@@ -128,12 +128,7 @@ When validation passes:
 
 When all issues with label `toby/{{SPEC_SLUG}}` are closed:
 
-1. Close the parent PRD issue if one exists (the issue referenced in the sub-issues' "Parent PRD" section):
-   ```bash
-   gh issue close <prd-number>
-   ```
-
-2. If `{{SPEC_COUNT}}` > 1 and `{{SPEC_INDEX}}` < `{{SPEC_COUNT}}`: output `:::TOBY_DONE:::` (not the last spec)
+- If `{{SPEC_COUNT}}` > 1 and `{{SPEC_INDEX}}` < `{{SPEC_COUNT}}`: output `:::TOBY_DONE:::` (not the last spec)
 
 Otherwise, create PR:
 
