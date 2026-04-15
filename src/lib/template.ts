@@ -93,6 +93,24 @@ export function resolvePromptPath(name: PromptName, cwd?: string): string {
 }
 
 /**
+ * Resolve the sync prompt path. Unlike resolvePromptPath, this only checks
+ * the local .toby/PROMPT_SYNC.md — there is no shipped fallback.
+ * Throws with setup guidance when the file is missing.
+ */
+export function resolveSyncPromptPath(cwd?: string): string {
+	const promptPath = path.join(getLocalDir(cwd), "PROMPT_SYNC.md");
+	if (fs.existsSync(promptPath)) {
+		return promptPath;
+	}
+	throw new Error(
+		`Sync prompt not found at ${promptPath}\n\n` +
+		`To set up sync, create a .toby/PROMPT_SYNC.md file that tells the AI agent\n` +
+		`how to fetch specs from your external source (GitHub Issues, Linear, etc.).\n\n` +
+		`Example templates are available in the toby package under templates/sync/.`,
+	);
+}
+
+/**
  * Load a prompt by name: resolve its path, read the file, and substitute
  * pre-merged vars.
  * Callers are responsible for calling resolveTemplateVars before loadPrompt.

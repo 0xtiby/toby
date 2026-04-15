@@ -239,6 +239,44 @@ describe("config", () => {
 		});
 	});
 
+	describe("sync config", () => {
+		it("config without sync section parses correctly", () => {
+			const config = loadConfig("/tmp/proj");
+			expect(config.sync).toBeUndefined();
+		});
+
+		it("config with valid sync.cli and sync.model parses correctly", () => {
+			mockConfigFile(localConfigPath, {
+				sync: { cli: "codex", model: "gpt-4" },
+			});
+			const config = loadConfig("/tmp/proj");
+			expect(config.sync).toEqual({ cli: "codex", model: "gpt-4" });
+		});
+
+		it("config with only sync.cli parses correctly", () => {
+			mockConfigFile(localConfigPath, { sync: { cli: "claude" } });
+			const config = loadConfig("/tmp/proj");
+			expect(config.sync).toEqual({ cli: "claude" });
+		});
+
+		it("config with only sync.model parses correctly", () => {
+			mockConfigFile(localConfigPath, { sync: { model: "o3" } });
+			const config = loadConfig("/tmp/proj");
+			expect(config.sync).toEqual({ model: "o3" });
+		});
+
+		it("empty sync object parses correctly", () => {
+			mockConfigFile(localConfigPath, { sync: {} });
+			const config = loadConfig("/tmp/proj");
+			expect(config.sync).toEqual({});
+		});
+
+		it("invalid sync.cli is rejected", () => {
+			mockConfigFile(localConfigPath, { sync: { cli: "invalid" } });
+			expect(() => loadConfig("/tmp/proj")).toThrow();
+		});
+	});
+
 	describe("validateCliName", () => {
 		it("does not throw for valid CLI names", () => {
 			expect(() => validateCliName("claude")).not.toThrow();
