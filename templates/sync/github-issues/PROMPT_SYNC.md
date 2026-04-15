@@ -19,7 +19,14 @@ Source: github-issue#<number>
 
 ## Conflict Handling
 
-- If a file already exists for an issue, **overwrite it** -- the GitHub Issue is the source of truth.
+When the target filename (e.g., `15-add-credits.md`) already exists in `{{SPECS_DIR}}/`:
+
+1. **Read the existing file.** Check if it has a `Source: github-issue#<number>` line matching this issue number.
+2. **Same source** (same issue number in Source line): **overwrite** -- this is an update of the same spec.
+3. **No source line, or different source**: compare the existing file's title/topic with the incoming issue title. If they describe the same intent, **overwrite**. If they are about different topics, **use the next available index** (e.g., if `15-*.md` is taken, write as `16-add-credits.md`).
+
+Scan existing files to find the next available number: take the highest numeric prefix in `{{SPECS_DIR}}/` and add 1.
+
 - If a file exists in `{{SPECS_DIR}}/` that does not correspond to any open issue with the `spec` label, **leave it alone** -- it may be a locally-authored spec.
 
 ## Commands
