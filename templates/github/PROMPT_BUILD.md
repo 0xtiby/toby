@@ -137,6 +137,7 @@ Otherwise, create PR:
 gh pr create --title "feat: {{SPEC_SLUG}}" --body "$(cat <<'EOF'
 ## Summary
 Implements {{SPECS_DIR}}/{{SPEC_NAME}}.md
+Closes #[parent-or-prd-issue-number]
 
 ### Completed Tasks
 [List closed issues from gh issue list --label "toby/{{SPEC_SLUG}}" --state closed]
