@@ -1,6 +1,6 @@
-# Planning Mode: Spec -> PRD
+# Planning Mode: Spec -> PRD JSON
 
-You are in PLANNING mode. Translate a spec into a structured PRD (Product Requirements Document) with actionable tasks.
+You are in PLANNING mode. Translate a spec into a structured PRD JSON file with vertical slice tasks.
 
 **Spec:** `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 **PRD output:** `{{PRD_PATH}}`
@@ -8,128 +8,99 @@ You are in PLANNING mode. Translate a spec into a structured PRD (Product Requir
 
 ---
 
-## Path Discovery Rules (CRITICAL)
+## Path Discovery
 
-**NEVER guess or invent file paths.** Always verify paths exist before referencing them.
-
-Before referencing ANY file path:
-1. Use Glob to find files matching a pattern
-2. Use Grep to search for specific code
-3. Verify the file exists before adding it to a task's files list
-
-For new files (create): verify the parent directory exists first.
+**NEVER guess file paths.** Use Glob/Grep to verify paths exist before referencing them. For new files, verify the parent directory exists.
 
 ---
 
 ## If PRD exists: Refinement Mode
 
-If `{{PRD_PATH}}` already exists, read it and refine:
+Read `{{PRD_PATH}}` and refine:
 - Check all spec requirements have corresponding tasks
-- Verify file paths are accurate (re-run Glob/Grep)
-- Split tasks that are too large (~2 min per task)
-- Add missing dependencies
+- Verify dependencies are accurate
 - Improve acceptance criteria specificity
-- Ensure all tasks have `patterns`, `tests`, and `verify` fields
-- If no improvements needed, output: `:::TOBY_DONE:::`
+- If no improvements needed, output `:::TOBY_DONE:::`
 
 ## If PRD does not exist: Creation Mode
 
-### Step 1: Read & Understand the Spec
+### 1. Read the Spec
 
-Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md` and extract:
-- Problem statement (WHY)
-- User stories (WHAT users can do)
-- Data model (entities, relationships)
-- UI/UX flows (screens, interactions)
-- Acceptance criteria (verification)
+Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md`.
 
-### Step 2: Explore Codebase
+### 2. Explore the Codebase
 
-Before creating tasks, validate assumptions against actual code:
-- **Find files to modify:** Search for existing files related to the spec
-- **Identify patterns:** Look at similar features for structure to follow
-- **Check reusable code:** Find existing utilities, helpers, components
-- **Verify data model:** Check current database schema or data structures
+Understand the current architecture, existing patterns, and integration layers before decomposing.
 
-### Step 3: Create PRD
+### 3. Architectural Decisions
 
-Write the PRD to `{{PRD_PATH}}` as a JSON file with this exact structure:
+Identify durable decisions that apply across all tasks:
+- Route structures, URL patterns
+- Schema shapes, key data models
+- Auth approach, third-party boundaries
+
+**Durability:** include route paths, schema shapes, model names. Exclude file names, function signatures -- those emerge during build.
+
+### 4. Decompose into Vertical Slices
+
+Break the spec into tracer bullet tasks. Each task is a thin vertical slice that cuts through ALL layers end-to-end, NOT a horizontal slice of one layer.
+
+<vertical-slice-rules>
+- Each task delivers a narrow but COMPLETE path through every layer (data, logic, API, UI, tests)
+- A completed task is verifiable on its own
+- Prefer many thin slices over few thick ones
+</vertical-slice-rules>
+
+**Tracer bullet phase:** First tasks form the minimum end-to-end path that proves the architecture works.
+
+**Dependencies:** Only where real data/API/infrastructure relationships exist. Do NOT serialize unrelated tasks.
+
+### 5. Create PRD
+
+Write the PRD to `{{PRD_PATH}}`:
 
 ```json
 {
   "spec": "{{SPEC_NAME}}.md",
   "createdAt": "<ISO 8601 timestamp>",
+  "architecturalDecisions": [
+    "Routes: ...",
+    "Schema: ...",
+    "Auth: ..."
+  ],
   "tasks": [
     {
       "id": "task-001",
       "title": "[Action verb] [specific deliverable]",
-      "description": "[What to implement and why]",
+      "description": "[End-to-end behavior, not layer-by-layer]",
       "acceptanceCriteria": [
-        "[Specific, testable criterion 1]",
-        "[Specific, testable criterion 2]"
+        "[Specific, testable criterion]"
       ],
-      "files": [
-        "path/to/file.ts (modify) — verified via Glob",
-        "path/to/new-file.ts (create) — parent dir verified"
-      ],
-      "patterns": [
-        "See path/to/example/ for reference implementation"
-      ],
-      "tests": [
-        "Test that X returns Y when given Z",
-        "Test error case when input is invalid"
-      ],
-      "verify": "pnpm test -- --grep 'credits'",
       "dependencies": [],
-      "status": "pending",
-      "priority": 1
+      "userStories": [1, 3],
+      "status": "pending"
     }
   ]
 }
 ```
 
-### Task Design Rules
-
-**Granularity:** Each task should take ~2 minutes. If longer, break it down.
-
-**Tracer bullet approach:** The first tasks should form a minimal end-to-end vertical slice:
-- Wrong: Schema -> all queries -> all actions -> all UI
-- Right: Schema + one query + one action + one UI = tracer bullet, then expand
-
-**Task structure:**
-1. **Tracer phase** (1+ tasks) — minimal e2e slice
-2. Remaining tasks expand from the tracer, ordered by dependencies
-3. Each task lists specific files with (modify) or (create) and verification method
-
-**Dependencies:** Use task IDs. A task cannot start until all dependencies are `done`.
-
-**Priority:** Lower number = higher priority. Tracer tasks get priority 1.
-
 **Status values:** `pending`, `in_progress`, `done`, `blocked`
 
-### Step 4: Verify & Output
-
-After writing the PRD:
-1. Re-read the file to confirm it's valid JSON
-2. Verify task count covers all spec requirements
-3. Output a summary:
+### 6. Output Summary
 
 ```
 ## PRD Created for: {{SPEC_NAME}}
 
 Tasks: [count]
 Tracer tasks: [count]
-Dependencies: [count] relationships
-
-Ready to build: task-001, task-002 (no dependencies)
+Ready to start: [tasks with no dependencies]
 ```
 
 ---
 
 ## Guardrails
 
-1. **DO NOT implement** — only create the PRD
-2. **~2 minute tasks** — break down larger work
-3. **Verify file paths** — use Glob/Grep before referencing
-4. **Valid JSON** — the PRD must be parseable
-5. **All spec requirements covered** — every user story needs tasks
+1. **DO NOT implement** -- only create the PRD
+2. **Vertical slices only** -- no horizontal decomposition
+3. **Durable decisions first** -- before task breakdown
+4. **Valid JSON** -- the PRD must be parseable
