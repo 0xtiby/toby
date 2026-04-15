@@ -1,253 +1,150 @@
 # Planning Mode: Spec -> Beads
 
-You are in PLANNING mode. Translate a spec into beads epics and issues.
+You are in PLANNING mode. Translate a spec into beads issues using vertical slices.
 
 **Spec:** `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 **Iteration:** {{ITERATION}}
 
 ---
 
-## Path Discovery Rules (CRITICAL)
+## Path Discovery
 
-**NEVER guess or invent file paths.** Always verify paths exist before referencing them.
-
-Before referencing ANY file path:
-1. Use Glob to find files matching a pattern
-2. Use Grep to search for specific code
-3. Verify the file exists before adding it to a beads design field or editing it
-
-For new files (create): verify the parent directory exists first.
+**NEVER guess file paths.** Use Glob/Grep to verify paths exist before referencing them. For new files, verify the parent directory exists.
 
 ---
 
-## Iteration 1: Create Beads
+## Iteration 1: Create Issues
 
-If this is iteration 1, create the epic and all issues.
+### 1. Read the Spec
 
-### Step 1: Read the Spec
+Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md`.
 
-Read `{{SPECS_DIR}}/{{SPEC_NAME}}.md` and extract:
-- Problem statement (WHY)
-- User stories (WHAT users can do)
-- Data model (entities, relationships)
-- UI/UX flows (screens, interactions)
-- Acceptance criteria (verification)
+### 2. Explore the Codebase
 
-### Step 2: Explore Codebase
+Understand the current architecture, existing patterns, and integration layers before decomposing.
 
-Before creating issues, validate assumptions against actual code:
-
-- **Find files to modify:** Search for existing files related to the spec's entities and flows
-- **Identify patterns:** Look at similar features already implemented for structure to follow
-- **Check reusable code:** Find existing utilities, helpers, or components that can be reused
-- **Verify data model:** Compare spec entities against current database schema or data structures
-
-This ensures the Files and Patterns sections in issue designs are accurate, not guessed.
-
-### Step 3: Check for Duplicates
+### 3. Check for Duplicates
 
 ```bash
-bd list --status=open
-bd list --type=epic
+bd list --label "toby/{{SPEC_SLUG}}" --json
 ```
 
-Skip if beads already exist for this spec.
+Skip if issues already exist for this spec.
 
-### Step 4: Create Epic
+### 4. Create Epic
 
 ```bash
-bd create --type=epic \
-  --title="{{SPEC_SLUG}}: [One-line summary]" \
-  --description="Implementation of {{SPECS_DIR}}/{{SPEC_NAME}}.md" \
-  --priority=2
+bd create "{{SPEC_SLUG}}: [One-line summary]" \
+  --type epic \
+  --description "Implements {{SPECS_DIR}}/{{SPEC_NAME}}.md" \
+  --notes "Architectural decisions:
+- Routes: ...
+- Schema: ...
+- Models: ..." \
+  --label "toby/{{SPEC_SLUG}}" \
+  --json
 ```
 
-Note the epic ID (e.g., `beads-001`).
+The `notes` field holds the durable architectural decisions.
 
-### Step 5: Create Issues
+### 5. Decompose into Vertical Slices
 
-For each logical work unit, create an issue:
+Break the spec into tracer bullet tasks. Each task is a thin vertical slice that cuts through ALL layers end-to-end, NOT a horizontal slice of one layer.
+
+<vertical-slice-rules>
+- Each slice delivers a narrow but COMPLETE path through every layer (data, logic, API, UI, tests)
+- A completed slice is verifiable on its own
+- Prefer many thin slices over few thick ones
+</vertical-slice-rules>
+
+**Tracer bullet phase:** First tasks form the minimum end-to-end path that proves the architecture works.
+
+### 6. Create Issues
+
+Create each task as a child of the epic:
 
 ```bash
-bd create --type=task \
-  --title="[Action verb] [specific deliverable]" \
-  --description="[What to implement]" \
-  --design="## Context
-[Why this task exists, dependencies]
-
-## Acceptance Criteria
-- [ ] [Specific deliverable 1]
-- [ ] [Specific deliverable 2]
-
-## Files
-- \`path/to/file.ts\` (modify) — verified via Glob
-- \`path/to/new-file.ts\` (create) — parent dir verified
-
-## Patterns
-- See \`path/to/example/\` for reference
-
-## Tests
-[Expected test cases: what to test and expected outcomes]
-
-## Verify
-[command to run]" \
-  --notes="Epic: [epic-id]" \
-  --priority=2
+bd create "[Action verb] [specific deliverable]" \
+  --type task \
+  --parent <epic-id> \
+  --description "[End-to-end behavior, not layer-by-layer]" \
+  --acceptance "[Criterion 1]
+[Criterion 2]" \
+  --notes "User stories: [N, M] from spec" \
+  --label "toby/{{SPEC_SLUG}}" \
+  --json
 ```
 
-**Design field is REQUIRED** with all 6 sections. This enables any model to execute.
+### 7. Wire Dependencies
 
-**Task granularity:** Each task should take ~2 minutes. If longer, break it down.
-
-### Tracer Bullet Phase
-
-The **first tasks** form a tracer bullet phase: one or more tasks that together build a minimal end-to-end slice touching all layers.
-
-From _The Pragmatic Programmer_: Don't build horizontal layers in isolation. Build one vertical slice first, test it, get feedback, then expand.
-
-**Example:** For a "credits system" feature:
-- Wrong: Schema -> all queries -> all actions -> all UI
-- Right: Schema + one query + one action + one UI = tracer bullet, then expand
-
-**How many tracer tasks?** Use the ~2 min granularity rule and your judgment:
-- If the vertical slice fits in one task (~2 min), create one tracer task.
-- If distinct layers each need meaningful work, split into multiple tracer tasks.
-
-After the tracer phase validates the approach, create remaining tasks that expand horizontally.
-
-**Standard structure:**
-1. **Tracer phase** (1+ tasks) — minimal e2e slice (DB -> API -> UI if applicable)
-2. Schema issues: Remaining data model changes
-3. Backend issues: Queries, actions, handlers
-4. Frontend issues: Components, pages
-
-### Step 6: Add Dependencies
+Only where real data/API/infrastructure relationships exist. Do NOT serialize unrelated tasks.
 
 ```bash
-bd dep add <issue> <depends-on>
+bd dep add <child-id> <parent-id>
 ```
 
-Patterns:
-- Schema -> API -> UI
-- Utils -> features using them
-- **Tracer -> non-tracer:** All non-tracer tasks must depend on the last tracer task. This ensures the vertical slice validates the architecture before horizontal expansion begins.
+Tracer tasks should have no blockers. Non-tracer tasks depend on the last tracer task.
 
-### Step 7: Output Summary
+### 8. Output Summary
 
-```markdown
+```
 ## Beads Created for: {{SPEC_NAME}}
 
-**Epic:** [id] - [title]
-
-### Issues ([count])
-
-| ID | Title | Priority | Blocked By |
-|----|-------|----------|------------|
-| ... | ... | ... | ... |
-
-### Dependency Graph
-
-[ascii tree showing dependencies]
-
-### Ready to Start
+Epic: [id]
+Tasks: [count]
+Tracer tasks: [count]
 
 bd ready shows:
-- [id]: [title]
+- [ready task ids and titles]
 ```
 
 ---
 
-## Iteration 2+: Refine Beads
+## Iteration 2+: Refine
 
-If iteration > 1, review and improve existing beads.
-
-### Step 1: Load Current State
+### 1. Load Current State
 
 ```bash
-bd list --status=open
-bd show <epic-id>
+bd list --label "toby/{{SPEC_SLUG}}" --json
+bd ready --json
+bd blocked --json
 ```
 
-### Step 2: Refinement Checklist
+### 2. Refine
 
-Review each issue against the spec:
+Review against the spec:
+- All user stories have corresponding issues?
+- Acceptance criteria captured?
+- Dependencies accurate?
 
-- [ ] All user stories have corresponding issues?
-- [ ] Acceptance criteria captured in descriptions?
-- [ ] Dependencies model correct build order?
-- [ ] Tasks are atomic (~2 min each)?
-- [ ] Design fields have ALL 6 sections (Context, Acceptance Criteria, Files, Patterns, Tests, Verify)?
-- [ ] Tests section present in design field with expected test cases?
-- [ ] Verification commands are testable?
-
-### Step 3: Update Issues
-
-For issues needing improvement:
+Update issues as needed:
 
 ```bash
-bd update <id> --design="[improved details]"
-bd update <id> --description="[clarified scope]"
-bd update <id> --notes="[better verification]"
+bd update <id> --acceptance "..." --json
+bd update <id> --description "..." --json
 ```
 
-Split large tasks:
-```bash
-bd create --type=task --title="[subtask 1]" ...
-bd create --type=task --title="[subtask 2]" ...
-bd dep add <subtask-2> <subtask-1>
-```
+### 3. Done?
 
-### Step 4: Output Changes
-
-```markdown
-## Refinement Pass {{ITERATION}}
-
-### Updated Issues
-- [id]: [what changed]
-
-### Added Issues
-- [id]: [why added]
-
-### Remaining Concerns
-- [any issues that still need work]
-```
-
-### Step 5: Check if Done
-
-If no meaningful improvements can be made, output:
-
-```
-:::TOBY_DONE:::
-```
-
-This signals the loop to stop early.
+If no meaningful improvements remain, output `:::TOBY_DONE:::`
 
 ---
 
 ## Guardrails
 
-1. **DO NOT implement** — only create/update beads
-2. **~2 minute tasks** — break down larger work
-3. **Check duplicates** — scan beads before creating
-4. **Dependency order** — tracer -> non-tracer; schema -> API -> UI
-5. **NO branch/PR tasks** — build prompt handles git workflow
+1. **DO NOT implement** -- only create/update beads
+2. **Vertical slices only** -- no horizontal decomposition
+3. **Durable decisions in epic notes** -- before task breakdown
+4. **NO branch/PR tasks** -- build prompt handles git workflow
 
 ## Command Reference
 
 ```bash
-# Create
-bd create --type=epic|task|bug --title="..." --priority=2
-bd create --type=task --description="..." --design="..." --notes="..."
-
-# Update
-bd update <id> --design="..." --description="..." --notes="..."
-
-# Dependencies
-bd dep add <issue> <depends-on>
-
-# View
-bd list --status=open
-bd ready
-bd blocked
-bd show <id>
+bd create "..." --type task --parent <id> --description "..." --acceptance "..." --label "..." --json
+bd update <id> --description "..." --acceptance "..." --json
+bd dep add <child> <parent>
+bd list --label "..." --json
+bd ready --json
+bd blocked --json
+bd show <id> --json
 ```

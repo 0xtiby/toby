@@ -1,49 +1,38 @@
 # Planning Mode: Spec -> GitHub Issues
 
-You are in PLANNING mode. Translate a spec into GitHub Issues (parent issue with sub-issues).
+You are in PLANNING mode. Translate a spec into GitHub Issues using vertical slices.
 
 **Spec:** `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 **Iteration:** {{ITERATION}}
 
 ---
 
-## Path Discovery Rules (CRITICAL)
+## Path Discovery
 
-**NEVER guess or invent file paths.** Always verify paths exist before referencing them.
-
-Before referencing ANY file path:
-1. Use Glob to find files matching a pattern
-2. Use Grep to search for specific code
-3. Verify the file exists before adding it to an issue's Files section
-
-For new files (create): verify the parent directory exists first.
+**NEVER guess file paths.** Use Glob/Grep to verify paths exist before referencing them. For new files, verify the parent directory exists.
 
 ---
 
 ## Iteration 1: Create Issues
 
-If this is iteration 1, create the parent issue and all sub-issues.
+### 1. Read the Spec
 
-### Step 1: Read the Spec
+Read the spec file at `{{SPECS_DIR}}/{{SPEC_NAME}}.md`.
 
-Read `{{SPECS_DIR}}/{{SPEC_NAME}}.md` and extract:
-- Problem statement (WHY)
-- User stories (WHAT users can do)
-- Data model (entities, relationships)
-- UI/UX flows (screens, interactions)
-- Acceptance criteria (verification)
+### 2. Explore the Codebase
 
-### Step 2: Explore Codebase
+Understand the current architecture, existing patterns, and integration layers before decomposing.
 
-Before creating issues, validate assumptions against actual code:
-- **Find files to modify:** Search for existing files related to the spec's entities and flows
-- **Identify patterns:** Look at similar features already implemented for structure to follow
-- **Check reusable code:** Find existing utilities, helpers, or components that can be reused
-- **Verify data model:** Compare spec entities against current database schema or data structures
+### 3. Architectural Decisions
 
-This ensures the Files and Patterns sections in issue bodies are accurate, not guessed.
+Identify durable decisions that apply across all tasks:
+- Route structures, URL patterns
+- Schema shapes, key data models
+- Auth approach, third-party boundaries
 
-### Step 3: Check for Duplicates
+**Durability:** include route paths, schema shapes, model names. Exclude file names, function signatures -- those emerge during build.
+
+### 4. Check for Duplicates
 
 ```bash
 gh issue list --label "toby/{{SPEC_SLUG}}" --state open --json number,title
@@ -51,45 +40,23 @@ gh issue list --label "toby/{{SPEC_SLUG}}" --state open --json number,title
 
 Skip if issues already exist for this spec.
 
-### Step 4: Create Sub-Issues
+### 5. Decompose into Vertical Slices
 
-Create each task as a GitHub issue. The issue body must include all 6 sections:
+Break the spec into tracer bullet tasks. Each task is a thin vertical slice that cuts through ALL layers end-to-end, NOT a horizontal slice of one layer.
 
-```bash
-gh issue create --title "[Action verb] [specific deliverable]" --body "$(cat <<'EOF'
-## Context
-[Why this task exists, what it enables]
+<vertical-slice-rules>
+- Each slice delivers a narrow but COMPLETE path through every layer (data, logic, API, UI, tests)
+- A completed slice is demoable or verifiable on its own
+- Prefer many thin slices over few thick ones
+</vertical-slice-rules>
 
-## Acceptance Criteria
-- [ ] [Specific deliverable 1]
-- [ ] [Specific deliverable 2]
+**Tracer bullet phase:** First slices form the minimum end-to-end path that proves the architecture works.
 
-## Files
-- `path/to/file.ts` (modify) — verified via Glob
-- `path/to/new-file.ts` (create) — parent dir verified
+**Dependencies:** Only where real data/API/infrastructure relationships exist. Do NOT serialize unrelated slices.
 
-## Patterns
-- See `path/to/example/` for reference
+### 6. Create Parent Issue
 
-## Tests
-- Test that X returns Y when given Z
-- Test error case when input is invalid
-
-## Verify
-`pnpm test -- --grep 'feature'`
-EOF
-)"
-```
-
-Save the issue number returned for each sub-issue.
-
-**Task granularity:** Each task should take ~2 minutes. If longer, break it down.
-
-### Step 5: Create Parent Issue
-
-After all sub-issues are created, create the parent issue with a tasklist referencing them.
-
-The **order of the tasklist IS the build order** — list tasks in dependency order (prerequisites first).
+Create the parent issue first. It holds the architectural decisions and references the spec.
 
 ```bash
 gh issue create \
@@ -97,150 +64,101 @@ gh issue create \
   --label "toby/{{SPEC_SLUG}}" \
   --body "$(cat <<'EOF'
 ## Spec
+
 Implements `{{SPECS_DIR}}/{{SPEC_NAME}}.md`
 
-## Tasks
-- [ ] #[number] [task title]
-- [ ] #[number] [task title]
-- [ ] #[number] [task title]
+## Architectural Decisions
 
-## Notes
-- Tracer tasks: first [N] items form the minimal vertical slice
-- Remaining tasks expand horizontally from the tracer
+- **Routes**: ...
+- **Schema**: ...
+- **Models**: ...
 EOF
 )"
 ```
 
-### Tracer Bullet Phase
+### 7. Create Sub-Issues
 
-The **first tasks** in the tasklist form a tracer bullet phase: one or more tasks that together build a minimal end-to-end slice touching all layers.
+Create each slice as a GitHub issue in dependency order (blockers first). Add the `toby/{{SPEC_SLUG}}` label to each.
 
-From _The Pragmatic Programmer_: Don't build horizontal layers in isolation. Build one vertical slice first, test it, get feedback, then expand.
+```bash
+gh issue create \
+  --title "[Action verb] [specific deliverable]" \
+  --label "toby/{{SPEC_SLUG}}" \
+  --body "$(cat <<'EOF'
+## Parent
 
-**Example:** For a "credits system" feature:
-- Wrong: Schema -> all queries -> all actions -> all UI
-- Right: Schema + one query + one action + one UI = tracer bullet, then expand
+#[parent-issue-number]
 
-**How many tracer tasks?** Use the ~2 min granularity rule and your judgment:
-- If the vertical slice fits in one task (~2 min), create one tracer task.
-- If distinct layers each need meaningful work, split into multiple tracer tasks.
+## What to build
 
-List all tracer tasks first in the parent's tasklist, then expansion tasks.
+[Concise description of this vertical slice. Describe end-to-end behavior.]
 
-### Step 6: Output Summary
+## Acceptance criteria
 
-```markdown
-## GitHub Issues Created for: {{SPEC_NAME}}
+- [ ] [Criterion 1]
+- [ ] [Criterion 2]
 
-**Parent:** #[number] - [title]
+## Blocked by
 
-### Sub-Issues ([count])
+- #[number] (if any)
+- Or: None - can start immediately
 
-| # | Title | Tracer? |
-|---|-------|---------|
-| ... | ... | ... |
+## User stories addressed
 
-### Task Order (from parent tasklist)
+- User story [N] from spec
+EOF
+)"
+```
 
-1. #[n]: [title] (tracer)
-2. #[n]: [title] (tracer)
-3. #[n]: [title]
+### 8. Output Summary
 
-### Ready to Start
+```
+## Issues Created for: {{SPEC_NAME}}
 
-First unchecked item in parent tasklist:
-- #[n]: [title]
+Parent: #[number]
+Sub-issues: [count]
+Tracer slices: [count]
+Ready to start: [issues with no blockers]
 ```
 
 ---
 
 ## Iteration 2+: Refine Issues
 
-If iteration > 1, review and improve existing issues.
-
-### Step 1: Load Current State
+### 1. Load Current State
 
 ```bash
-gh issue view $(gh issue list --label "toby/{{SPEC_SLUG}}" --state open --json number -q '.[0].number') --json body,title,number
-gh issue list --label "toby/{{SPEC_SLUG}}" --state open --json number,title
+gh issue list --label "toby/{{SPEC_SLUG}}" --state open --json number,title,body
 ```
 
-### Step 2: Refinement Checklist
+### 2. Refine
 
-Review each issue against the spec:
+Review against the spec:
+- All user stories have corresponding issues?
+- Acceptance criteria captured?
+- Dependencies accurate?
 
-- [ ] All user stories have corresponding issues?
-- [ ] Acceptance criteria captured in issue bodies?
-- [ ] Tasklist order in parent reflects correct build order?
-- [ ] Tasks are atomic (~2 min each)?
-- [ ] Issue bodies have ALL 6 sections (Context, Acceptance Criteria, Files, Patterns, Tests, Verify)?
-- [ ] Verification commands are testable?
+Update issues as needed.
 
-### Step 3: Update Issues
+### 3. Done?
 
-For issues needing improvement:
-
-```bash
-gh issue edit <number> --body "$(cat <<'EOF'
-[improved body content]
-EOF
-)"
-```
-
-For new tasks, create sub-issues and add them to the parent's tasklist:
-```bash
-# Create the sub-issue
-gh issue create --title "[subtask]" --body "..."
-# Edit parent body to include new issue in tasklist
-```
-
-### Step 4: Output Changes
-
-```markdown
-## Refinement Pass {{ITERATION}}
-
-### Updated Issues
-- #[n]: [what changed]
-
-### Added Issues
-- #[n]: [why added]
-
-### Remaining Concerns
-- [any issues that still need work]
-```
-
-### Step 5: Check if Done
-
-If no meaningful improvements can be made, output:
-
-```
-:::TOBY_DONE:::
-```
+If no meaningful improvements remain, output `:::TOBY_DONE:::`
 
 ---
 
 ## Guardrails
 
-1. **DO NOT implement** — only create/update GitHub Issues
-2. **~2 minute tasks** — break down larger work
-3. **Check duplicates** — search issues before creating
-4. **Tasklist order = build order** — prerequisites first in parent tasklist
-5. **NO branch/PR tasks** — build prompt handles git workflow
-6. **Verify paths** — use Glob/Grep before referencing files in issue bodies
+1. **DO NOT implement** -- only create/update issues
+2. **Vertical slices only** -- no horizontal decomposition
+3. **Durable decisions first** -- in parent issue
+4. **NO branch/PR tasks** -- build prompt handles git workflow
 
 ## Command Reference
 
 ```bash
-# Create
 gh issue create --title "..." --body "..." --label "toby/slug"
-
-# Update
 gh issue edit <number> --body "..."
-
-# View
-gh issue list --label "toby/slug" --state open --json number,title
+gh issue list --label "toby/slug" --state open --json number,title,body
 gh issue view <number> --json body,title,state
-
-# Close
 gh issue close <number>
 ```
